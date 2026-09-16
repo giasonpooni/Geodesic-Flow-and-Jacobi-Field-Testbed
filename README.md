@@ -12,6 +12,24 @@ That repository is where lattice shape, closed-loop lengths, and modular
 equivalence live. This repository is the numerical companion: how a small
 change in a geodesic's initial conditions affects its trajectory.
 
+## Map
+
+```mermaid
+flowchart LR
+  Geo["unit-speed geodesic"] --> Jode["j'' + K j = 0"]
+  Jode --> K0["K=0 -> j=s"]
+  Jode --> K1["K=1 -> j=sin s"]
+  Jode --> Km["K=-1 -> j=sinh s"]
+  Num["nearby numerical traces"] --> Cmp["compare to j(s)"]
+  K0 --> Cmp
+  K1 --> Cmp
+  Km --> Cmp
+```
+
+Caption: a Jacobi field is a first-order variation, not the exact finite
+distance between trajectories. No fixture figure until the experiment
+emits a report. Not an SP1 guest. Exact torus lengths stay in FTMGE.
+
 ## How to experiment today
 
 This repo is a scaffold. Use the torus until a report contract exists here.
