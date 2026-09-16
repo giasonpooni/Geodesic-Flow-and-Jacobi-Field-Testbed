@@ -12,6 +12,25 @@ That repository is where lattice shape, closed-loop lengths, and modular
 equivalence live. This repository is the numerical companion: how a small
 change in a geodesic's initial conditions affects its trajectory.
 
+## How to experiment today
+
+This repo is a scaffold. Use the torus until a report contract exists here.
+
+```bash
+git clone https://github.com/giasonpooni/Flat-Torus-Moduli-and-Geodesic-Explorer.git
+cd Flat-Torus-Moduli-and-Geodesic-Explorer
+PYTHONPATH=src python examples/quickstart.py
+PYTHONPATH=src python examples/write_validation.py
+```
+
+Then, in CSE, bind the torus commitment. Do not wait on this repo:
+
+```bash
+python -m gat.demo.experiment_harness --demo -o out/harness-bundle.json
+```
+
+See the [CSE experiment index](https://github.com/giasonpooni/Construction-State-Estimator-for-BIM/blob/main/docs/experiment-index-v1.md).
+
 ## Planned first experiment
 
 For unit-speed geodesics on constant-curvature surfaces, a transverse
@@ -32,6 +51,10 @@ Two boundaries stay explicit:
   distance between trajectories.
 - Finding a geodesic does not establish that an arbitrarily long segment
   is globally shortest.
+
+When that experiment exists it will emit a report file. It will not enter
+an SP1 guest. Exact torus lengths stay algebraic. JSPT stays the owner of
+A2-A5.
 
 ## Status
 
