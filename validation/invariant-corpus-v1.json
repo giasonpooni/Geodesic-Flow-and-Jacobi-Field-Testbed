@@ -1,0 +1,19 @@
+{
+  "schema": "invariant-corpus-v1",
+  "claim_scope": "computational-integrity-only",
+  "cites": "giasonpooni/Construction-State-Estimator-for-BIM",
+  "invariants": [
+    {
+      "id": "map.geodesic-flow",
+      "kind": "morphism",
+      "statement": "declared discrete flow only. no float geodesic in SP1."
+    }
+  ],
+  "free_coordinates": [
+    {
+      "id": "var.jacobi",
+      "quantity": "variation",
+      "needs": ["declared-flow"]
+    }
+  ]
+}
