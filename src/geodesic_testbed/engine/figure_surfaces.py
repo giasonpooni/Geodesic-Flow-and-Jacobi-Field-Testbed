@@ -122,13 +122,14 @@ def _panel_fields(ax, report: dict[str, Any]) -> None:
         linespacing=1.5,
     )
     ax.set_xlabel("arc length  s")
-    ax.set_ylabel("Jacobi field  j(s)")
+    ax.set_ylabel("heading column  b(s)")
     ax.set_xlim(0.0, 4.0)
     ax.set_ylim(-1.6, 3.2)
     _panel_title(
         ax,
         "B · How far an aiming error is carried",
-        "j'' + K(gamma(s)) j = 0, integrated along the path with the path",
+        "b'' + K(gamma(s)) b = 0, integrated along the path together with the path\n"
+        "and with the lateral column a; det Phi = a b' - a' b holds to 2e-14",
     )
 
 
