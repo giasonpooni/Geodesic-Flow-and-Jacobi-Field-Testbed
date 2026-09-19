@@ -1,4 +1,4 @@
-# Geodesic Flow and Jacobi-Field Testbed
+# Curved-Surface Geodesic Sensitivity
 
 First-order path-sensitivity analysis for curved-surface manufacturing and
 robotic inspection.
@@ -11,7 +11,7 @@ This is the second project in the portfolio
 
 > Computational Geometry, Geodesic Dynamics, and Invariant Representations
 
-The [Flat-Torus Moduli and Geodesic Explorer](https://github.com/giasonpooni/Flat-Torus-Moduli-and-Geodesic-Explorer)
+The [Flat-Torus Geodesic Reference](https://github.com/giasonpooni/Flat-Torus-Geodesic-Reference)
 owns lattice shape, closed-loop lengths, and modular equivalence. This
 repository owns numerical first variation along a declared surface geodesic.
 
@@ -50,6 +50,8 @@ shortest.
 Python 3.12 or 3.13, NumPy, and `uv` are supported.
 
 ```bash
+git clone https://github.com/giasonpooni/Curved-Surface-Geodesic-Sensitivity.git
+cd Curved-Surface-Geodesic-Sensitivity
 uv run --python 3.13 --dev pytest
 uv run --python 3.13 python examples/write_reference_report.py
 ```

@@ -12,7 +12,7 @@ wheels = [
 ]
 
 [[package]]
-name = "geodesic-flow-jacobi-testbed"
+name = "curved-surface-geodesic-sensitivity"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

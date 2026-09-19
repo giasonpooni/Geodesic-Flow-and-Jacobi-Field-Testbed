@@ -1,5 +1,5 @@
 [project]
-name = "geodesic-flow-jacobi-testbed"
+name = "curved-surface-geodesic-sensitivity"
 version = "0.1.0"
 description = "Jacobi-field sensitivity analysis for curved-surface manufacturing and robotic inspection paths."
 readme = "README.md"
