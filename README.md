@@ -1,80 +1,100 @@
 # Geodesic Flow and Jacobi-Field Testbed
 
-Plane, sphere, and hyperbolic-plane experiments comparing numerical
-trajectories with analytical first-order variation.
+First-order path-sensitivity analysis for curved-surface manufacturing and
+robotic inspection.
 
-This is the **second** project in the portfolio
+The first release propagates how initial lateral-position and heading changes
+affect neighbouring geodesics. It turns those variations into deterministic
+gap, overlap, coverage, and cross-track-error bounds.
+
+This is the second project in the portfolio
 
 > Computational Geometry, Geodesic Dynamics, and Invariant Representations
 
-The first build is the [Flat-Torus Moduli and Geodesic Explorer](https://github.com/giasonpooni/Flat-Torus-Moduli-and-Geodesic-Explorer).
-That repository is where lattice shape, closed-loop lengths, and modular
-equivalence live. This repository is the numerical companion: how a small
-change in a geodesic's initial conditions affects its trajectory.
+The [Flat-Torus Moduli and Geodesic Explorer](https://github.com/giasonpooni/Flat-Torus-Moduli-and-Geodesic-Explorer)
+owns lattice shape, closed-loop lengths, and modular equivalence. This
+repository owns numerical first variation along a declared surface geodesic.
 
-## Map
+## Delivered foundation
+
+| Layer | Delivered behavior |
+| --- | --- |
+| Analytical reference | Exact Jacobi bases for constant positive, zero, and negative Gaussian curvature. |
+| Numerical propagation | RK4 propagation for constant or varying declared curvature along arclength. |
+| Finite-distance reference | Exact separation of constant-curvature geodesic rays for checking the first-order limit. |
+| Tolerance propagation | Worst-case or explicitly selected RSS envelopes for starting position and heading. |
+| Manufacturing contract | Minimum/maximum course spacing and deterministic gap/overlap bounds. |
+| Inspection contract | Sensor-swath coverage margin, cross-track uncertainty, and a bounded reliability verdict. |
+| Evidence | Reproducible JSON and Markdown reference reports with explicit claim scope and limitations. |
+
+## Mathematical map
 
 ```mermaid
 flowchart LR
-  Geo["unit-speed geodesic"] --> Jode["j'' + K j = 0"]
-  Jode --> K0["K=0 -> j=s"]
-  Jode --> K1["K=1 -> j=sin s"]
-  Jode --> Km["K=-1 -> j=sinh s"]
-  Num["nearby numerical traces"] --> Cmp["compare to j(s)"]
-  K0 --> Cmp
-  K1 --> Cmp
-  Km --> Cmp
+  Geo["unit-speed surface geodesic"] --> K["declared K(s)"]
+  K --> A["a'' + K a = 0\na(0)=1, a'(0)=0"]
+  K --> B["b'' + K b = 0\nb(0)=0, b'(0)=1"]
+  A --> J["j = a delta_p + b delta_alpha"]
+  B --> J
+  J --> Tol["first-order tolerance envelope"]
+  Tol --> Mfg["gap / overlap bounds"]
+  Tol --> Insp["coverage / path reliability"]
 ```
 
-Caption: a Jacobi field is a first-order variation, not the exact finite
-distance between trajectories. No fixture figure until the experiment
-emits a report. Not an SP1 guest. Exact torus lengths stay in FTMGE.
+A Jacobi field is a first-order variation, not the exact finite distance
+between trajectories. A geodesic segment is not thereby proved globally
+shortest.
 
-## How to experiment today
+## Run
 
-This repo is a scaffold. Use the torus until a report contract exists here.
+Python 3.12 or 3.13, NumPy, and `uv` are supported.
 
 ```bash
-git clone https://github.com/giasonpooni/Flat-Torus-Moduli-and-Geodesic-Explorer.git
-cd Flat-Torus-Moduli-and-Geodesic-Explorer
-PYTHONPATH=src python examples/quickstart.py
-PYTHONPATH=src python examples/write_validation.py
+uv run --python 3.13 --dev pytest
+uv run --python 3.13 python examples/write_reference_report.py
 ```
 
-Then, in CSE, bind the torus commitment. Do not wait on this repo:
+The example regenerates:
 
-```bash
-python -m gat.demo.experiment_harness --demo -o out/harness-bundle.json
+- `results/reference-report.json`
+- `results/reference-report.md`
+
+## Application example
+
+```python
+import numpy as np
+
+from geodesic_testbed import (
+    ManufacturingSpec,
+    PathTolerance,
+    assess_manufacturing,
+    constant_curvature_trace,
+)
+
+s = np.linspace(0.0, 1.25, 126)
+trace = constant_curvature_trace(s, curvature=-1.0)
+assessment = assess_manufacturing(
+    trace,
+    ManufacturingSpec(
+        course_width=0.100,
+        initial_spacing=0.100,
+        path_tolerance=PathTolerance(lateral=0.001, heading=0.001),
+    ),
+)
+print(assessment.summary())
 ```
 
-See the [CSE experiment index](https://github.com/giasonpooni/Construction-State-Estimator-for-BIM/blob/main/docs/experiment-index-v1.md).
+See [methods](docs/METHODS.md) for the mathematical contract and the
+[industrial pilot](docs/INDUSTRIAL-PILOT.md) for the physical validation path.
 
-## Planned first experiment
+## Scope boundary
 
-For unit-speed geodesics on constant-curvature surfaces, a transverse
-Jacobi component satisfies
+This release consumes a declared Gaussian-curvature profile. It does not yet
+trace geodesics on arbitrary CAD or mesh surfaces. It also does not model
+machine servo error, material mechanics, tow compaction, weld-pool behavior,
+or sensor probability of detection. Those effects require separate measured
+models before an application can make an industrial process claim.
 
-```text
-j''(s) + K j(s) = 0,    j(0) = 0,    j'(0) = 1
-```
-
-with reference solutions `j(s) = s` (K = 0), `sin s` (K = 1), and
-`sinh s` (K = -1). The testbed should compare numerically traced nearby
-geodesics against those predictions while varying step size and
-perturbation magnitude.
-
-Two boundaries stay explicit:
-
-- A Jacobi field is a first-order variation, not the exact finite
-  distance between trajectories.
-- Finding a geodesic does not establish that an arbitrarily long segment
-  is globally shortest.
-
-When that experiment exists it will emit a report file. It will not enter
-an SP1 guest. Exact torus lengths stay algebraic. JSPT stays the owner of
-A2-A5.
-
-## Status
-
-Scaffold only. Implementation starts after the torus first release is
-in use. Do not read this README as a claim of implemented capability.
+The report claim scope is `first-order-computational-analysis`. No SP1 guest,
+authorization claim, CUDA stack, or duplicate finite-difference package is
+introduced here.

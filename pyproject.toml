@@ -1,0 +1,21 @@
+[project]
+name = "geodesic-flow-jacobi-testbed"
+version = "0.1.0"
+description = "Jacobi-field sensitivity analysis for curved-surface manufacturing and robotic inspection paths."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["numpy>=2.0"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/geodesic_testbed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
