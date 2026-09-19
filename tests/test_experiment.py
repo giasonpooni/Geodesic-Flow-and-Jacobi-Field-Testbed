@@ -7,14 +7,14 @@ import math
 
 import pytest
 
-from geojac.experiment import (
+from geodesic_testbed.engine.experiment import (
     REPORT_SCHEMA,
     ExperimentConfig,
     content_hash,
     run_experiment,
     write_report,
 )
-from geojac.spaceforms import SpaceForm
+from geodesic_testbed.engine.spaceforms import SpaceForm
 
 EXPECTED_ORDERS = {"euler": 1, "midpoint": 2, "rk4": 4}
 

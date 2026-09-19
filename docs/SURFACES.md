@@ -4,8 +4,8 @@
 a closed form. A real workpiece has none. What replaces it?
 
 Produced by `python examples/run_experiment.py --stage surfaces` and recorded
-in [`validation/report-v2-surfaces.json`](../validation/report-v2-surfaces.json):
-**47 declared checks, 0 failed.**
+in [`validation/report-v2-surfaces.json`](../validation/report-v2-surfaces.json)
+under schema `geodesic-jacobi-surfaces-v2`: **65 declared checks, 0 failed.**
 
 ![Curvature-aware path sensitivity on surfaces where the curvature varies](../figures/surfaces-testbed-v1.png)
 
@@ -21,12 +21,14 @@ Jacobi field are advanced together in the surface's own coordinates:
 ```text
 u'' = -(G1_11 u'^2 + 2 G1_12 u'v' + G1_22 v'^2)
 v'' = -(G2_11 u'^2 + 2 G2_12 u'v' + G2_22 v'^2)
-j'' = -K(u, v) j
+a'' = -K(u, v) a        (lateral offset column)
+b'' = -K(u, v) b        (heading error column)
 ```
 
-The two halves cannot be separated any more: the Jacobi equation needs `K` at
-the moving point, so the six-component state `(u, v, u', v', j, j')` is
-integrated as one system.
+The parts cannot be separated any more: the Jacobi equation needs `K` at the
+moving point, so the eight-component state `(u, v, u', v', a, a', b, b')` is
+integrated as one system. Both columns of the transfer map ride along for the
+price of one curvature evaluation.
 
 Everything is intrinsic, so the path cannot drift off the surface — it is
 *defined* in the surface's coordinates. What can drift is unit speed, and it is
@@ -52,12 +54,12 @@ The general machinery is run on the surfaces whose answer is already known and
 must reproduce it. If it cannot recover the calibrated case it has no business
 on a saddle.
 
-| case | must reproduce | `max ǀj - referenceǀ` | speed drift | `K` error |
-|---|---|---|---|---|
-| plate | `s` | 1.1e-13 | 0 | 0 |
-| rolled-sheet | `s` | 1.1e-13 | 0 | 0 |
-| spherical-cap | `sin s` | 4.4e-13 | 1.6e-12 | 8.9e-16 |
-| pseudosphere | `sinh s` | 1.2e-14 | 9.3e-15 | 8.9e-16 |
+| case | `b` must be | `max ǀb - refǀ` | `a` must be | `max ǀa - refǀ` | `det Phi` drift | speed drift |
+|---|---|---|---|---|---|---|
+| plate | `s` | 1.1e-13 | `1` | 0 | 0 | 0 |
+| rolled-sheet | `s` | 1.1e-13 | `1` | 0 | 0 | 0 |
+| spherical-cap | `sin s` | 4.4e-13 | `cos s` | 4.0e-13 | 3.1e-15 | 1.6e-12 |
+| pseudosphere | `sinh s` | 1.2e-14 | `cosh s` | 1.4e-14 | 2.0e-14 | 9.3e-15 |
 
 The rolled sheet is the one worth pausing on. A cylinder is visibly curved and
 its geodesics are helices, but it is intrinsically flat, and the solver returns
@@ -65,11 +67,28 @@ exactly the plate's answer — to `1e-13`, from a completely different
 parameterisation. Rolling a flat sheet onto a drum does not change how far an
 aiming error is carried.
 
-### 2. Two independent routes to the same field
+### 2. Two independent routes to each column
 
-The Jacobi field is obtained twice: by integrating `j'' + K j = 0` along the
-path, and by central-differencing the flow itself in the initial heading. The
-second never touches the Jacobi equation. Their relative difference is second
+Each column is obtained twice. `b` by integrating `j'' + K j = 0` along the
+path, and by central-differencing the flow itself in the **initial heading**.
+`a` by the same equation, and by moving the **start point** sideways along the
+perpendicular geodesic and parallel-transporting the initial direction to it —
+a structurally different construction that also never touches the Jacobi
+equation. Its measured exponents:
+
+| case | `a` from equation | regime | fitted exponent |
+|---|---|---|---|
+| plate | 1.000000 | exact to roundoff | — |
+| rolled-sheet | 1.000000 | second order | 1.9999 |
+| spherical-cap | 0.540302 | second order | 1.9999 |
+| pseudosphere | 1.543081 | second order | 1.9993 |
+| saddle | 1.252333 | second order | 1.9998 |
+| torus | 0.857576 | second order | 1.9999 |
+
+The plate is exactly right at every offset, as it must be: two parallel lines
+stay exactly as far apart as they started.
+
+For the heading column the same comparison runs as follows. Their relative difference is second
 order in the differencing step `eps`, with coefficient
 
 ```text
@@ -162,25 +181,44 @@ The budget is cumulative — governed by the worst deviation reached anywhere so
 far, not by the deviation at the endpoint — because a path that must stay
 inside a tolerance has to stay inside it the whole way.
 
-## The decision it supports
+## The decision it supports, and the trap in it
 
 Twenty-four candidate starting headings from one point on the torus, each
-flowed for the same path length of 6, ranked by the worst `ǀjǀ` anywhere along
-the path:
+flowed for the same path length of 6, ranked by forward angular-error
+amplification `max ǀb(s)ǀ`:
 
-| | heading | worst `ǀjǀ` | mean `K` along the path | focus |
-|---|---|---|---|---|
-| most tolerant | 97° | 1.74 | +0.325 | `s = 5.50` |
-| least tolerant | 15° | 36.90 | -0.328 | none |
+| | heading | `max ǀbǀ` | focus margin | passes a focus | mean `K` |
+|---|---|---|---|---|---|
+| lowest amplification | 97° | 1.74 | 0.000106 | **yes**, at `s = 5.50` | +0.325 |
+| lowest with a margin ≥ 0.25 | 127° | 1.92 | 0.785 | no | +0.248 |
+| highest amplification | 15° | 36.90 | 1.136 | no | -0.328 |
 
-A factor of **21** between the best and worst choice, from the same start and
-the same path length. The reason is visible in the last two columns: the
-tolerant heading stays on the positively curved outer region, where
-neighbouring paths refocus and an aiming error is bounded; the intolerant one
-wanders onto the negatively curved inner region, where it grows.
+A factor of **21** between the extremes, from the same start and the same path
+length, and the reason is in the last column: the low-amplification headings
+stay on the positively curved outer region, where neighbouring paths refocus
+and an aiming error is bounded; the intolerant one wanders onto the negatively
+curved inner region, where it grows.
 
-That is the instrument's point. Curvature along a path is not a diagnostic to
-look at afterwards — it is something to choose.
+But that is the whole story only if forward separation is the whole objective,
+and it is not. Seven of the twenty-four headings pass through a focus — and the
+**six best-scoring headings are all among them**. A zero of `b` means the map
+from starting heading to endpoint is ill conditioned, the path is at a
+conjugate point, local minimality can be lost, and a family of such paths
+crowds together instead of covering. Choosing purely by minimum amplification
+walks straight into one.
+
+So the scan reports both an upper measure (`max_forward_amplification`) and a
+lower one (`focus_margin`: the smallest `ǀbǀ` after the initial dead zone where
+`b` is small only because it starts at zero), and the objective is recorded as
+`minimum-forward-angular-error-amplification` — not "most robust". The
+defensible answer here is 127°: ten per cent more amplification than the best
+score, for a focus margin of 0.785 against 0.000106 — four orders of magnitude.
+Rank seven, 120°, is technically clear of a focus but comes within 0.20 of one,
+so the margin floor excludes it too.
+
+A production score would also need boundary clearance, chart validity, path
+length, curvature exposure and gap/overlap or sensor-swath constraints. None of
+those are modelled.
 
 ---
 
@@ -192,6 +230,10 @@ look at afterwards — it is something to choose.
   curvature estimator, which is a different problem with its own error analysis.
 * **No boundaries, no obstacles, no cut locus search.** A geodesic that leaves
   the chart is not detected; the domains here are chosen so that none does.
-* **Full envelope only to first order.** `± ε j(s)` is the first-order tube.
-  Stage one measured exactly where that stops being the truth; the same limit
-  applies here and has not been re-measured on the varying-curvature cases.
+* **Full envelope only to first order.** `Phi(s)` maps a starting pose error to
+  a downstream one linearly. Stage one measured exactly where that stops being
+  the truth; the same limit applies here and has not been re-measured on the
+  varying-curvature cases.
+* **No route selection under constraints.** `scan_headings` ranks headings from
+  a fixed start by one scalar. It does not choose among routes subject to
+  coverage, clearance or manufacturing constraints.

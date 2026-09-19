@@ -7,7 +7,12 @@ import math
 
 import pytest
 
-from geojac.experiment_surfaces import REPORT_SCHEMA, default_cases
+from geodesic_testbed.engine.experiment import REPORT_SCHEMA as STAGE_ONE_SCHEMA
+from geodesic_testbed.engine.experiment_surfaces import (
+    REPORT_SCHEMA,
+    SUPERSEDES,
+    default_cases,
+)
 
 
 def test_every_declared_check_passes(surface_report: dict) -> None:
@@ -19,7 +24,10 @@ def test_every_declared_check_passes(surface_report: dict) -> None:
 
 def test_it_declares_what_it_depends_on(surface_report: dict) -> None:
     assert surface_report["schema"] == REPORT_SCHEMA
-    assert surface_report["depends_on"] == "geodesic-jacobi-report-v1"
+    assert surface_report["supersedes"] == SUPERSEDES
+    # Pinned to the constant, not to a literal, so the two stages cannot drift
+    # apart the next time either schema is versioned.
+    assert surface_report["depends_on"] == STAGE_ONE_SCHEMA
     assert "anchored" in surface_report["claim_scope"]
     assert [case["case"] for case in surface_report["cases"]] == [
         case.key for case in default_cases()
@@ -75,11 +83,48 @@ def test_the_envelopes_flag_conditioning(surface_report: dict) -> None:
 
 def test_the_heading_scan_produces_a_ranked_decision(surface_report: dict) -> None:
     scan = surface_report["results"]["heading_scan"]
-    ranked = [row["max_abs_jacobi_field"] for row in scan["headings"]]
+    ranked = [row["max_forward_amplification"] for row in scan["headings"]]
     assert ranked == sorted(ranked)
-    assert scan["most_tolerant"] is not None
-    assert scan["sensitivity_ratio"] > 1.1
-    assert scan["sensitivity_ratio"] == pytest.approx(
-        scan["least_tolerant"]["max_abs_jacobi_field"]
-        / scan["most_tolerant"]["max_abs_jacobi_field"]
+    assert scan["objective"] == "minimum-forward-angular-error-amplification"
+    assert scan["amplification_ratio"] > 1.1
+    assert scan["amplification_ratio"] == pytest.approx(
+        scan["highest_amplification"]["max_forward_amplification"]
+        / scan["lowest_amplification"]["max_forward_amplification"]
     )
+
+
+def test_the_scan_does_not_call_low_amplification_robustness(surface_report: dict) -> None:
+    scan = surface_report["results"]["heading_scan"]
+    assert "robust" not in scan["objective"]
+    assert scan["lowest_amplification"]["passes_a_focus"] is True
+    clear = scan["lowest_amplification_clear_of_a_focus"]
+    assert clear is not None
+    assert clear["passes_a_focus"] is False
+    assert clear["focus_margin"] >= scan["focus_margin_floor"]
+    assert (
+        clear["max_forward_amplification"]
+        >= scan["lowest_amplification"]["max_forward_amplification"]
+    )
+
+
+def test_the_transfer_map_keeps_its_invariant_everywhere(surface_report: dict) -> None:
+    for row in surface_report["results"]["envelopes"]:
+        assert row["max_wronskian_drift"] < 1e-9
+    for row in surface_report["results"]["anchored_to_closed_forms"]:
+        assert row["max_lateral_error"] <= row["tolerance"]
+
+
+def test_the_lateral_column_is_validated_by_moving_the_start(surface_report: dict) -> None:
+    rows = {row["case"]: row for row in surface_report["results"]["lateral_route"]}
+    assert rows["plate"]["regime"] == "exact-to-roundoff"
+    for case in ("rolled-sheet", "spherical-cap", "pseudosphere", "saddle", "torus"):
+        assert rows[case]["fitted_exponent"] == pytest.approx(2.0, abs=0.05)
+        assert rows[case]["observation_mode"] == "ambient-euclidean-chord"
+
+
+def test_observation_modes_are_declared(surface_report: dict) -> None:
+    modes = {mode["identifier"]: mode for mode in surface_report["observation_modes"]}
+    assert modes["intrinsic-surface-distance"]["implemented"] is True
+    assert modes["ambient-euclidean-chord"]["implemented"] is True
+    assert modes["scanner-reconstructed-chord"]["implemented"] is False
+    assert modes["camera-image-residual"]["implemented"] is False

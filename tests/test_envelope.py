@@ -5,13 +5,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from geojac.envelope import (
+from geodesic_testbed.engine.envelope import (
     finite_difference_jacobi,
     integrate_path,
     integrate_paths,
     scan_headings,
 )
-from geojac.surfaces import cylinder, plane, pseudosphere, sphere, torus
+from geodesic_testbed.engine.surfaces import cylinder, plane, pseudosphere, sphere, torus
 
 ANCHORS = [
     ("plane", plane(), 0.0, 0.0, lambda s: s),
@@ -138,6 +138,28 @@ def test_the_heading_scan_is_ranked_and_finds_a_real_spread() -> None:
         length=6.0,
         n_steps=1500,
     )
-    worst = [row["max_abs_jacobi_field"] for row in rows]
+    worst = [row["max_forward_amplification"] for row in rows]
     assert worst == sorted(worst)
     assert worst[-1] / worst[0] > 2.0
+
+
+def test_the_scan_reports_the_focus_that_low_amplification_can_hide() -> None:
+    """Cheap forward separation is sometimes bought with an ill-conditioned map."""
+    rows = scan_headings(
+        torus(2.0, 1.0),
+        u0=0.3,
+        v0=0.2,
+        headings=np.linspace(0.0, np.pi, 16, endpoint=False),
+        length=6.0,
+        n_steps=1500,
+    )
+    assert rows[0]["passes_a_focus"] is True
+    assert rows[0]["focus_margin"] < 1e-2
+    assert rows[-1]["passes_a_focus"] is False
+    clear = [row for row in rows if not row["passes_a_focus"]]
+    assert clear, "some heading must be clear of a focus for the trade-off to exist"
+    assert min(row["max_forward_amplification"] for row in clear) > rows[0][
+        "max_forward_amplification"
+    ]
+    for row in rows:
+        assert row["max_wronskian_drift"] < 1e-9

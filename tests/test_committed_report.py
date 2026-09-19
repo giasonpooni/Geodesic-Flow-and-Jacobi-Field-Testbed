@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from geojac.experiment import REPORT_SCHEMA
-from geojac.spaceforms import SpaceForm
+from geodesic_testbed.engine.experiment import REPORT_SCHEMA, SUPERSEDES
+from geodesic_testbed.engine.spaceforms import SpaceForm
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = ROOT / "validation" / "report-v1.json"
@@ -24,6 +24,7 @@ EXPECTED_ORDERS = {"euler": 1, "midpoint": 2, "rk4": 4}
 
 def test_the_committed_report_exists_and_passed(committed: dict) -> None:
     assert committed["schema"] == REPORT_SCHEMA
+    assert committed["supersedes"] == SUPERSEDES
     assert committed["summary"]["all_passed"] is True
     assert committed["summary"]["n_failed"] == 0
     assert committed["summary"]["n_checks"] >= 100

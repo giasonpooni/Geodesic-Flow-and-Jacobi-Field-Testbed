@@ -1,11 +1,46 @@
 {
-  "schema": "geodesic-jacobi-report-v1",
+  "schema": "geodesic-jacobi-report-v2",
+  "supersedes": "geodesic-jacobi-report-v1",
+  "schema_changes": [
+    "adds results.wronskian_conservation: det Phi = 1 and its drift per method",
+    "adds observation_modes and tags first_order_validity with one"
+  ],
   "experiment": "geodesic-flow-and-jacobi-field-testbed",
   "claim_scope": "numerical-verification-against-closed-form-solutions",
   "curvatures": [
     0.0,
     1.0,
     -1.0
+  ],
+  "observation_modes": [
+    {
+      "identifier": "intrinsic-surface-distance",
+      "version": 1,
+      "quantity": "Riemannian distance between two points, measured in the surface",
+      "implemented": true,
+      "note": "What the Jacobi field predicts. Available in closed form on the constant-curvature model spaces; on a general surface it would require solving a boundary-value problem and is not computed here."
+    },
+    {
+      "identifier": "ambient-euclidean-chord",
+      "version": 1,
+      "quantity": "straight-line distance in R^3 between two points of the surface",
+      "implemented": true,
+      "note": "What a pair of reconstructed 3-D coordinates gives. Differs from the intrinsic distance at second order in the separation, with a coefficient set by the transverse normal curvature."
+    },
+    {
+      "identifier": "scanner-reconstructed-chord",
+      "version": 0,
+      "quantity": "ambient chord as reported by a calibrated metrology system",
+      "implemented": false,
+      "note": "The ambient chord plus calibration, registration and fitting error. Needs a characterised instrument; nothing here models it."
+    },
+    {
+      "identifier": "camera-image-residual",
+      "version": 0,
+      "quantity": "residual in image coordinates, before reconstruction",
+      "implemented": false,
+      "note": "Furthest from the model of the four. Not modelled here."
+    }
   ],
   "config": {
     "arc_length": 2.0,
@@ -68,6 +103,8 @@
     "conjugate_span_multiple": 2.0,
     "conjugate_steps": 20000,
     "order_tolerance": 0.15,
+    "wronskian_theory_floor": 1e-09,
+    "wronskian_theory_tolerance": 0.001,
     "exponent_tolerance": 0.05,
     "coefficient_tolerance": 0.01,
     "epsilon_star_tolerance": 0.01,
@@ -2184,6 +2221,827 @@
         }
       }
     ],
+    "wronskian_conservation": [
+      {
+        "curvature": 0.0,
+        "curvature_label": "K=0",
+        "integrator": "euler",
+        "invariant": "det Phi = a b' - a' b = 1",
+        "expected_drift_order": 1,
+        "regime": "exact-to-roundoff",
+        "fitted_drift_order": null,
+        "drift_order_error": null,
+        "finest_drift": 0.0,
+        "coarsest_drift": 0.0,
+        "one_step_determinant": "1 + K h^2",
+        "max_relative_error_vs_theory": null,
+        "levels_resolved_above_roundoff": 0,
+        "fit": {
+          "exponent": null,
+          "prefactor": null,
+          "r_squared": null,
+          "n_used": 0,
+          "n_total": 9,
+          "x_min": null,
+          "x_max": null,
+          "dropped_below_floor": 9,
+          "dropped_above_ceiling": 0
+        },
+        "levels": [
+          {
+            "n_steps": 10,
+            "h": 0.2,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 20,
+            "h": 0.1,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 40,
+            "h": 0.05,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 80,
+            "h": 0.025,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 160,
+            "h": 0.0125,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 320,
+            "h": 0.00625,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 640,
+            "h": 0.003125,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 1280,
+            "h": 0.0015625,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 2560,
+            "h": 0.00078125,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          }
+        ]
+      },
+      {
+        "curvature": 0.0,
+        "curvature_label": "K=0",
+        "integrator": "midpoint",
+        "invariant": "det Phi = a b' - a' b = 1",
+        "expected_drift_order": 3,
+        "regime": "exact-to-roundoff",
+        "fitted_drift_order": null,
+        "drift_order_error": null,
+        "finest_drift": 0.0,
+        "coarsest_drift": 0.0,
+        "one_step_determinant": "1 + K^2 h^4 / 4",
+        "max_relative_error_vs_theory": null,
+        "levels_resolved_above_roundoff": 0,
+        "fit": {
+          "exponent": null,
+          "prefactor": null,
+          "r_squared": null,
+          "n_used": 0,
+          "n_total": 9,
+          "x_min": null,
+          "x_max": null,
+          "dropped_below_floor": 9,
+          "dropped_above_ceiling": 0
+        },
+        "levels": [
+          {
+            "n_steps": 10,
+            "h": 0.2,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 20,
+            "h": 0.1,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 40,
+            "h": 0.05,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 80,
+            "h": 0.025,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 160,
+            "h": 0.0125,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 320,
+            "h": 0.00625,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 640,
+            "h": 0.003125,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 1280,
+            "h": 0.0015625,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 2560,
+            "h": 0.00078125,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          }
+        ]
+      },
+      {
+        "curvature": 0.0,
+        "curvature_label": "K=0",
+        "integrator": "rk4",
+        "invariant": "det Phi = a b' - a' b = 1",
+        "expected_drift_order": 5,
+        "regime": "exact-to-roundoff",
+        "fitted_drift_order": null,
+        "drift_order_error": null,
+        "finest_drift": 0.0,
+        "coarsest_drift": 0.0,
+        "one_step_determinant": "(1 - K h^2/2 + K^2 h^4/24)^2 + K (h - K h^3/6)^2",
+        "max_relative_error_vs_theory": null,
+        "levels_resolved_above_roundoff": 0,
+        "fit": {
+          "exponent": null,
+          "prefactor": null,
+          "r_squared": null,
+          "n_used": 0,
+          "n_total": 9,
+          "x_min": null,
+          "x_max": null,
+          "dropped_below_floor": 9,
+          "dropped_above_ceiling": 0
+        },
+        "levels": [
+          {
+            "n_steps": 10,
+            "h": 0.2,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 20,
+            "h": 0.1,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 40,
+            "h": 0.05,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 80,
+            "h": 0.025,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 160,
+            "h": 0.0125,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 320,
+            "h": 0.00625,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 640,
+            "h": 0.003125,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 1280,
+            "h": 0.0015625,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 2560,
+            "h": 0.00078125,
+            "drift": 0.0,
+            "theory_drift": 0.0,
+            "relative_error": null
+          }
+        ]
+      },
+      {
+        "curvature": 1.0,
+        "curvature_label": "K=+1",
+        "integrator": "euler",
+        "invariant": "det Phi = a b' - a' b = 1",
+        "expected_drift_order": 1,
+        "regime": "drifting",
+        "fitted_drift_order": 1.0269915162362813,
+        "drift_order_error": 0.026991516236281266,
+        "finest_drift": 0.0015637208615721931,
+        "coarsest_drift": 0.48024428491834414,
+        "one_step_determinant": "1 + K h^2",
+        "max_relative_error_vs_theory": 9.661160760288112e-13,
+        "levels_resolved_above_roundoff": 9,
+        "fit": {
+          "exponent": 1.0269915162362813,
+          "prefactor": 2.3474229849100445,
+          "r_squared": 0.9997004258016908,
+          "n_used": 9,
+          "n_total": 9,
+          "x_min": 0.00078125,
+          "x_max": 0.2,
+          "dropped_below_floor": 0,
+          "dropped_above_ceiling": 0
+        },
+        "levels": [
+          {
+            "n_steps": 10,
+            "h": 0.2,
+            "drift": 0.48024428491834414,
+            "theory_drift": 0.480244284918344,
+            "relative_error": 4.440892098500626e-16
+          },
+          {
+            "n_steps": 20,
+            "h": 0.1,
+            "drift": 0.22019003994796682,
+            "theory_drift": 0.22019003994796688,
+            "relative_error": 2.220446049250313e-16
+          },
+          {
+            "n_steps": 40,
+            "h": 0.05,
+            "drift": 0.10503301012907151,
+            "theory_drift": 0.10503301012907079,
+            "relative_error": 6.8833827526759706e-15
+          },
+          {
+            "n_steps": 80,
+            "h": 0.025,
+            "drift": 0.051254677234369606,
+            "theory_drift": 0.05125467723437088,
+            "relative_error": 2.4868995751603507e-14
+          },
+          {
+            "n_steps": 160,
+            "h": 0.0125,
+            "drift": 0.025313118166365278,
+            "theory_drift": 0.025313118166365747,
+            "relative_error": 1.8540724511240114e-14
+          },
+          {
+            "n_steps": 320,
+            "h": 0.00625,
+            "drift": 0.012578204335565557,
+            "theory_drift": 0.012578204335566145,
+            "relative_error": 4.674038933671909e-14
+          },
+          {
+            "n_steps": 640,
+            "h": 0.003125,
+            "drift": 0.00626954129504842,
+            "theory_drift": 0.0062695412950521286,
+            "relative_error": 5.915268275202834e-13
+          },
+          {
+            "n_steps": 1280,
+            "h": 0.0015625,
+            "drift": 0.0031298840761111446,
+            "theory_drift": 0.0031298840761085443,
+            "relative_error": 8.308909116294672e-13
+          },
+          {
+            "n_steps": 2560,
+            "h": 0.00078125,
+            "drift": 0.0015637208615721931,
+            "theory_drift": 0.0015637208615737039,
+            "relative_error": 9.661160760288112e-13
+          }
+        ]
+      },
+      {
+        "curvature": 1.0,
+        "curvature_label": "K=+1",
+        "integrator": "midpoint",
+        "invariant": "det Phi = a b' - a' b = 1",
+        "expected_drift_order": 3,
+        "regime": "drifting",
+        "fitted_drift_order": 3.0001913931510145,
+        "drift_order_error": 0.00019139315101446286,
+        "finest_drift": 2.3841928431522774e-10,
+        "coarsest_drift": 0.004007207685378544,
+        "one_step_determinant": "1 + K^2 h^4 / 4",
+        "max_relative_error_vs_theory": 2.2584356345056733e-06,
+        "levels_resolved_above_roundoff": 8,
+        "fit": {
+          "exponent": 3.0001913931510145,
+          "prefactor": 0.5005350702608629,
+          "r_squared": 0.9999999932066438,
+          "n_used": 9,
+          "n_total": 9,
+          "x_min": 0.00078125,
+          "x_max": 0.2,
+          "dropped_below_floor": 0,
+          "dropped_above_ceiling": 0
+        },
+        "levels": [
+          {
+            "n_steps": 10,
+            "h": 0.2,
+            "drift": 0.004007207685378544,
+            "theory_drift": 0.0040072076853785825,
+            "relative_error": 9.547918011776346e-15
+          },
+          {
+            "n_steps": 20,
+            "h": 0.1,
+            "drift": 0.000500118767814639,
+            "theory_drift": 0.0005001187678143928,
+            "relative_error": 4.922728891187944e-13
+          },
+          {
+            "n_steps": 40,
+            "h": 0.05,
+            "drift": 6.250190433432223e-05,
+            "theory_drift": 6.250190433456477e-05,
+            "relative_error": 3.880451515669847e-12
+          },
+          {
+            "n_steps": 80,
+            "h": 0.025,
+            "drift": 7.812530136153129e-06,
+            "theory_drift": 7.812530136184918e-06,
+            "relative_error": 4.068967385251199e-12
+          },
+          {
+            "n_steps": 160,
+            "h": 0.0125,
+            "drift": 9.765629724878266e-07,
+            "theory_drift": 9.765629738570785e-07,
+            "relative_error": 1.4021132033192885e-09
+          },
+          {
+            "n_steps": 320,
+            "h": 0.00625,
+            "drift": 1.2207031896416254e-07,
+            "theory_drift": 1.2207031992729784e-07,
+            "relative_error": 7.890003872468299e-09
+          },
+          {
+            "n_steps": 640,
+            "h": 0.003125,
+            "drift": 1.525878934316438e-08,
+            "theory_drift": 1.5258789178733425e-08,
+            "relative_error": 1.077614708577812e-08
+          },
+          {
+            "n_steps": 1280,
+            "h": 0.0015625,
+            "drift": 1.9073529422541924e-09,
+            "theory_drift": 1.9073486346300685e-09,
+            "relative_error": 2.2584356345056733e-06
+          },
+          {
+            "n_steps": 2560,
+            "h": 0.00078125,
+            "drift": 2.3841928431522774e-10,
+            "theory_drift": 2.3841857912997316e-10,
+            "relative_error": 2.9577613336329023e-06
+          }
+        ]
+      },
+      {
+        "curvature": 1.0,
+        "curvature_label": "K=+1",
+        "integrator": "rk4",
+        "invariant": "det Phi = a b' - a' b = 1",
+        "expected_drift_order": 5,
+        "regime": "drifting",
+        "fitted_drift_order": 4.998473613886617,
+        "drift_order_error": 0.0015263861133831824,
+        "finest_drift": 1.9984014443252818e-15,
+        "coarsest_drift": 8.84440924397989e-06,
+        "one_step_determinant": "(1 - K h^2/2 + K^2 h^4/24)^2 + K (h - K h^3/6)^2",
+        "max_relative_error_vs_theory": 2.0893077712358377e-07,
+        "levels_resolved_above_roundoff": 3,
+        "fit": {
+          "exponent": 4.998473613886617,
+          "prefactor": 0.027612531941813134,
+          "r_squared": 0.9999999498273631,
+          "n_used": 5,
+          "n_total": 9,
+          "x_min": 0.0125,
+          "x_max": 0.2,
+          "dropped_below_floor": 4,
+          "dropped_above_ceiling": 0
+        },
+        "levels": [
+          {
+            "n_steps": 10,
+            "h": 0.2,
+            "drift": 8.84440924397989e-06,
+            "theory_drift": 8.844409244904433e-06,
+            "relative_error": 1.0453415910660624e-10
+          },
+          {
+            "n_steps": 20,
+            "h": 0.1,
+            "drift": 2.7743051944639774e-07,
+            "theory_drift": 2.774305175256958e-07,
+            "relative_error": 6.923182027662733e-09
+          },
+          {
+            "n_steps": 40,
+            "h": 0.05,
+            "drift": 8.677842444626549e-09,
+            "theory_drift": 8.677840631558562e-09,
+            "relative_error": 2.0893077712358377e-07
+          },
+          {
+            "n_steps": 80,
+            "h": 0.025,
+            "drift": 2.712468027965542e-10,
+            "theory_drift": 2.7125857112428454e-10,
+            "relative_error": 4.338416913995946e-05
+          },
+          {
+            "n_steps": 160,
+            "h": 0.0125,
+            "drift": 8.474443369266282e-12,
+            "theory_drift": 8.473222123903521e-12,
+            "relative_error": 0.0001441299832465326
+          },
+          {
+            "n_steps": 320,
+            "h": 0.00625,
+            "drift": 2.6567636979279996e-13,
+            "theory_drift": 2.842170943039998e-13,
+            "relative_error": 0.0652343749998675
+          },
+          {
+            "n_steps": 640,
+            "h": 0.003125,
+            "drift": 6.772360450213455e-15,
+            "theory_drift": 7.10542735760075e-14,
+            "relative_error": 0.9046874999999966
+          },
+          {
+            "n_steps": 1280,
+            "h": 0.0015625,
+            "drift": 1.887379141862766e-15,
+            "theory_drift": 0.0,
+            "relative_error": null
+          },
+          {
+            "n_steps": 2560,
+            "h": 0.00078125,
+            "drift": 1.9984014443252818e-15,
+            "theory_drift": 5.684341886082416e-13,
+            "relative_error": 0.996484375000001
+          }
+        ]
+      },
+      {
+        "curvature": -1.0,
+        "curvature_label": "K=-1",
+        "integrator": "euler",
+        "invariant": "det Phi = a b' - a' b = 1",
+        "expected_drift_order": 1,
+        "regime": "drifting",
+        "fitted_drift_order": 0.9737947000443261,
+        "drift_order_error": 0.02620529995567389,
+        "finest_drift": 0.0015612804085201049,
+        "coarsest_drift": 0.33516736400849645,
+        "one_step_determinant": "1 + K h^2",
+        "max_relative_error_vs_theory": 1.1289857937413217e-11,
+        "levels_resolved_above_roundoff": 9,
+        "fit": {
+          "exponent": 0.9737947000443261,
+          "prefactor": 1.7116525881807707,
+          "r_squared": 0.999692737600929,
+          "n_used": 9,
+          "n_total": 9,
+          "x_min": 0.00078125,
+          "x_max": 0.2,
+          "dropped_below_floor": 0,
+          "dropped_above_ceiling": 0
+        },
+        "levels": [
+          {
+            "n_steps": 10,
+            "h": 0.2,
+            "drift": 0.33516736400849645,
+            "theory_drift": 0.335167364008499,
+            "relative_error": 7.66053886991358e-15
+          },
+          {
+            "n_steps": 20,
+            "h": 0.1,
+            "drift": 0.18209306240276923,
+            "theory_drift": 0.18209306240276918,
+            "relative_error": 2.220446049250313e-16
+          },
+          {
+            "n_steps": 40,
+            "h": 0.05,
+            "drift": 0.09527586841087476,
+            "theory_drift": 0.09527586841087708,
+            "relative_error": 2.4313884239290928e-14
+          },
+          {
+            "n_steps": 80,
+            "h": 0.025,
+            "drift": 0.04878544453863043,
+            "theory_drift": 0.048785444538635,
+            "relative_error": 9.370282327836321e-14
+          },
+          {
+            "n_steps": 160,
+            "h": 0.0125,
+            "drift": 0.024691993070433682,
+            "theory_drift": 0.02469199307042919,
+            "relative_error": 1.8185453143360064e-13
+          },
+          {
+            "n_steps": 320,
+            "h": 0.00625,
+            "drift": 0.012422440620248665,
+            "theory_drift": 0.012422440620229623,
+            "relative_error": 1.5327739077974911e-12
+          },
+          {
+            "n_steps": 640,
+            "h": 0.003125,
+            "drift": 0.006230539704253246,
+            "theory_drift": 0.006230539704240321,
+            "relative_error": 2.0745627438145675e-12
+          },
+          {
+            "n_steps": 1280,
+            "h": 0.0015625,
+            "drift": 0.0031201260726128055,
+            "theory_drift": 0.0031201260725929867,
+            "relative_error": 6.351807968485446e-12
+          },
+          {
+            "n_steps": 2560,
+            "h": 0.00078125,
+            "drift": 0.0015612804085201049,
+            "theory_drift": 0.0015612804085024783,
+            "relative_error": 1.1289857937413217e-11
+          }
+        ]
+      },
+      {
+        "curvature": -1.0,
+        "curvature_label": "K=-1",
+        "integrator": "midpoint",
+        "invariant": "det Phi = a b' - a' b = 1",
+        "expected_drift_order": 3,
+        "regime": "drifting",
+        "fitted_drift_order": 3.0001756674328983,
+        "drift_order_error": 0.00017566743289831876,
+        "finest_drift": 2.38459918477929e-10,
+        "coarsest_drift": 0.004007207685377878,
+        "one_step_determinant": "1 + K^2 h^4 / 4",
+        "max_relative_error_vs_theory": 7.287620746199153e-06,
+        "levels_resolved_above_roundoff": 8,
+        "fit": {
+          "exponent": 3.0001756674328983,
+          "prefactor": 0.5005095533321291,
+          "r_squared": 0.9999999927476053,
+          "n_used": 9,
+          "n_total": 9,
+          "x_min": 0.00078125,
+          "x_max": 0.2,
+          "dropped_below_floor": 0,
+          "dropped_above_ceiling": 0
+        },
+        "levels": [
+          {
+            "n_steps": 10,
+            "h": 0.2,
+            "drift": 0.004007207685377878,
+            "theory_drift": 0.0040072076853785825,
+            "relative_error": 1.7574830479816228e-13
+          },
+          {
+            "n_steps": 20,
+            "h": 0.1,
+            "drift": 0.0005001187678157493,
+            "theory_drift": 0.0005001187678143928,
+            "relative_error": 2.7122748491592574e-12
+          },
+          {
+            "n_steps": 40,
+            "h": 0.05,
+            "drift": 6.250190433121361e-05,
+            "theory_drift": 6.250190433456477e-05,
+            "relative_error": 5.3616888706642385e-11
+          },
+          {
+            "n_steps": 80,
+            "h": 0.025,
+            "drift": 7.812530133932682e-06,
+            "theory_drift": 7.812530136184918e-06,
+            "relative_error": 2.8828495146626665e-10
+          },
+          {
+            "n_steps": 160,
+            "h": 0.0125,
+            "drift": 9.765629815916554e-07,
+            "theory_drift": 9.765629738570785e-07,
+            "relative_error": 7.920202937938825e-09
+          },
+          {
+            "n_steps": 320,
+            "h": 0.00625,
+            "drift": 1.2207031829802872e-07,
+            "theory_drift": 1.2207031992729784e-07,
+            "relative_error": 1.334697175003896e-08
+          },
+          {
+            "n_steps": 640,
+            "h": 0.003125,
+            "drift": 1.5258796892680948e-08,
+            "theory_drift": 1.5258789178733425e-08,
+            "relative_error": 5.055412610754928e-07
+          },
+          {
+            "n_steps": 1280,
+            "h": 0.0015625,
+            "drift": 1.9073347345965885e-09,
+            "theory_drift": 1.9073486346300685e-09,
+            "relative_error": 7.287620746199153e-06
+          },
+          {
+            "n_steps": 2560,
+            "h": 0.00078125,
+            "drift": 2.38459918477929e-10,
+            "theory_drift": 2.3841857912997316e-10,
+            "relative_error": 0.0001733897924680594
+          }
+        ]
+      },
+      {
+        "curvature": -1.0,
+        "curvature_label": "K=-1",
+        "integrator": "rk4",
+        "invariant": "det Phi = a b' - a' b = 1",
+        "expected_drift_order": 5,
+        "regime": "drifting",
+        "fitted_drift_order": 5.002040145391545,
+        "drift_order_error": 0.0020401453915450674,
+        "finest_drift": 5.3290705182007514e-14,
+        "coarsest_drift": 8.933369246122425e-06,
+        "one_step_determinant": "(1 - K h^2/2 + K^2 h^4/24)^2 + K (h - K h^3/6)^2",
+        "max_relative_error_vs_theory": 8.140564944358886e-07,
+        "levels_resolved_above_roundoff": 3,
+        "fit": {
+          "exponent": 5.002040145391545,
+          "prefactor": 0.027976882001465118,
+          "r_squared": 0.9999999704692955,
+          "n_used": 5,
+          "n_total": 9,
+          "x_min": 0.0125,
+          "x_max": 0.2,
+          "dropped_below_floor": 4,
+          "dropped_above_ceiling": 0
+        },
+        "levels": [
+          {
+            "n_steps": 10,
+            "h": 0.2,
+            "drift": 8.933369246122425e-06,
+            "theory_drift": 8.93336924515766e-06,
+            "relative_error": 1.0799561245278255e-10
+          },
+          {
+            "n_steps": 20,
+            "h": 0.1,
+            "drift": 2.781250376671096e-07,
+            "theory_drift": 2.7812502644839523e-07,
+            "relative_error": 4.033694667171517e-08
+          },
+          {
+            "n_steps": 40,
+            "h": 0.05,
+            "drift": 8.683274543841435e-09,
+            "theory_drift": 8.683267475171155e-09,
+            "relative_error": 8.140564944358886e-07
+          },
+          {
+            "n_steps": 80,
+            "h": 0.025,
+            "drift": 2.7129587465424265e-10,
+            "theory_drift": 2.7126745298114533e-10,
+            "relative_error": 0.00010477362022243142
+          },
+          {
+            "n_steps": 160,
+            "h": 0.0125,
+            "drift": 8.464340339742193e-12,
+            "theory_drift": 8.455458555580717e-12,
+            "relative_error": 0.0010504201638614763
+          },
+          {
+            "n_steps": 320,
+            "h": 0.00625,
+            "drift": 2.6645352591003757e-13,
+            "theory_drift": 2.1316282072805272e-13,
+            "relative_error": 0.249999999999867
+          },
+          {
+            "n_steps": 640,
+            "h": 0.003125,
+            "drift": 2.042810365310288e-14,
+            "theory_drift": 1.421085471520301e-13,
+            "relative_error": 0.8562500000000102
+          },
+          {
+            "n_steps": 1280,
+            "h": 0.0015625,
+            "drift": 1.9539925233402755e-14,
+            "theory_drift": 1.4210854715200994e-13,
+            "relative_error": 0.8624999999999903
+          },
+          {
+            "n_steps": 2560,
+            "h": 0.00078125,
+            "drift": 5.3290705182007514e-14,
+            "theory_drift": 0.0,
+            "relative_error": null
+          }
+        ]
+      }
+    ],
     "first_order_validity": [
       {
         "curvature": 0.0,
@@ -2192,6 +3050,7 @@
         "arc_length": 0.5,
         "jacobi_field": 0.5,
         "law": "sn_K(d/2) = sn_K(s) sin(eps/2)",
+        "observation_mode": "intrinsic-surface-distance",
         "expected_exponent": 2.0,
         "fitted_exponent": 1.9999951372120648,
         "fitted_coefficient": 0.0416653438912532,
@@ -2587,6 +3446,7 @@
         "arc_length": 1.0,
         "jacobi_field": 1.0,
         "law": "sn_K(d/2) = sn_K(s) sin(eps/2)",
+        "observation_mode": "intrinsic-surface-distance",
         "expected_exponent": 2.0,
         "fitted_exponent": 1.9999951372120648,
         "fitted_coefficient": 0.0416653438912532,
@@ -2982,6 +3842,7 @@
         "arc_length": 2.0,
         "jacobi_field": 2.0,
         "law": "sn_K(d/2) = sn_K(s) sin(eps/2)",
+        "observation_mode": "intrinsic-surface-distance",
         "expected_exponent": 2.0,
         "fitted_exponent": 1.9999951372120648,
         "fitted_coefficient": 0.0416653438912532,
@@ -3377,6 +4238,7 @@
         "arc_length": 0.5,
         "jacobi_field": 0.479425538604203,
         "law": "sn_K(d/2) = sn_K(s) sin(eps/2)",
+        "observation_mode": "intrinsic-surface-distance",
         "expected_exponent": 2.0,
         "fitted_exponent": 1.9999967833300185,
         "fitted_coefficient": 0.032089081788140746,
@@ -3772,6 +4634,7 @@
         "arc_length": 1.0,
         "jacobi_field": 0.8414709848078965,
         "law": "sn_K(d/2) = sn_K(s) sin(eps/2)",
+        "observation_mode": "intrinsic-surface-distance",
         "expected_exponent": 2.0,
         "fitted_exponent": 2.0000101121347935,
         "fitted_coefficient": 0.012164753639410117,
@@ -4167,6 +5030,7 @@
         "arc_length": 2.0,
         "jacobi_field": 0.9092974268256817,
         "law": "sn_K(d/2) = sn_K(s) sin(eps/2)",
+        "observation_mode": "intrinsic-surface-distance",
         "expected_exponent": 2.0,
         "fitted_exponent": 2.00004172996377,
         "fitted_coefficient": 0.007218291121137301,
@@ -4562,6 +5426,7 @@
         "arc_length": 0.5,
         "jacobi_field": 0.5210953054937474,
         "law": "sn_K(d/2) = sn_K(s) sin(eps/2)",
+        "observation_mode": "intrinsic-surface-distance",
         "expected_exponent": 2.0,
         "fitted_exponent": 1.9999946800915274,
         "fitted_coefficient": 0.05297871567535763,
@@ -4957,6 +5822,7 @@
         "arc_length": 1.0,
         "jacobi_field": 1.1752011936438014,
         "law": "sn_K(d/2) = sn_K(s) sin(eps/2)",
+        "observation_mode": "intrinsic-surface-distance",
         "expected_exponent": 2.0,
         "fitted_exponent": 1.9999912021941448,
         "fitted_coefficient": 0.09920410325722533,
@@ -5352,6 +6218,7 @@
         "arc_length": 2.0,
         "jacobi_field": 3.6268604078470186,
         "law": "sn_K(d/2) = sn_K(s) sin(eps/2)",
+        "observation_mode": "intrinsic-surface-distance",
         "expected_exponent": 2.0,
         "fitted_exponent": 1.999992072285121,
         "fitted_coefficient": 0.5897052104602793,
@@ -7758,6 +8625,142 @@
       "passed": true
     },
     {
+      "id": "wronskian/K=0/euler",
+      "statement": "euler conserves det Phi exactly on K=0",
+      "value": 0.0,
+      "threshold": 1e-13,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian/K=0/midpoint",
+      "statement": "midpoint conserves det Phi exactly on K=0",
+      "value": 0.0,
+      "threshold": 1e-13,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian/K=0/rk4",
+      "statement": "rk4 conserves det Phi exactly on K=0",
+      "value": 0.0,
+      "threshold": 1e-13,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian/K=+1/euler",
+      "statement": "drift of det Phi under euler falls at order 1, as its one-step determinant 1 + K h^2 says",
+      "value": 0.026991516236281266,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian-exact/K=+1/euler",
+      "statement": "and matches the exact value |d^n - 1| wherever that is above roundoff, not merely its slope",
+      "value": 9.661160760288112e-13,
+      "threshold": 0.001,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian/K=+1/midpoint",
+      "statement": "drift of det Phi under midpoint falls at order 3, as its one-step determinant 1 + K^2 h^4 / 4 says",
+      "value": 0.00019139315101446286,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian-exact/K=+1/midpoint",
+      "statement": "and matches the exact value |d^n - 1| wherever that is above roundoff, not merely its slope",
+      "value": 2.2584356345056733e-06,
+      "threshold": 0.001,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian/K=+1/rk4",
+      "statement": "drift of det Phi under rk4 falls at order 5, as its one-step determinant (1 - K h^2/2 + K^2 h^4/24)^2 + K (h - K h^3/6)^2 says",
+      "value": 0.0015263861133831824,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian-exact/K=+1/rk4",
+      "statement": "and matches the exact value |d^n - 1| wherever that is above roundoff, not merely its slope",
+      "value": 2.0893077712358377e-07,
+      "threshold": 0.001,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian/K=-1/euler",
+      "statement": "drift of det Phi under euler falls at order 1, as its one-step determinant 1 + K h^2 says",
+      "value": 0.02620529995567389,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian-exact/K=-1/euler",
+      "statement": "and matches the exact value |d^n - 1| wherever that is above roundoff, not merely its slope",
+      "value": 1.1289857937413217e-11,
+      "threshold": 0.001,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian/K=-1/midpoint",
+      "statement": "drift of det Phi under midpoint falls at order 3, as its one-step determinant 1 + K^2 h^4 / 4 says",
+      "value": 0.00017566743289831876,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian-exact/K=-1/midpoint",
+      "statement": "and matches the exact value |d^n - 1| wherever that is above roundoff, not merely its slope",
+      "value": 7.287620746199153e-06,
+      "threshold": 0.001,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian/K=-1/rk4",
+      "statement": "drift of det Phi under rk4 falls at order 5, as its one-step determinant (1 - K h^2/2 + K^2 h^4/24)^2 + K (h - K h^3/6)^2 says",
+      "value": 0.0020401453915450674,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian-exact/K=-1/rk4",
+      "statement": "and matches the exact value |d^n - 1| wherever that is above roundoff, not merely its slope",
+      "value": 8.140564944358886e-07,
+      "threshold": 0.001,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "wronskian-discriminates/K=+1",
+      "statement": "the invariant has teeth: at the same finest step euler has lost it while rk4 still holds it to roundoff",
+      "value": 782485854387.5555,
+      "threshold": 1000000.0,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "wronskian-discriminates/K=-1",
+      "statement": "the invariant has teeth: at the same finest step euler has lost it while rk4 still holds it to roundoff",
+      "value": 29297424441.8,
+      "threshold": 1000000.0,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
       "id": "variation-exponent/K=0/s=0.5",
       "statement": "relative error of the first-order prediction grows like eps^2",
       "value": 4.862787935211443e-06,
@@ -8319,14 +9322,14 @@
     }
   ],
   "summary": {
-    "n_checks": 109,
+    "n_checks": 126,
     "n_failed": 0,
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "1d29b76c266e09d6ed89595c54e080a86f281789a4375490f70b184b7c1422aa",
+  "content_hash": "ab7017e637d7fda33fcb302ad91534365d73a286c0d6c213c94e22e66cd7b685",
   "environment": {
-    "geojac_version": "0.1.0",
+    "package_version": "0.1.0",
     "python": "3.11.15",
     "numpy": "2.4.6",
     "platform": "Linux-6.18.44-fc-v37-x86_64-with-glibc2.39"

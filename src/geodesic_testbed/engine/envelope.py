@@ -32,6 +32,7 @@ import numpy as np
 
 from .integrators import integrate
 from .surfaces import ParametricSurface
+from .transfer import TransferMap
 
 
 @dataclass(frozen=True)
@@ -48,11 +49,24 @@ class PathEnvelope:
     v: np.ndarray
     points: np.ndarray
     curvature: np.ndarray
+    lateral_basis: np.ndarray
+    lateral_rate: np.ndarray
     jacobi_field: np.ndarray
     jacobi_derivative: np.ndarray
     speed: np.ndarray
 
     # -- readout -----------------------------------------------------------
+    @property
+    def transfer_map(self) -> TransferMap:
+        """``Phi(s)``: both columns of the starting-pose sensitivity."""
+        return TransferMap(
+            arc_length=self.arc_length,
+            a=self.lateral_basis,
+            a_rate=self.lateral_rate,
+            b=self.jacobi_field,
+            b_rate=self.jacobi_derivative,
+        )
+
     @property
     def speed_drift(self) -> np.ndarray:
         """How far the unit-speed condition has slipped; nothing re-normalises it."""
@@ -148,7 +162,7 @@ def integrate_paths(
         [surface.initial_state(u0, v0, float(angle)) for angle in angles], axis=0
     )
     grid, trajectory = integrate(
-        surface.geodesic_jacobi_rhs(), starts, length=length, n_steps=n_steps, method=method
+        surface.geodesic_transfer_rhs(), starts, length=length, n_steps=n_steps, method=method
     )
     envelopes = []
     for index, angle in enumerate(angles):
@@ -166,8 +180,10 @@ def integrate_paths(
                 v=v,
                 points=surface.embed(u, v),
                 curvature=np.asarray(surface.gaussian_curvature(u, v), dtype=float),
-                jacobi_field=trajectory[:, index, 4],
-                jacobi_derivative=trajectory[:, index, 5],
+                lateral_basis=trajectory[:, index, 4],
+                lateral_rate=trajectory[:, index, 5],
+                jacobi_field=trajectory[:, index, 6],
+                jacobi_derivative=trajectory[:, index, 7],
                 speed=np.asarray(surface.speed(u, v, du, dv), dtype=float),
             )
         )
@@ -220,11 +236,65 @@ def finite_difference_jacobi(
         [surface.initial_state(u0, v0, float(angle)) for angle in offsets], axis=0
     )
     grid, trajectory = integrate(
-        surface.geodesic_jacobi_rhs(), starts, length=length, n_steps=n_steps, method=method
+        surface.geodesic_transfer_rhs(), starts, length=length, n_steps=n_steps, method=method
     )
     count = len(epsilons)
     forward = surface.embed(trajectory[:, :count, 0], trajectory[:, :count, 1])
     backward = surface.embed(trajectory[:, count:, 0], trajectory[:, count:, 1])
+    separation = np.sqrt(np.sum((forward - backward) ** 2, axis=-1))
+    measured = separation / (2.0 * epsilons)
+    return grid, (measured[:, 0] if np.ndim(epsilon) == 0 else measured)
+
+
+def finite_difference_lateral(
+    surface: ParametricSurface,
+    *,
+    u0: float,
+    v0: float,
+    heading: float = 0.0,
+    epsilon,
+    length: float,
+    n_steps: int,
+    method: str = "rk4",
+) -> tuple[np.ndarray, np.ndarray]:
+    """``|d gamma / d lateral offset|`` by central-differencing the *start point*.
+
+    The independent check on the first column of the transfer map, and a
+    different construction from the heading one. The start is moved a distance
+    ``epsilon`` to either side along the geodesic perpendicular to the path,
+    and the initial direction at the moved start is the parallel transport of
+    the original one along that perpendicular. Parallel transport along a
+    geodesic preserves the angle to it, and rotation by a right angle commutes
+    with transport, so the transported direction is simply the perpendicular of
+    the perpendicular geodesic's own tangent at the displaced point -- with the
+    sign that undoes the rotation, opposite on the two sides.
+
+    Returns ``(s, |J|)``, the sweep on the second axis when ``epsilon`` is an
+    array. The measured quantity is an ``ambient-euclidean-chord``.
+    """
+    epsilons = np.atleast_1d(np.asarray(epsilon, dtype=float))
+    if np.any(epsilons <= 0.0):
+        raise ValueError("epsilon must be positive")
+    rhs = surface.geodesic_transfer_rhs()
+    tangent = surface.unit_direction(u0, v0, heading)
+    normal = surface.perpendicular_direction(u0, v0, *tangent)
+
+    starts = []
+    for offset in epsilons:
+        for sign in (1.0, -1.0):
+            side = surface.state_from_tangent(u0, v0, sign * normal[0], sign * normal[1])
+            _, walk = integrate(rhs, side, length=float(offset), n_steps=n_steps, method=method)
+            u, v, du, dv = (float(walk[-1, index]) for index in range(4))
+            transported = surface.perpendicular_direction(u, v, du, dv)
+            # +side started along +normal, so undoing the rotation flips the sign.
+            direction = (-sign * transported[0], -sign * transported[1])
+            starts.append(surface.state_from_tangent(u, v, *direction))
+
+    grid, trajectory = integrate(
+        rhs, np.stack(starts, axis=0), length=length, n_steps=n_steps, method=method
+    )
+    forward = surface.embed(trajectory[:, 0::2, 0], trajectory[:, 0::2, 1])
+    backward = surface.embed(trajectory[:, 1::2, 0], trajectory[:, 1::2, 1])
     separation = np.sqrt(np.sum((forward - backward) ** 2, axis=-1))
     measured = separation / (2.0 * epsilons)
     return grid, (measured[:, 0] if np.ndim(epsilon) == 0 else measured)
@@ -239,12 +309,27 @@ def scan_headings(
     length: float,
     n_steps: int,
     method: str = "rk4",
+    dead_zone_fraction: float = 0.2,
 ) -> list[dict[str, Any]]:
-    """Sensitivity of every candidate starting heading, worst first.
+    """Rank candidate starting headings by forward angular-error amplification.
 
-    The cheapest useful decision this instrument supports: of the directions a
-    scan or a tow could be laid in, which one carries an aiming error the least
-    far.
+    This measures one thing: ``max |b(s)|``, how far an initial aiming error is
+    carried. That is **not** the same as robustness, and the scan reports
+    enough to see the difference.
+
+    A small ``|b|`` away from the start is a *focus*: neighbouring geodesics
+    converge there. Forward separation is indeed small, but the map from
+    starting heading to endpoint is ill conditioned, the path is at or past a
+    conjugate point, local minimality can be lost, and a family of such paths
+    crowds together instead of covering. A route chosen purely by minimum
+    amplification will walk straight into one.
+
+    So each row carries both an upper measure (``max_forward_amplification``)
+    and a lower one (``focus_margin``: the smallest ``|b|`` after the initial
+    dead zone, where ``b`` is small only because it starts at zero). Rows are
+    ordered by amplification; a production objective has to weigh both, and
+    also boundary clearance, chart validity, path length and coverage, none of
+    which are modelled here.
     """
     rows: list[dict[str, Any]] = []
     for envelope in integrate_paths(
@@ -257,16 +342,23 @@ def scan_headings(
         method=method,
     ):
         heading = envelope.start[2]
+        after_dead_zone = envelope.arc_length >= dead_zone_fraction * length
+        focus_points = envelope.focus_points()
         rows.append(
             {
                 "heading": float(heading),
                 "heading_degrees": float(np.rad2deg(heading)),
-                "max_abs_jacobi_field": float(np.max(np.abs(envelope.jacobi_field))),
+                "max_forward_amplification": float(np.max(np.abs(envelope.jacobi_field))),
+                "focus_margin": float(np.min(np.abs(envelope.jacobi_field[after_dead_zone]))),
+                "dead_zone_fraction": float(dead_zone_fraction),
                 "jacobi_field_at_end": float(envelope.jacobi_field[-1]),
                 "amplification_at_end": float(envelope.amplification[-1]),
+                "max_lateral_amplification": float(np.max(np.abs(envelope.lateral_basis))),
+                "max_wronskian_drift": float(np.max(envelope.transfer_map.wronskian_drift)),
                 "mean_curvature_along_path": float(np.mean(envelope.curvature)),
-                "focus_points": envelope.focus_points(),
+                "focus_points": focus_points,
+                "passes_a_focus": bool(focus_points),
                 "max_speed_drift": float(np.max(envelope.speed_drift)),
             }
         )
-    return sorted(rows, key=lambda row: row["max_abs_jacobi_field"])
+    return sorted(rows, key=lambda row: row["max_forward_amplification"])

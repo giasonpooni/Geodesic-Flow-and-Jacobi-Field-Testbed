@@ -1,8 +1,45 @@
 {
-  "schema": "geodesic-jacobi-surfaces-v1",
+  "schema": "geodesic-jacobi-surfaces-v2",
+  "supersedes": "geodesic-jacobi-surfaces-v1",
+  "schema_changes": [
+    "adds results.lateral_route: the a column checked by moving the start point",
+    "adds the lateral column and the Wronskian to the anchors and envelopes",
+    "heading_scan: max_abs_jacobi_field -> max_forward_amplification, adds focus_margin and passes_a_focus, most/least_tolerant -> lowest/highest_amplification, sensitivity_ratio -> amplification_ratio",
+    "adds observation_modes and tags each comparison with one"
+  ],
   "experiment": "curvature-aware-path-sensitivity-on-parametric-surfaces",
   "claim_scope": "numerical-verification-anchored-to-the-constant-curvature-stage",
-  "depends_on": "geodesic-jacobi-report-v1",
+  "depends_on": "geodesic-jacobi-report-v2",
+  "observation_modes": [
+    {
+      "identifier": "intrinsic-surface-distance",
+      "version": 1,
+      "quantity": "Riemannian distance between two points, measured in the surface",
+      "implemented": true,
+      "note": "What the Jacobi field predicts. Available in closed form on the constant-curvature model spaces; on a general surface it would require solving a boundary-value problem and is not computed here."
+    },
+    {
+      "identifier": "ambient-euclidean-chord",
+      "version": 1,
+      "quantity": "straight-line distance in R^3 between two points of the surface",
+      "implemented": true,
+      "note": "What a pair of reconstructed 3-D coordinates gives. Differs from the intrinsic distance at second order in the separation, with a coefficient set by the transverse normal curvature."
+    },
+    {
+      "identifier": "scanner-reconstructed-chord",
+      "version": 0,
+      "quantity": "ambient chord as reported by a calibrated metrology system",
+      "implemented": false,
+      "note": "The ambient chord plus calibration, registration and fitting error. Needs a characterised instrument; nothing here models it."
+    },
+    {
+      "identifier": "camera-image-residual",
+      "version": 0,
+      "quantity": "residual in image coordinates, before reconstruction",
+      "implemented": false,
+      "note": "Furthest from the model of the four. Not modelled here."
+    }
+  ],
   "cases": [
     {
       "case": "plate",
@@ -115,6 +152,7 @@
     "heading_scan_key": "torus",
     "heading_scan_length": 6.0,
     "heading_scan_steps": 3000,
+    "focus_margin_floor": 0.25,
     "curve_samples": 200,
     "analytic_tolerance": 1e-11,
     "finite_difference_tolerance": 1e-07,
@@ -124,6 +162,7 @@
     "chord_closed_form_tolerance": 1e-09,
     "exactness_threshold": 1e-13,
     "speed_drift_tolerance": 1e-09,
+    "wronskian_tolerance": 1e-09,
     "curvature_tolerance": 1e-11,
     "curvature_tolerance_fd": 1e-06
   },
@@ -136,7 +175,10 @@
         "reference": "s",
         "derivatives": "analytic",
         "tolerance": 1e-11,
+        "lateral_reference": "1",
         "max_jacobi_error": 1.0946799022804043e-13,
+        "max_lateral_error": 0.0,
+        "max_wronskian_drift": 0.0,
         "max_speed_drift": 0.0,
         "max_curvature_error": 0.0,
         "focus_points": []
@@ -148,7 +190,10 @@
         "reference": "s",
         "derivatives": "analytic",
         "tolerance": 1e-11,
+        "lateral_reference": "1",
         "max_jacobi_error": 1.0946799022804043e-13,
+        "max_lateral_error": 0.0,
+        "max_wronskian_drift": 0.0,
         "max_speed_drift": 0.0,
         "max_curvature_error": 0.0,
         "focus_points": []
@@ -160,7 +205,10 @@
         "reference": "sin(s)",
         "derivatives": "analytic",
         "tolerance": 1e-11,
+        "lateral_reference": "cos(s)",
         "max_jacobi_error": 4.39648317751562e-13,
+        "max_lateral_error": 4.04343225568482e-13,
+        "max_wronskian_drift": 3.1086244689504383e-15,
         "max_speed_drift": 1.6053824936079764e-12,
         "max_curvature_error": 8.881784197001252e-16,
         "focus_points": [
@@ -174,7 +222,10 @@
         "reference": "sinh(s)",
         "derivatives": "analytic",
         "tolerance": 1e-11,
+        "lateral_reference": "cosh(s)",
         "max_jacobi_error": 1.2434497875801753e-14,
+        "max_lateral_error": 1.4210854715202004e-14,
+        "max_wronskian_drift": 1.9539925233402755e-14,
         "max_speed_drift": 9.325873406851315e-15,
         "max_curvature_error": 8.881784197001252e-16,
         "focus_points": []
@@ -185,6 +236,7 @@
         "case": "plate",
         "surface": "plane",
         "arc_length": 1.0,
+        "observation_mode": "ambient-euclidean-chord",
         "jacobi_from_equation": 1.0000000000000007,
         "constant_curvature": true,
         "expected_exponent": 2.0,
@@ -264,6 +316,7 @@
         "case": "rolled-sheet",
         "surface": "cylinder(R=1)",
         "arc_length": 1.0,
+        "observation_mode": "ambient-euclidean-chord",
         "jacobi_from_equation": 1.0000000000000007,
         "constant_curvature": true,
         "expected_exponent": 2.0,
@@ -343,6 +396,7 @@
         "case": "spherical-cap",
         "surface": "sphere(R=1)",
         "arc_length": 1.0,
+        "observation_mode": "ambient-euclidean-chord",
         "jacobi_from_equation": 0.8414709848078911,
         "constant_curvature": true,
         "expected_exponent": 2.0,
@@ -422,6 +476,7 @@
         "case": "pseudosphere",
         "surface": "pseudosphere",
         "arc_length": 1.0,
+        "observation_mode": "ambient-euclidean-chord",
         "jacobi_from_equation": 1.1752011936437878,
         "constant_curvature": true,
         "expected_exponent": 2.0,
@@ -501,6 +556,7 @@
         "case": "saddle",
         "surface": "hyperbolic-paraboloid(a=1)",
         "arc_length": 1.0,
+        "observation_mode": "ambient-euclidean-chord",
         "jacobi_from_equation": 1.0617147854362192,
         "constant_curvature": false,
         "expected_exponent": 2.0,
@@ -580,6 +636,7 @@
         "case": "torus",
         "surface": "torus(R=2, r=1)",
         "arc_length": 1.0,
+        "observation_mode": "ambient-euclidean-chord",
         "jacobi_from_equation": 0.9553620985914167,
         "constant_curvature": false,
         "expected_exponent": 2.0,
@@ -652,6 +709,470 @@
           {
             "epsilon": 0.1,
             "relative_difference": 0.001777868098132962
+          }
+        ]
+      }
+    ],
+    "lateral_route": [
+      {
+        "case": "plate",
+        "surface": "plane",
+        "arc_length": 1.0,
+        "observation_mode": "ambient-euclidean-chord",
+        "lateral_from_equation": 1.0,
+        "lateral_from_displaced_start": 1.0000000000000109,
+        "regime": "exact-to-roundoff",
+        "expected_exponent": 2.0,
+        "fitted_exponent": null,
+        "max_deviation": 6.727951529228449e-14,
+        "fit": {
+          "exponent": null,
+          "prefactor": null,
+          "r_squared": null,
+          "n_used": 0,
+          "n_total": 13,
+          "x_min": null,
+          "x_max": null,
+          "dropped_below_floor": 13,
+          "dropped_above_ceiling": 0
+        },
+        "samples": [
+          {
+            "epsilon": 0.0001,
+            "relative_difference": 1.0880185641326534e-14
+          },
+          {
+            "epsilon": 0.00017782794100389227,
+            "relative_difference": 4.54081217071689e-14
+          },
+          {
+            "epsilon": 0.00031622776601683794,
+            "relative_difference": 6.727951529228449e-14
+          },
+          {
+            "epsilon": 0.0005623413251903491,
+            "relative_difference": 4.907185768843192e-14
+          },
+          {
+            "epsilon": 0.001,
+            "relative_difference": 6.106226635438361e-15
+          },
+          {
+            "epsilon": 0.0017782794100389228,
+            "relative_difference": 5.062616992290714e-14
+          },
+          {
+            "epsilon": 0.0031622776601683794,
+            "relative_difference": 6.8833827526759706e-15
+          },
+          {
+            "epsilon": 0.005623413251903491,
+            "relative_difference": 4.418687638008123e-14
+          },
+          {
+            "epsilon": 0.01,
+            "relative_difference": 2.90878432451791e-14
+          },
+          {
+            "epsilon": 0.01778279410038923,
+            "relative_difference": 4.3520742565306136e-14
+          },
+          {
+            "epsilon": 0.03162277660168379,
+            "relative_difference": 2.220446049250313e-14
+          },
+          {
+            "epsilon": 0.056234132519034905,
+            "relative_difference": 1.8207657603852567e-14
+          },
+          {
+            "epsilon": 0.1,
+            "relative_difference": 3.863576125695545e-14
+          }
+        ]
+      },
+      {
+        "case": "rolled-sheet",
+        "surface": "cylinder(R=1)",
+        "arc_length": 1.0,
+        "observation_mode": "ambient-euclidean-chord",
+        "lateral_from_equation": 1.0,
+        "lateral_from_displaced_start": 0.9999999998305592,
+        "regime": "second-order",
+        "expected_exponent": 2.0,
+        "fitted_exponent": 1.999949017832315,
+        "max_deviation": 0.0001693538546294615,
+        "fit": {
+          "exponent": 1.999949017832315,
+          "prefactor": 0.0169362367077466,
+          "r_squared": 0.9999999993776642,
+          "n_used": 9,
+          "n_total": 13,
+          "x_min": 0.001,
+          "x_max": 0.1,
+          "dropped_below_floor": 4,
+          "dropped_above_ceiling": 0
+        },
+        "samples": [
+          {
+            "epsilon": 0.0001,
+            "relative_difference": 1.6944079472835938e-10
+          },
+          {
+            "epsilon": 0.00017782794100389227,
+            "relative_difference": 5.358148369438709e-10
+          },
+          {
+            "epsilon": 0.00031622776601683794,
+            "relative_difference": 1.6940326919012705e-09
+          },
+          {
+            "epsilon": 0.0005623413251903491,
+            "relative_difference": 5.357195687061278e-09
+          },
+          {
+            "epsilon": 0.001,
+            "relative_difference": 1.6941162694905643e-08
+          },
+          {
+            "epsilon": 0.0017782794100389228,
+            "relative_difference": 5.3572567604298627e-08
+          },
+          {
+            "epsilon": 0.0031622776601683794,
+            "relative_difference": 1.6941143921034296e-07
+          },
+          {
+            "epsilon": 0.005623413251903491,
+            "relative_difference": 5.357256293025969e-07
+          },
+          {
+            "epsilon": 0.01,
+            "relative_difference": 1.6941093423650244e-06
+          },
+          {
+            "epsilon": 0.01778279410038923,
+            "relative_difference": 5.357204747813427e-06
+          },
+          {
+            "epsilon": 0.03162277660168379,
+            "relative_difference": 1.6940574712798195e-05
+          },
+          {
+            "epsilon": 0.056234132519034905,
+            "relative_difference": 5.356685817614615e-05
+          },
+          {
+            "epsilon": 0.1,
+            "relative_difference": 0.0001693538546294615
+          }
+        ]
+      },
+      {
+        "case": "spherical-cap",
+        "surface": "sphere(R=1)",
+        "arc_length": 1.0,
+        "observation_mode": "ambient-euclidean-chord",
+        "lateral_from_equation": 0.5403023058681473,
+        "lateral_from_displaced_start": 0.5403023049419826,
+        "regime": "second-order",
+        "expected_exponent": 2.0,
+        "fitted_exponent": 1.9999161879213445,
+        "max_deviation": 0.0016658335318000539,
+        "fit": {
+          "exponent": 1.9999161879213445,
+          "prefactor": 0.16659813441055146,
+          "r_squared": 0.9999999983018262,
+          "n_used": 10,
+          "n_total": 13,
+          "x_min": 0.00031622776601683794,
+          "x_max": 0.056234132519034905,
+          "dropped_below_floor": 2,
+          "dropped_above_ceiling": 1
+        },
+        "samples": [
+          {
+            "epsilon": 0.0001,
+            "relative_difference": 1.7141601471593049e-09
+          },
+          {
+            "epsilon": 0.00017782794100389227,
+            "relative_difference": 5.250403667389492e-09
+          },
+          {
+            "epsilon": 0.00031622776601683794,
+            "relative_difference": 1.667673499294864e-08
+          },
+          {
+            "epsilon": 0.0005623413251903491,
+            "relative_difference": 5.2709106745929546e-08
+          },
+          {
+            "epsilon": 0.001,
+            "relative_difference": 1.6666869040449228e-07
+          },
+          {
+            "epsilon": 0.0017782794100389228,
+            "relative_difference": 5.270465330831087e-07
+          },
+          {
+            "epsilon": 0.0031622776601683794,
+            "relative_difference": 1.6666660415110002e-06
+          },
+          {
+            "epsilon": 0.005623413251903491,
+            "relative_difference": 5.270454167205507e-06
+          },
+          {
+            "epsilon": 0.01,
+            "relative_difference": 1.6666583336211183e-05
+          },
+          {
+            "epsilon": 0.01778279410038923,
+            "relative_difference": 5.270379458666152e-05
+          },
+          {
+            "epsilon": 0.03162277660168379,
+            "relative_difference": 0.00016665833357976112
+          },
+          {
+            "epsilon": 0.056234132519034905,
+            "relative_difference": 0.0005269629497740569
+          },
+          {
+            "epsilon": 0.1,
+            "relative_difference": 0.0016658335318000539
+          }
+        ]
+      },
+      {
+        "case": "pseudosphere",
+        "surface": "pseudosphere",
+        "arc_length": 1.0,
+        "observation_mode": "ambient-euclidean-chord",
+        "lateral_from_equation": 1.5430806348152335,
+        "lateral_from_displaced_start": 1.5430806309282235,
+        "regime": "second-order",
+        "expected_exponent": 2.0,
+        "fitted_exponent": 1.9993404188481703,
+        "max_deviation": 0.0024811798697138565,
+        "fit": {
+          "exponent": 1.9993404188481703,
+          "prefactor": 0.25111836605288046,
+          "r_squared": 0.9999998847059113,
+          "n_used": 10,
+          "n_total": 13,
+          "x_min": 0.00031622776601683794,
+          "x_max": 0.056234132519034905,
+          "dropped_below_floor": 2,
+          "dropped_above_ceiling": 1
+        },
+        "samples": [
+          {
+            "epsilon": 0.0001,
+            "relative_difference": 2.518993458267005e-09
+          },
+          {
+            "epsilon": 0.00017782794100389227,
+            "relative_difference": 7.981398542078466e-09
+          },
+          {
+            "epsilon": 0.00031622776601683794,
+            "relative_difference": 2.5224935251699776e-08
+          },
+          {
+            "epsilon": 0.0005623413251903491,
+            "relative_difference": 7.975647586810908e-08
+          },
+          {
+            "epsilon": 0.001,
+            "relative_difference": 2.5221462829350116e-07
+          },
+          {
+            "epsilon": 0.0017782794100389228,
+            "relative_difference": 7.975663643966513e-07
+          },
+          {
+            "epsilon": 0.0031622776601683794,
+            "relative_difference": 2.5221016735077484e-06
+          },
+          {
+            "epsilon": 0.005623413251903491,
+            "relative_difference": 7.975300444940103e-06
+          },
+          {
+            "epsilon": 0.01,
+            "relative_difference": 2.521727312443378e-05
+          },
+          {
+            "epsilon": 0.01778279410038923,
+            "relative_difference": 7.971562399311516e-05
+          },
+          {
+            "epsilon": 0.03162277660168379,
+            "relative_difference": 0.00025179932097407765
+          },
+          {
+            "epsilon": 0.056234132519034905,
+            "relative_difference": 0.0007934342308931752
+          },
+          {
+            "epsilon": 0.1,
+            "relative_difference": 0.0024811798697138565
+          }
+        ]
+      },
+      {
+        "case": "saddle",
+        "surface": "hyperbolic-paraboloid(a=1)",
+        "arc_length": 1.0,
+        "observation_mode": "ambient-euclidean-chord",
+        "lateral_from_equation": 1.2523332785671302,
+        "lateral_from_displaced_start": 1.2523332771418736,
+        "regime": "second-order",
+        "expected_exponent": 2.0,
+        "fitted_exponent": 1.999789464603523,
+        "max_deviation": 0.0011366852373065894,
+        "fit": {
+          "exponent": 1.999789464603523,
+          "prefactor": 0.11405719665270475,
+          "r_squared": 0.99999999108142,
+          "n_used": 10,
+          "n_total": 13,
+          "x_min": 0.00031622776601683794,
+          "x_max": 0.056234132519034905,
+          "dropped_below_floor": 2,
+          "dropped_above_ceiling": 1
+        },
+        "samples": [
+          {
+            "epsilon": 0.0001,
+            "relative_difference": 1.1380808517813534e-09
+          },
+          {
+            "epsilon": 0.00017782794100389227,
+            "relative_difference": 3.605348242174955e-09
+          },
+          {
+            "epsilon": 0.00031622776601683794,
+            "relative_difference": 1.1423208490235481e-08
+          },
+          {
+            "epsilon": 0.0005623413251903491,
+            "relative_difference": 3.6119663704425875e-08
+          },
+          {
+            "epsilon": 0.001,
+            "relative_difference": 1.1420933598849103e-07
+          },
+          {
+            "epsilon": 0.0017782794100389228,
+            "relative_difference": 3.611655160495886e-07
+          },
+          {
+            "epsilon": 0.0031622776601683794,
+            "relative_difference": 1.142102633910902e-06
+          },
+          {
+            "epsilon": 0.005623413251903491,
+            "relative_difference": 3.6116101020944313e-06
+          },
+          {
+            "epsilon": 0.01,
+            "relative_difference": 1.1420540248940902e-05
+          },
+          {
+            "epsilon": 0.01778279410038923,
+            "relative_difference": 3.611119533175611e-05
+          },
+          {
+            "epsilon": 0.03162277660168379,
+            "relative_difference": 0.00011415639626244367
+          },
+          {
+            "epsilon": 0.056234132519034905,
+            "relative_difference": 0.0003606224051820872
+          },
+          {
+            "epsilon": 0.1,
+            "relative_difference": 0.0011366852373065894
+          }
+        ]
+      },
+      {
+        "case": "torus",
+        "surface": "torus(R=2, r=1)",
+        "arc_length": 1.0,
+        "observation_mode": "ambient-euclidean-chord",
+        "lateral_from_equation": 0.8575759103957297,
+        "lateral_from_displaced_start": 0.8575759100383947,
+        "regime": "second-order",
+        "expected_exponent": 2.0,
+        "fitted_exponent": 1.9998923452422024,
+        "max_deviation": 0.00041660598945003624,
+        "fit": {
+          "exponent": 1.9998923452422024,
+          "prefactor": 0.04167778922578185,
+          "r_squared": 0.9999999925032393,
+          "n_used": 10,
+          "n_total": 13,
+          "x_min": 0.0005623413251903491,
+          "x_max": 0.1,
+          "dropped_below_floor": 3,
+          "dropped_above_ceiling": 0
+        },
+        "samples": [
+          {
+            "epsilon": 0.0001,
+            "relative_difference": 4.166802458627217e-10
+          },
+          {
+            "epsilon": 0.00017782794100389227,
+            "relative_difference": 1.3237355656059435e-09
+          },
+          {
+            "epsilon": 0.00031622776601683794,
+            "relative_difference": 4.171950562792404e-09
+          },
+          {
+            "epsilon": 0.0005623413251903491,
+            "relative_difference": 1.3185186276132299e-08
+          },
+          {
+            "epsilon": 0.001,
+            "relative_difference": 4.170564182892633e-08
+          },
+          {
+            "epsilon": 0.0017782794100389228,
+            "relative_difference": 1.3189276293346097e-07
+          },
+          {
+            "epsilon": 0.0031622776601683794,
+            "relative_difference": 4.1708274822749303e-07
+          },
+          {
+            "epsilon": 0.005623413251903491,
+            "relative_difference": 1.3189286941495126e-06
+          },
+          {
+            "epsilon": 0.01,
+            "relative_difference": 4.170784538848338e-06
+          },
+          {
+            "epsilon": 0.01778279410038923,
+            "relative_difference": 1.3188852175272103e-05
+          },
+          {
+            "epsilon": 0.03162277660168379,
+            "relative_difference": 4.170354920340902e-05
+          },
+          {
+            "epsilon": 0.056234132519034905,
+            "relative_difference": 0.00013184556724876728
+          },
+          {
+            "epsilon": 0.1,
+            "relative_difference": 0.00041660598945003624
           }
         ]
       }
@@ -1115,6 +1636,9 @@
         "max_speed_drift": 0.0,
         "focus_points": [],
         "well_conditioned": true,
+        "max_wronskian_drift": 0.0,
+        "max_lateral_amplification": 1.0,
+        "lateral_focus_points": [],
         "budget": [
           {
             "transverse_tolerance": 0.001,
@@ -2206,6 +2730,9 @@
         "max_speed_drift": 0.0,
         "focus_points": [],
         "well_conditioned": true,
+        "max_wronskian_drift": 0.0,
+        "max_lateral_amplification": 1.0,
+        "lateral_focus_points": [],
         "budget": [
           {
             "transverse_tolerance": 0.001,
@@ -3299,6 +3826,11 @@
           3.14159265346205
         ],
         "well_conditioned": false,
+        "max_wronskian_drift": 3.1086244689504383e-15,
+        "max_lateral_amplification": 1.0,
+        "lateral_focus_points": [
+          1.5707963268601812
+        ],
         "budget": [
           {
             "transverse_tolerance": 0.001,
@@ -4390,6 +4922,9 @@
         "max_speed_drift": 9.325873406851315e-15,
         "focus_points": [],
         "well_conditioned": true,
+        "max_wronskian_drift": 1.9539925233402755e-14,
+        "max_lateral_amplification": 2.352409615243233,
+        "lateral_focus_points": [],
         "budget": [
           {
             "transverse_tolerance": 0.001,
@@ -5481,6 +6016,9 @@
         "max_speed_drift": 2.4424906541753444e-15,
         "focus_points": [],
         "well_conditioned": true,
+        "max_wronskian_drift": 3.3306690738754696e-15,
+        "max_lateral_amplification": 1.708053061918498,
+        "lateral_focus_points": [],
         "budget": [
           {
             "transverse_tolerance": 0.001,
@@ -6572,6 +7110,9 @@
         "max_speed_drift": 1.6653345369377348e-15,
         "focus_points": [],
         "well_conditioned": true,
+        "max_wronskian_drift": 1.1102230246251565e-15,
+        "max_lateral_amplification": 1.0,
+        "lateral_focus_points": [],
         "budget": [
           {
             "transverse_tolerance": 0.001,
@@ -7645,288 +8186,437 @@
     "heading_scan": {
       "case": "torus",
       "surface": "torus(R=2, r=1)",
+      "objective": "minimum-forward-angular-error-amplification",
+      "objective_note": "Ranked by max |b(s)| alone. That is how far an aiming error is carried, not robustness: a heading can score well by passing through a focus, where the endpoint map is ill conditioned and a family of paths crowds instead of covering. Boundary clearance, chart validity, path length, curvature exposure and coverage are not modelled.",
       "start": {
         "u": 0.3,
         "v": 0.2
       },
       "length": 6.0,
       "n_headings": 24,
-      "most_tolerant": {
+      "focus_margin_floor": 0.25,
+      "lowest_amplification": {
         "heading": 1.7016960206944711,
         "heading_degrees": 97.49999999999999,
-        "max_abs_jacobi_field": 1.7370549181366974,
+        "max_forward_amplification": 1.7370549181366974,
+        "focus_margin": 0.00010570816949995046,
+        "dead_zone_fraction": 0.2,
         "jacobi_field_at_end": -0.4860269909905995,
         "amplification_at_end": -0.08100449849843325,
+        "max_lateral_amplification": 1.018633531610757,
+        "max_wronskian_drift": 2.4424906541753444e-15,
         "mean_curvature_along_path": 0.32544117757184626,
         "focus_points": [
           5.498107672100967
         ],
+        "passes_a_focus": true,
         "max_speed_drift": 3.1086244689504383e-15
       },
-      "least_tolerant": {
+      "highest_amplification": {
         "heading": 0.2617993877991494,
         "heading_degrees": 14.999999999999998,
-        "max_abs_jacobi_field": 36.90449909238601,
+        "max_forward_amplification": 36.90449909238601,
+        "focus_margin": 1.1359965629952886,
+        "dead_zone_fraction": 0.2,
         "jacobi_field_at_end": 36.90449909238601,
         "amplification_at_end": 6.150749848731002,
+        "max_lateral_amplification": 4.6805044371587,
+        "max_wronskian_drift": 9.947598300641403e-14,
         "mean_curvature_along_path": -0.328441367689201,
         "focus_points": [],
+        "passes_a_focus": false,
         "max_speed_drift": 5.140332604014475e-14
       },
-      "sensitivity_ratio": 21.245441757231657,
+      "lowest_amplification_clear_of_a_focus": {
+        "heading": 2.22529479629277,
+        "heading_degrees": 127.49999999999999,
+        "max_forward_amplification": 1.9166371781373872,
+        "focus_margin": 0.7849589465144989,
+        "dead_zone_fraction": 0.2,
+        "jacobi_field_at_end": 0.7849589465144989,
+        "amplification_at_end": 0.1308264910857498,
+        "max_lateral_amplification": 1.1575485220260089,
+        "max_wronskian_drift": 4.6629367034256575e-15,
+        "mean_curvature_along_path": 0.24814050970479035,
+        "focus_points": [],
+        "passes_a_focus": false,
+        "max_speed_drift": 1.532107773982716e-14
+      },
+      "n_headings_passing_a_focus": 7,
+      "amplification_ratio": 21.245441757231657,
       "headings": [
         {
           "heading": 1.7016960206944711,
           "heading_degrees": 97.49999999999999,
-          "max_abs_jacobi_field": 1.7370549181366974,
+          "max_forward_amplification": 1.7370549181366974,
+          "focus_margin": 0.00010570816949995046,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": -0.4860269909905995,
           "amplification_at_end": -0.08100449849843325,
+          "max_lateral_amplification": 1.018633531610757,
+          "max_wronskian_drift": 2.4424906541753444e-15,
           "mean_curvature_along_path": 0.32544117757184626,
           "focus_points": [
             5.498107672100967
           ],
+          "passes_a_focus": true,
           "max_speed_drift": 3.1086244689504383e-15
         },
         {
           "heading": 1.832595714594046,
           "heading_degrees": 105.0,
-          "max_abs_jacobi_field": 1.743839356514076,
+          "max_forward_amplification": 1.743839356514076,
+          "focus_margin": 0.0007857986214559311,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": -0.36784011512946146,
           "amplification_at_end": -0.061306685854910246,
+          "max_lateral_amplification": 1.0392871366241117,
+          "max_wronskian_drift": 7.105427357601002e-15,
           "mean_curvature_along_path": 0.3174290854572467,
           "focus_points": [
             5.614816193220117
           ],
+          "passes_a_focus": true,
           "max_speed_drift": 6.439293542825908e-15
         },
         {
           "heading": 1.5707963267948966,
           "heading_degrees": 90.0,
-          "max_abs_jacobi_field": 1.745188469087032,
+          "max_forward_amplification": 1.745188469087032,
+          "focus_margin": 0.00010062466212504154,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": -0.5297380025630071,
           "amplification_at_end": -0.08828966709383451,
+          "max_lateral_amplification": 1.0002915676320052,
+          "max_wronskian_drift": 3.1086244689504383e-15,
           "mean_curvature_along_path": 0.32788838439620865,
           "focus_points": [
             5.461899375319298
           ],
+          "passes_a_focus": true,
           "max_speed_drift": 2.4424906541753444e-15
         },
         {
           "heading": 1.9634954084936205,
           "heading_degrees": 112.49999999999999,
-          "max_abs_jacobi_field": 1.7675464755249475,
+          "max_forward_amplification": 1.7675464755249475,
+          "focus_margin": 0.0008047008703995365,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": -0.1540813844211447,
           "amplification_at_end": -0.02568023073685745,
+          "max_lateral_amplification": 1.065264834122294,
+          "max_wronskian_drift": 7.993605777301127e-15,
           "mean_curvature_along_path": 0.3030767858360921,
           "focus_points": [
             5.836850810101447
           ],
+          "passes_a_focus": true,
           "max_speed_drift": 4.440892098500626e-15
         },
         {
           "heading": 1.4398966328953218,
           "heading_degrees": 82.5,
-          "max_abs_jacobi_field": 1.7691913339018341,
+          "max_forward_amplification": 1.7691913339018341,
+          "focus_margin": 0.00078418303442882,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": -0.5051368237221259,
           "amplification_at_end": -0.08418947062035431,
+          "max_lateral_amplification": 1.0,
+          "max_wronskian_drift": 2.4424906541753444e-15,
           "mean_curvature_along_path": 0.32504459998711277,
           "focus_points": [
             5.497230004050003
           ],
+          "passes_a_focus": true,
           "max_speed_drift": 3.9968028886505635e-15
         },
         {
           "heading": 1.308996938995747,
           "heading_degrees": 74.99999999999999,
-          "max_abs_jacobi_field": 1.813148223602431,
+          "max_forward_amplification": 1.813148223602431,
+          "focus_margin": 0.0010163729602676586,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": -0.40561376271874217,
           "amplification_at_end": -0.06760229378645703,
+          "max_lateral_amplification": 1.0,
+          "max_wronskian_drift": 2.6645352591003757e-15,
           "mean_curvature_along_path": 0.31674284690490295,
           "focus_points": [
             5.606976786216589
           ],
+          "passes_a_focus": true,
           "max_speed_drift": 1.9984014443252818e-15
         },
         {
           "heading": 2.0943951023931953,
           "heading_degrees": 119.99999999999999,
-          "max_abs_jacobi_field": 1.8156917500605039,
+          "max_forward_amplification": 1.8156917500605039,
+          "focus_margin": 0.19997931281818082,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 0.19997931281818082,
           "amplification_at_end": 0.033329885469696806,
+          "max_lateral_amplification": 1.1014983452316551,
+          "max_wronskian_drift": 4.6629367034256575e-15,
           "mean_curvature_along_path": 0.2808866203103508,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 1.0658141036401503e-14
         },
         {
           "heading": 1.1780972450961724,
           "heading_degrees": 67.5,
-          "max_abs_jacobi_field": 1.8867623892346002,
+          "max_forward_amplification": 1.8867623892346002,
+          "focus_margin": 0.000880148250307103,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": -0.208840116754963,
           "amplification_at_end": -0.034806686125827165,
+          "max_lateral_amplification": 1.0,
+          "max_wronskian_drift": 3.1086244689504383e-15,
           "mean_curvature_along_path": 0.3023005264343449,
           "focus_points": [
             5.805180567908232
           ],
+          "passes_a_focus": true,
           "max_speed_drift": 4.884981308350689e-15
         },
         {
           "heading": 2.22529479629277,
           "heading_degrees": 127.49999999999999,
-          "max_abs_jacobi_field": 1.9166371781373872,
+          "max_forward_amplification": 1.9166371781373872,
+          "focus_margin": 0.7849589465144989,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 0.7849589465144989,
           "amplification_at_end": 0.1308264910857498,
+          "max_lateral_amplification": 1.1575485220260089,
+          "max_wronskian_drift": 4.6629367034256575e-15,
           "mean_curvature_along_path": 0.24814050970479035,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 1.532107773982716e-14
         },
         {
           "heading": 1.0471975511965976,
           "heading_degrees": 59.99999999999999,
-          "max_abs_jacobi_field": 2.0137222418934155,
+          "max_forward_amplification": 2.0137222418934155,
+          "focus_margin": 0.1337232340284335,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 0.1337232340284335,
           "amplification_at_end": 0.022287205671405585,
+          "max_lateral_amplification": 1.0,
+          "max_wronskian_drift": 3.3306690738754696e-15,
           "mean_curvature_along_path": 0.2802702876727891,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 1.0436096431476471e-14
         },
         {
           "heading": 0.916297857297023,
           "heading_degrees": 52.5,
-          "max_abs_jacobi_field": 2.2614439665484984,
+          "max_forward_amplification": 2.2614439665484984,
+          "focus_margin": 0.7244863669363877,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 0.7244863669363877,
           "amplification_at_end": 0.12074772782273129,
+          "max_lateral_amplification": 1.0,
+          "max_wronskian_drift": 3.3306690738754696e-15,
           "mean_curvature_along_path": 0.2478808459991694,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 1.2434497875801753e-14
         },
         {
           "heading": 2.356194490192345,
           "heading_degrees": 135.0,
-          "max_abs_jacobi_field": 2.2749882647019364,
+          "max_forward_amplification": 2.2749882647019364,
+          "focus_margin": 1.1094559215648425,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 1.7958810205935773,
           "amplification_at_end": 0.2993135034322629,
+          "max_lateral_amplification": 1.2536334359962062,
+          "max_wronskian_drift": 2.220446049250313e-15,
           "mean_curvature_along_path": 0.19977775782829235,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 1.6653345369377348e-14
         },
         {
           "heading": 0.7853981633974483,
           "heading_degrees": 45.0,
-          "max_abs_jacobi_field": 2.842440954349925,
+          "max_forward_amplification": 2.842440954349925,
+          "focus_margin": 1.1249795422988584,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 1.7970653727125883,
           "amplification_at_end": 0.299510895452098,
+          "max_lateral_amplification": 1.0,
+          "max_wronskian_drift": 2.6645352591003757e-15,
           "mean_curvature_along_path": 0.1997777516134868,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 1.709743457922741e-14
         },
         {
           "heading": 2.4870941840919194,
           "heading_degrees": 142.5,
-          "max_abs_jacobi_field": 3.7303311769475855,
+          "max_forward_amplification": 3.7303311769475855,
+          "focus_margin": 1.110222909930021,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 3.710330708380656,
           "amplification_at_end": 0.618388451396776,
+          "max_lateral_amplification": 1.4171937471458487,
+          "max_wronskian_drift": 3.552713678800501e-15,
           "mean_curvature_along_path": 0.1255067865612746,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 1.865174681370263e-14
         },
         {
           "heading": 0.6544984694978735,
           "heading_degrees": 37.49999999999999,
-          "max_abs_jacobi_field": 4.403258038152119,
+          "max_forward_amplification": 4.403258038152119,
+          "focus_margin": 1.1281844604524214,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 3.973802996393427,
           "amplification_at_end": 0.6623004993989045,
+          "max_lateral_amplification": 1.0,
+          "max_wronskian_drift": 2.55351295663786e-15,
           "mean_curvature_along_path": 0.12474057373264119,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 2.0761170560490427e-14
         },
         {
           "heading": 2.617993877991494,
           "heading_degrees": 149.99999999999997,
-          "max_abs_jacobi_field": 7.986463899200697,
+          "max_forward_amplification": 7.986463899200697,
+          "focus_margin": 1.1110313997299732,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 7.986463899200697,
           "amplification_at_end": 1.3310773165334495,
+          "max_lateral_amplification": 1.7452018763072636,
+          "max_wronskian_drift": 1.7319479184152442e-14,
           "mean_curvature_along_path": 0.0002622097715056859,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 4.374278717023117e-14
         },
         {
           "heading": 0.5235987755982988,
           "heading_degrees": 29.999999999999996,
-          "max_abs_jacobi_field": 9.435967319778804,
+          "max_forward_amplification": 9.435967319778804,
+          "focus_margin": 1.1312258669081237,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 9.435967319778804,
           "amplification_at_end": 1.572661219963134,
+          "max_lateral_amplification": 1.0,
+          "max_wronskian_drift": 3.1086244689504383e-15,
           "mean_curvature_along_path": -0.00576503616558979,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 4.04121180963557e-14
         },
         {
           "heading": 2.748893571891069,
           "heading_degrees": 157.5,
-          "max_abs_jacobi_field": 21.056515527079764,
+          "max_forward_amplification": 21.056515527079764,
+          "focus_margin": 1.1117869054033105,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 21.056515527079764,
           "amplification_at_end": 3.509419254513294,
+          "max_lateral_amplification": 2.6758770523224134,
+          "max_wronskian_drift": 9.237055564881302e-14,
           "mean_curvature_along_path": -0.26339146166102057,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 6.616929226765933e-14
         },
         {
           "heading": 0.0,
           "heading_degrees": 0.0,
-          "max_abs_jacobi_field": 21.1586018383281,
+          "max_forward_amplification": 21.1586018383281,
+          "focus_margin": 1.137800798501599,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 21.1586018383281,
           "amplification_at_end": 3.52643363972135,
+          "max_lateral_amplification": 3.1308289456575755,
+          "max_wronskian_drift": 6.039613253960852e-14,
           "mean_curvature_along_path": -0.17739859002287367,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 1.1102230246251565e-16
         },
         {
           "heading": 3.010692959690218,
           "heading_degrees": 172.49999999999997,
-          "max_abs_jacobi_field": 21.613469082787773,
+          "max_forward_amplification": 21.613469082787773,
+          "focus_margin": 1.1128020064185715,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 21.613469082787773,
           "amplification_at_end": 3.6022448471312956,
+          "max_lateral_amplification": 1.2622449124370223,
+          "max_wronskian_drift": 2.4868995751603507e-14,
           "mean_curvature_along_path": -0.20217806727274662,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 1.454392162258955e-14
         },
         {
           "heading": 0.1308996938995747,
           "heading_degrees": 7.499999999999999,
-          "max_abs_jacobi_field": 23.84260708949491,
+          "max_forward_amplification": 23.84260708949491,
+          "focus_margin": 1.1373386402968513,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 23.84260708949491,
           "amplification_at_end": 3.9737678482491514,
+          "max_lateral_amplification": 3.414977606461295,
+          "max_wronskian_drift": 5.3290705182007514e-14,
           "mean_curvature_along_path": -0.20475354437149665,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 1.27675647831893e-14
         },
         {
           "heading": 2.8797932657906435,
           "heading_degrees": 165.0,
-          "max_abs_jacobi_field": 27.840258480062865,
+          "max_forward_amplification": 27.840258480062865,
+          "focus_margin": 1.1124012774284007,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 27.840258480062865,
           "amplification_at_end": 4.640043080010478,
+          "max_lateral_amplification": 2.225911646632983,
+          "max_wronskian_drift": 4.973799150320701e-14,
           "mean_curvature_along_path": -0.3075926058213428,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 5.240252676230739e-14
         },
         {
           "heading": 0.39269908169872414,
           "heading_degrees": 22.5,
-          "max_abs_jacobi_field": 32.00966554946477,
+          "max_forward_amplification": 32.00966554946477,
+          "focus_margin": 1.1338988015632168,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 32.00966554946477,
           "amplification_at_end": 5.334944258244128,
+          "max_lateral_amplification": 2.837712389100192,
+          "max_wronskian_drift": 9.947598300641403e-14,
           "mean_curvature_along_path": -0.3119114651671905,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 6.261657858885883e-14
         },
         {
           "heading": 0.2617993877991494,
           "heading_degrees": 14.999999999999998,
-          "max_abs_jacobi_field": 36.90449909238601,
+          "max_forward_amplification": 36.90449909238601,
+          "focus_margin": 1.1359965629952886,
+          "dead_zone_fraction": 0.2,
           "jacobi_field_at_end": 36.90449909238601,
           "amplification_at_end": 6.150749848731002,
+          "max_lateral_amplification": 4.6805044371587,
+          "max_wronskian_drift": 9.947598300641403e-14,
           "mean_curvature_along_path": -0.328441367689201,
           "focus_points": [],
+          "passes_a_focus": false,
           "max_speed_drift": 5.140332604014475e-14
         }
       ]
@@ -8026,6 +8716,134 @@
       "statement": "Gaussian curvature assembled from the jet matches the analytic value",
       "value": 8.881784197001252e-16,
       "threshold": 1e-11,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-anchor-lateral/plate",
+      "statement": "the lateral column is recovered as a(s) = 1 on plane",
+      "value": 0.0,
+      "threshold": 1e-11,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-anchor-lateral/rolled-sheet",
+      "statement": "the lateral column is recovered as a(s) = 1 on cylinder(R=1)",
+      "value": 0.0,
+      "threshold": 1e-11,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-anchor-lateral/spherical-cap",
+      "statement": "the lateral column is recovered as a(s) = cos(s) on sphere(R=1)",
+      "value": 4.04343225568482e-13,
+      "threshold": 1e-11,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-anchor-lateral/pseudosphere",
+      "statement": "the lateral column is recovered as a(s) = cosh(s) on pseudosphere",
+      "value": 1.4210854715202004e-14,
+      "threshold": 1e-11,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-wronskian/plate",
+      "statement": "det Phi = a b' - a' b stays 1 along the path, an invariant the solver never enforces",
+      "value": 0.0,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-wronskian/rolled-sheet",
+      "statement": "det Phi = a b' - a' b stays 1 along the path, an invariant the solver never enforces",
+      "value": 0.0,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-wronskian/spherical-cap",
+      "statement": "det Phi = a b' - a' b stays 1 along the path, an invariant the solver never enforces",
+      "value": 3.1086244689504383e-15,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-wronskian/pseudosphere",
+      "statement": "det Phi = a b' - a' b stays 1 along the path, an invariant the solver never enforces",
+      "value": 1.9539925233402755e-14,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-wronskian/saddle",
+      "statement": "det Phi = a b' - a' b stays 1 along the path, an invariant the solver never enforces",
+      "value": 3.3306690738754696e-15,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-wronskian/torus",
+      "statement": "det Phi = a b' - a' b stays 1 along the path, an invariant the solver never enforces",
+      "value": 1.1102230246251565e-15,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-lateral-route/plate",
+      "statement": "two parallel geodesics on a flat surface stay exactly as far apart as they started, so a(s) is recovered exactly",
+      "value": 6.727951529228449e-14,
+      "threshold": 1e-13,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-lateral-route/rolled-sheet",
+      "statement": "moving the start point sideways and parallel-transporting the direction recovers a(s), to second order in the offset",
+      "value": 5.098216768506525e-05,
+      "threshold": 0.05,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-lateral-route/spherical-cap",
+      "statement": "moving the start point sideways and parallel-transporting the direction recovers a(s), to second order in the offset",
+      "value": 8.381207865548745e-05,
+      "threshold": 0.05,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-lateral-route/pseudosphere",
+      "statement": "moving the start point sideways and parallel-transporting the direction recovers a(s), to second order in the offset",
+      "value": 0.0006595811518297356,
+      "threshold": 0.05,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-lateral-route/saddle",
+      "statement": "moving the start point sideways and parallel-transporting the direction recovers a(s), to second order in the offset",
+      "value": 0.00021053539647697406,
+      "threshold": 0.05,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-lateral-route/torus",
+      "statement": "moving the start point sideways and parallel-transporting the direction recovers a(s), to second order in the offset",
+      "value": 0.00010765475779761502,
+      "threshold": 0.05,
       "comparison": "<=",
       "passed": true
     },
@@ -8308,17 +9126,33 @@
       "threshold": 1e-09,
       "comparison": "<=",
       "passed": true
+    },
+    {
+      "id": "surface-heading-scan-wronskian",
+      "statement": "and every one of them held det Phi = 1",
+      "value": 9.947598300641403e-14,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-heading-scan-focus-tradeoff",
+      "statement": "lowest forward amplification is not robustness: the best-scoring heading passes a focus, and a heading clear of one exists at a measurably higher amplification",
+      "value": 1.1033831792683468,
+      "threshold": 1.0,
+      "comparison": ">=",
+      "passed": true
     }
   ],
   "summary": {
-    "n_checks": 47,
+    "n_checks": 65,
     "n_failed": 0,
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "0f95a7fc0988fce53f2e4af9bbbcdc6db1e5dcbce35407e304a7521588a7532a",
+  "content_hash": "bffe9055400ad79e0013ff18a863f0e835aa73cd3ffa28bebc79c09a41992226",
   "environment": {
-    "geojac_version": "0.1.0",
+    "package_version": "0.1.0",
     "python": "3.11.15",
     "numpy": "2.4.6",
     "platform": "Linux-6.18.44-fc-v37-x86_64-with-glibc2.39"

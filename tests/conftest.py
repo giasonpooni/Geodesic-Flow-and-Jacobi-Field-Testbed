@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from geojac.experiment import ExperimentConfig, run_experiment
-from geojac.experiment_surfaces import SurfaceConfig, run_surface_experiment
+from geodesic_testbed.engine.experiment import ExperimentConfig, run_experiment
+from geodesic_testbed.engine.experiment_surfaces import SurfaceConfig, run_surface_experiment
 
 ROOT = Path(__file__).resolve().parents[1]
 

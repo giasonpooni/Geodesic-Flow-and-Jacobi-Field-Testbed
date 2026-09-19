@@ -198,26 +198,37 @@ def _panel_two_routes(ax, report: dict[str, Any]) -> None:
 
 
 def _panel_decision(ax, report: dict[str, Any]) -> None:
+    """Panel D: low forward amplification is not the same thing as robustness."""
     scan = report["results"]["heading_scan"]
     rows = sorted(scan["headings"], key=lambda row: row["heading_degrees"])
     headings = np.array([row["heading_degrees"] for row in rows])
-    worst = np.array([row["max_abs_jacobi_field"] for row in rows])
+    worst = np.array([row["max_forward_amplification"] for row in rows])
+    focus = np.array([row["passes_a_focus"] for row in rows])
     colour = CASE_COLOURS["torus"]
-    ax.plot(headings, worst, color=colour, linewidth=1.8, zorder=3)
-    ax.plot(headings, worst, linestyle="none", marker="o", markersize=3.8,
-            markerfacecolor=SURFACE, markeredgecolor=colour, markeredgewidth=1.0, zorder=4)
-    best = scan["most_tolerant"]
-    least = scan["least_tolerant"]
-    for row, text, target in (
-        (least, "least tolerant", (0.30, 0.93)),
-        (best, "most tolerant", (0.60, 0.30)),
-    ):
-        ax.plot([row["heading_degrees"]], [row["max_abs_jacobi_field"]], marker="o",
-                markersize=7.0, color=colour, markeredgecolor=SURFACE,
+
+    ax.plot(headings, worst, color=colour, linewidth=1.6, zorder=3)
+    ax.plot(headings[~focus], worst[~focus], linestyle="none", marker="o", markersize=4.6,
+            markerfacecolor=SURFACE, markeredgecolor=colour, markeredgewidth=1.3, zorder=4)
+    ax.plot(headings[focus], worst[focus], linestyle="none", marker="o", markersize=4.6,
+            color=colour, markeredgecolor=SURFACE, markeredgewidth=0.8, zorder=4)
+
+    lowest = scan["lowest_amplification"]
+    clear = scan["lowest_amplification_clear_of_a_focus"]
+    highest = scan["highest_amplification"]
+    annotations = [
+        (highest, "highest amplification", (0.22, 0.86)),
+        (lowest, "lowest amplification,\nbut passes a focus", (0.04, 0.16)),
+    ]
+    if clear is not None:
+        annotations.append((clear, "lowest clear of a focus", (0.58, 0.46)))
+    for row, text, target in annotations:
+        ax.plot([row["heading_degrees"]], [row["max_forward_amplification"]], marker="o",
+                markersize=7.5, color=colour, markeredgecolor=SURFACE,
                 markeredgewidth=1.4, zorder=6)
         ax.annotate(
-            f"{text}\n{row['heading_degrees']:.0f}°, max|j| = {row['max_abs_jacobi_field']:.2f}",
-            xy=(row["heading_degrees"], row["max_abs_jacobi_field"]),
+            f"{text}\n{row['heading_degrees']:.0f}°, "
+            f"max|b| = {row['max_forward_amplification']:.2f}",
+            xy=(row["heading_degrees"], row["max_forward_amplification"]),
             xytext=target,
             textcoords="axes fraction",
             fontsize=8.2,
@@ -225,27 +236,34 @@ def _panel_decision(ax, report: dict[str, Any]) -> None:
             linespacing=1.5,
             arrowprops={"arrowstyle": "-", "color": INK_MUTED, "linewidth": 0.8},
         )
+
+    from matplotlib.lines import Line2D
+
+    handles = [
+        Line2D([], [], linestyle="none", marker="o", markersize=5.0, markerfacecolor=SURFACE,
+               markeredgecolor=colour, markeredgewidth=1.3, label="clear of any focus"),
+        Line2D([], [], linestyle="none", marker="o", markersize=5.0, color=colour,
+               markeredgecolor=SURFACE, markeredgewidth=0.8,
+               label=f"passes a focus ({scan['n_headings_passing_a_focus']} of "
+                     f"{scan['n_headings']})"),
+    ]
+    legend = ax.legend(handles=handles, loc="upper right", frameon=True, facecolor=SURFACE,
+                       edgecolor="none", framealpha=0.92, handlelength=1.2, ncols=1,
+                       columnspacing=1.2)
+    for text in legend.get_texts():
+        text.set_color(INK_SOFT)
+
     ax.set_xlabel("starting heading (degrees from the u direction)")
-    ax.set_ylabel("worst  |j|  anywhere along the path")
+    ax.set_ylabel("max |b(s)| anywhere along the path")
     ax.set_xlim(-6.0, 186.0)
     ax.set_xticks([0, 45, 90, 135, 180])
     ax.set_yscale("log")
-    ax.set_ylim(min(worst) * 0.62, max(worst) * 2.6)
-    ax.text(
-        0.5,
-        0.045,
-        f"same start, same path length: a {scan['sensitivity_ratio']:.0f}x difference "
-        "in how far an aiming error is carried",
-        transform=ax.transAxes,
-        fontsize=8.2,
-        color=INK_SOFT,
-        ha="center",
-    )
+    ax.set_ylim(min(worst) * 0.66, max(worst) * 4.2)
     _panel_title(
         ax,
-        "D · The decision this supports",
-        f"{scan['n_headings']} candidate headings on the {scan['surface']}, "
-        "ranked by worst-case sensitivity",
+        "D \u00b7 The decision, and the trap in it",
+        f"{scan['n_headings']} headings on the {scan['surface']}, ranked by forward "
+        "amplification alone;\nevery one of the best few buys its score with a focus",
     )
 
 

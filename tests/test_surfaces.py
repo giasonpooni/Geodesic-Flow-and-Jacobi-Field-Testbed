@@ -7,7 +7,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from geojac.surfaces import (
+from geodesic_testbed.engine.surfaces import (
     CATALOGUE,
     ParametricSurface,
     built_in,

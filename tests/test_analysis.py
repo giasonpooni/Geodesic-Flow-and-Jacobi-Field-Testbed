@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from geojac.analysis import fit_power_law, relative_error, successive_orders
+from geodesic_testbed.engine.analysis import fit_power_law, relative_error, successive_orders
 
 
 def test_recovers_a_known_power_law() -> None:

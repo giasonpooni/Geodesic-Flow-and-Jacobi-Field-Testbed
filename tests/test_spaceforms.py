@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from geojac.spaceforms import (
+from geodesic_testbed.engine.spaceforms import (
     SUPPORTED_CURVATURES,
     SpaceForm,
     all_space_forms,

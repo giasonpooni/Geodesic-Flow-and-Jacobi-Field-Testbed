@@ -1,6 +1,6 @@
 """Parametric surfaces, where the curvature varies along the path.
 
-The constant-curvature testbed in :mod:`geojac.spaceforms` is the calibration
+The constant-curvature testbed in :mod:`geodesic_testbed.engine.spaceforms` is the calibration
 stage: there the Jacobi equation has a closed-form solution to check against.
 A real workpiece does not. This module takes the same two objects -- the
 geodesic flow and the Jacobi equation -- onto an arbitrary parametric surface
@@ -21,7 +21,7 @@ is reported rather than enforced.
 A surface may supply its analytic first and second derivatives; if it does not,
 they are taken by central differences of ``r`` alone, so a surface can be added
 by writing one function. The cost of that convenience is measured rather than
-assumed: :mod:`geojac.experiment_surfaces` compares the two paths on the same
+assumed: :mod:`geodesic_testbed.engine.experiment_surfaces` compares the two paths on the same
 surfaces and reports the difference.
 """
 
@@ -34,6 +34,9 @@ from typing import Any
 import numpy as np
 
 Array = np.ndarray
+
+# (a, a', b, b') at s = 0: the identity transfer map.
+TRANSFER_INITIAL_STATE = (1.0, 0.0, 0.0, 1.0)
 
 
 @dataclass(frozen=True)
@@ -126,28 +129,56 @@ class ParametricSurface:
         return float(du), float(dv)
 
     # -- the coupled flow --------------------------------------------------
-    def geodesic_jacobi_rhs(self) -> Callable[[float, Array], Array]:
-        """RHS of the state ``(u, v, u', v', j, j')``.
+    def geodesic_transfer_rhs(self) -> Callable[[float, Array], Array]:
+        """RHS of the state ``(u, v, u', v', a, a', b, b')``.
 
-        The geodesic and its Jacobi field are advanced together because the
-        Jacobi equation needs ``K`` at the moving point: on a surface of
-        varying curvature the two cannot be separated.
+        The geodesic and *both* columns of the transfer map are advanced
+        together, because the Jacobi equation needs ``K`` at the moving point:
+        on a surface of varying curvature the path and its sensitivity cannot
+        be separated. ``a`` propagates an initial lateral offset and ``b`` an
+        initial heading error; they cost one shared curvature evaluation.
         """
 
         def rhs(_s: float, y: Array) -> Array:
-            u, v, du, dv, field, field_dot = (y[..., index] for index in range(6))
+            u, v, du, dv = (y[..., index] for index in range(4))
+            a, a_rate, b, b_rate = (y[..., index] for index in range(4, 8))
             jet = self.jet_at(u, v)
             g1_11, g1_12, g1_22, g2_11, g2_12, g2_22 = christoffel(jet)
             ddu = -(g1_11 * du * du + 2.0 * g1_12 * du * dv + g1_22 * dv * dv)
             ddv = -(g2_11 * du * du + 2.0 * g2_12 * du * dv + g2_22 * dv * dv)
             curvature = gaussian_curvature(jet)
-            return np.stack([du, dv, ddu, ddv, field_dot, -curvature * field], axis=-1)
+            return np.stack(
+                [du, dv, ddu, ddv, a_rate, -curvature * a, b_rate, -curvature * b],
+                axis=-1,
+            )
 
         return rhs
 
     def initial_state(self, u0: float, v0: float, heading: float) -> Array:
         du, dv = self.unit_direction(u0, v0, heading)
-        return np.array([u0, v0, du, dv, 0.0, 1.0])
+        return np.array([u0, v0, du, dv, *TRANSFER_INITIAL_STATE])
+
+    def state_from_tangent(self, u0: float, v0: float, du: float, dv: float) -> Array:
+        """Same as :meth:`initial_state` but from a tangent given in coordinates.
+
+        Used when the direction comes from somewhere other than a heading angle
+        -- for instance parallel-transported along a perpendicular geodesic, as
+        the lateral-offset variation requires.
+        """
+        return np.array([u0, v0, float(du), float(dv), *TRANSFER_INITIAL_STATE])
+
+    def perpendicular_direction(self, u, v, du, dv) -> tuple[float, float]:
+        """Unit tangent orthogonal to ``(du, dv)`` in the surface metric.
+
+        ``N = (-(F du + G dv), E du + F dv) / sqrt(EG - F^2)`` is orthogonal to
+        ``(du, dv)`` for any first fundamental form, and is unit whenever the
+        given tangent is. Rotating by a heading angle would give a perpendicular
+        too, but only at a point whose frame is already known; this works at a
+        point reached by flowing, where it is not.
+        """
+        E, F, G = self.first_fundamental_form(u, v)
+        W = np.sqrt(E * G - F * F)
+        return (float(-(F * du + G * dv) / W), float((E * du + F * dv) / W))
 
     def embed(self, u, v) -> Array:
         return self.position(np.asarray(u, dtype=float), np.asarray(v, dtype=float))

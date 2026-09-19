@@ -5,8 +5,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from geojac.analysis import fit_power_law
-from geojac.integrators import DEFAULT_INTEGRATORS, get_integrator, integrate, step_ladder
+from geodesic_testbed.engine.analysis import fit_power_law
+from geodesic_testbed.engine.integrators import (
+    DEFAULT_INTEGRATORS,
+    get_integrator,
+    integrate,
+    step_ladder,
+)
 
 
 def exponential_rhs(_s: float, y: np.ndarray) -> np.ndarray:

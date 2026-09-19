@@ -45,19 +45,22 @@ from typing import Any
 
 import numpy as np
 
-from . import __version__
+from .. import __version__
 from .analysis import fit_power_law, successive_orders
-from .integrators import get_integrator, step_ladder
-from .jacobi import (
+from .flows import (
     geodesic_position_error,
     integrate_geodesic,
     integrate_geodesic_bundle,
     integrate_jacobi,
     jacobi_reference,
 )
+from .integrators import get_integrator, integrate, step_ladder
+from .observation import catalogue as observation_catalogue
 from .spaceforms import SpaceForm, all_space_forms
+from .transfer import INITIAL_STATE, transfer_from_trajectory, transfer_rhs
 
-REPORT_SCHEMA = "geodesic-jacobi-report-v1"
+REPORT_SCHEMA = "geodesic-jacobi-report-v2"
+SUPERSEDES = "geodesic-jacobi-report-v1"
 
 
 @dataclass(frozen=True)
@@ -102,6 +105,10 @@ class ExperimentConfig:
     conjugate_steps: int = 20000
 
     order_tolerance: float = 0.15
+    # Below this the measured determinant is dominated by its own accumulated
+    # rounding (about n * eps), not by the method's drift.
+    wronskian_theory_floor: float = 1e-9
+    wronskian_theory_tolerance: float = 1e-3
     exponent_tolerance: float = 0.05
     coefficient_tolerance: float = 0.01
     epsilon_star_tolerance: float = 0.01
@@ -243,6 +250,131 @@ def _convergence_row(
 
 
 # ---------------------------------------------------------------------------
+# sweep 2b: the Wronskian, an invariant the integrator never enforces
+# ---------------------------------------------------------------------------
+_ONE_STEP_DETERMINANT = {
+    "euler": "1 + K h^2",
+    "midpoint": "1 + K^2 h^4 / 4",
+    "rk4": "(1 - K h^2/2 + K^2 h^4/24)^2 + K (h - K h^3/6)^2",
+}
+
+
+def _wronskian_theory_drift(K: float, h: float, n_steps: int, method: str) -> float:
+    """``|d^n - 1|``: the exact Wronskian drift of a fixed-step method on constant K."""
+    if method == "euler":
+        excess = K * h**2
+    elif method == "midpoint":
+        excess = K**2 * h**4 / 4.0
+    elif method == "rk4":
+        # det(alpha I + beta A) = alpha^2 + K beta^2, with the rk4 stability
+        # polynomial closed on A^2 = -K I. Expanding this to leading order gives
+        # -K^3 h^6 / 72, but the untruncated form is what the solver actually
+        # applies, and at h = 0.2 the two already differ by half a percent.
+        alpha = 1.0 - K * h**2 / 2.0 + K**2 * h**4 / 24.0
+        beta = h - K * h**3 / 6.0
+        excess = alpha * alpha + K * beta * beta - 1.0
+    else:  # pragma: no cover - guard
+        raise ValueError(f"no closed-form Wronskian drift for {method!r}")
+    # d^n - 1 with d = 1 + excess, evaluated without losing the small excess.
+    return float(abs(np.expm1(n_steps * np.log1p(excess))))
+
+
+def sweep_wronskian(config: ExperimentConfig) -> list[dict[str, Any]]:
+    """How well each method conserves ``det Phi = a b' - a' b = 1``.
+
+    The Jacobi equation has no first-derivative term, so its Wronskian is
+    exactly conserved and starts at 1. That is not an approximation being
+    measured against a reference -- it is an identity, and any departure is
+    entirely the integrator's.
+
+    It is also structural rather than accumulated, and for a constant ``K`` it
+    is known exactly. The one-step map is a polynomial in ``hA`` with
+    ``A^2 = -K I``, so each method has its own one-step determinant, and since
+    the determinant of a product is the product of determinants, ``n`` equal
+    steps give ``det Phi = d^n`` with no approximation at all:
+
+    ====== ================================================= ============
+    method one-step ``d``                                    order in h
+    ====== ================================================= ============
+    euler  ``1 + K h^2``                                     1
+    mid    ``1 + K^2 h^4 / 4``                               3
+    rk4    ``(1 - Kh^2/2 + K^2h^4/24)^2 + K(h - Kh^3/6)^2``  5
+    ====== ================================================= ============
+
+    (rk4's is ``1 - K^3 h^6 / 72`` to leading order, but the untruncated form
+    is what the method applies and the two already differ by half a percent at
+    ``h = 0.2``.)
+
+    So this sweep measures three more cleanly separated slopes -- from a
+    quantity that needed no reference solution -- and can be checked not just
+    for its slope but against the exact value ``|d^n - 1|``.
+    """
+    rows: list[dict[str, Any]] = []
+    expected = {"euler": 1, "midpoint": 3, "rk4": 5}
+    for form in all_space_forms():
+        for method in config.integrators:
+            steps, drifts, levels = [], [], []
+            for n_steps in config.step_counts:
+                grid, trajectory = integrate(
+                    transfer_rhs(form.K),
+                    np.asarray(INITIAL_STATE, dtype=float),
+                    length=config.arc_length,
+                    n_steps=n_steps,
+                    method=method,
+                )
+                drift = float(
+                    np.max(transfer_from_trajectory(grid, trajectory).wronskian_drift)
+                )
+                h = config.arc_length / n_steps
+                theory = _wronskian_theory_drift(form.K, h, int(n_steps), method)
+                steps.append(h)
+                drifts.append(drift)
+                levels.append(
+                    {
+                        "n_steps": int(n_steps),
+                        "h": float(h),
+                        "drift": drift,
+                        "theory_drift": theory,
+                        "relative_error": (
+                            float(abs(drift / theory - 1.0)) if theory > 0.0 else None
+                        ),
+                    }
+                )
+            exact = max(drifts) < config.exactness_threshold
+            resolved = [
+                level["relative_error"]
+                for level in levels
+                if level["theory_drift"] > config.wronskian_theory_floor
+            ]
+            fit = fit_power_law(steps, drifts, y_floor=config.roundoff_floor)
+            order = expected[method]
+            rows.append(
+                {
+                    "curvature": form.K,
+                    "curvature_label": form.label,
+                    "integrator": method,
+                    "invariant": "det Phi = a b' - a' b = 1",
+                    "expected_drift_order": order,
+                    "regime": "exact-to-roundoff" if exact else "drifting",
+                    "fitted_drift_order": None if exact else float(fit.exponent),
+                    "drift_order_error": (
+                        None if exact or order is None else float(abs(fit.exponent - order))
+                    ),
+                    "finest_drift": float(drifts[-1]),
+                    "coarsest_drift": float(drifts[0]),
+                    "one_step_determinant": _ONE_STEP_DETERMINANT[method],
+                    "max_relative_error_vs_theory": (
+                        float(max(resolved)) if resolved else None
+                    ),
+                    "levels_resolved_above_roundoff": len(resolved),
+                    "fit": fit.to_dict(),
+                    "levels": levels,
+                }
+            )
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # sweep 3: where the first-order variation stops being predictive
 # ---------------------------------------------------------------------------
 def sweep_first_order_validity(config: ExperimentConfig) -> list[dict[str, Any]]:
@@ -314,6 +446,7 @@ def sweep_first_order_validity(config: ExperimentConfig) -> list[dict[str, Any]]
                     "arc_length": float(s_value),
                     "jacobi_field": float(jacobi_reference(s_value, form.K)),
                     "law": "sn_K(d/2) = sn_K(s) sin(eps/2)",
+                    "observation_mode": "intrinsic-surface-distance",
                     "expected_exponent": 2.0,
                     "fitted_exponent": float(fit.exponent),
                     "fitted_coefficient": float(fit.prefactor),
@@ -701,6 +834,57 @@ def collect_checks(results: dict[str, Any], config: ExperimentConfig) -> list[di
                 )
             )
 
+    for row in results["wronskian_conservation"]:
+        identifier = f"wronskian/{row['curvature_label']}/{row['integrator']}"
+        if row["regime"] == "exact-to-roundoff":
+            checks.append(
+                _check(
+                    identifier,
+                    f"{row['integrator']} conserves det Phi exactly on "
+                    f"{row['curvature_label']}",
+                    row["coarsest_drift"],
+                    config.exactness_threshold,
+                )
+            )
+        else:
+            checks.append(
+                _check(
+                    identifier,
+                    f"drift of det Phi under {row['integrator']} falls at order "
+                    f"{row['expected_drift_order']}, as its one-step determinant "
+                    f"{row['one_step_determinant']} says",
+                    row["drift_order_error"],
+                    config.order_tolerance,
+                )
+            )
+            checks.append(
+                _check(
+                    f"wronskian-exact/{row['curvature_label']}/{row['integrator']}",
+                    "and matches the exact value |d^n - 1| wherever that is above "
+                    "roundoff, not merely its slope",
+                    row["max_relative_error_vs_theory"],
+                    config.wronskian_theory_tolerance,
+                )
+            )
+    for form in all_space_forms():
+        if form.K == 0.0:
+            continue
+        by_method = {
+            row["integrator"]: row
+            for row in results["wronskian_conservation"]
+            if row["curvature_label"] == form.label
+        }
+        checks.append(
+            _check(
+                f"wronskian-discriminates/{form.label}",
+                "the invariant has teeth: at the same finest step euler has lost "
+                "it while rk4 still holds it to roundoff",
+                by_method["euler"]["finest_drift"] / max(by_method["rk4"]["finest_drift"], 1e-16),
+                1e6,
+                comparison=">=",
+            )
+        )
+
     for row in results["first_order_validity"]:
         tag = f"{row['curvature_label']}/s={row['arc_length']:g}"
         checks.append(
@@ -869,6 +1053,7 @@ def run_experiment(config: ExperimentConfig | None = None) -> dict[str, Any]:
     results = {
         "jacobi_ode_convergence": sweep_jacobi_convergence(config),
         "geodesic_flow_convergence": sweep_flow_convergence(config),
+        "wronskian_conservation": sweep_wronskian(config),
         "first_order_validity": sweep_first_order_validity(config),
         "path_sensitivity": sweep_path_sensitivity(config),
         "conjugate_point": study_conjugate_point(config),
@@ -877,9 +1062,15 @@ def run_experiment(config: ExperimentConfig | None = None) -> dict[str, Any]:
     core = _jsonable(
         {
             "schema": REPORT_SCHEMA,
+            "supersedes": SUPERSEDES,
+            "schema_changes": [
+                "adds results.wronskian_conservation: det Phi = 1 and its drift per method",
+                "adds observation_modes and tags first_order_validity with one",
+            ],
             "experiment": "geodesic-flow-and-jacobi-field-testbed",
             "claim_scope": "numerical-verification-against-closed-form-solutions",
             "curvatures": [form.K for form in all_space_forms()],
+            "observation_modes": observation_catalogue(),
             "config": config.to_dict(),
             "results": results,
             "checks": checks,
@@ -894,7 +1085,7 @@ def run_experiment(config: ExperimentConfig | None = None) -> dict[str, Any]:
     }
     report["content_hash"] = content_hash(core)
     report["environment"] = {
-        "geojac_version": __version__,
+        "package_version": __version__,
         "python": platform.python_version(),
         "numpy": np.__version__,
         "platform": platform.platform(terse=True),

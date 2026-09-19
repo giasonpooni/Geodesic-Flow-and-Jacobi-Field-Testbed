@@ -1,4 +1,4 @@
-name: experiment
+name: verify
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -43,13 +43,30 @@ jobs:
         run: pytest -q
 
       # The suite already re-runs every sweep, but running the shipped entry
-      # point separately proves the command in the README works and that the
-      # report and figure can be produced from a clean checkout.
-      - name: Run the experiment
+      # points separately proves the commands in the README work from a clean
+      # checkout and that the artefacts can be rebuilt.
+      - name: Run both experiment stages
         run: python examples/run_experiment.py --out out
+
+      - name: Rebuild the application reference report
+        run: python examples/write_reference_report.py
 
       - uses: actions/upload-artifact@v4
         with:
           name: reports-and-figures-py${{ matrix.python-version }}
           path: out/
           if-no-files-found: error
+
+  locked:
+    name: locked resolution (uv)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      # --locked fails if uv.lock does not match pyproject.toml, so a
+      # dependency change that was not locked cannot merge.
+      - run: uv sync --locked --extra dev
+      - run: uv run --locked ruff check .
+      - run: uv run --locked pytest -q

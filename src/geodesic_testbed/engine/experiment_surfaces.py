@@ -45,15 +45,17 @@ from typing import Any
 
 import numpy as np
 
-from . import __version__
+from .. import __version__
 from .analysis import fit_power_law, successive_orders
 from .envelope import (
     PathEnvelope,
     finite_difference_jacobi,
+    finite_difference_lateral,
     integrate_path,
     scan_headings,
 )
 from .experiment import _check, _jsonable, content_hash
+from .observation import catalogue as observation_catalogue
 from .surfaces import (
     ParametricSurface,
     cylinder,
@@ -64,7 +66,8 @@ from .surfaces import (
     torus,
 )
 
-REPORT_SCHEMA = "geodesic-jacobi-surfaces-v1"
+REPORT_SCHEMA = "geodesic-jacobi-surfaces-v2"
+SUPERSEDES = "geodesic-jacobi-surfaces-v1"
 
 
 @dataclass(frozen=True)
@@ -81,9 +84,16 @@ class SurfaceCase:
     chord_is_closed_form: bool = False
 
     def closed_form(self, s: np.ndarray) -> np.ndarray | None:
+        """The heading column ``b(s)``."""
         if self.reference is None:
             return None
         return {"s": lambda x: x, "sin(s)": np.sin, "sinh(s)": np.sinh}[self.reference](s)
+
+    def lateral_closed_form(self, s: np.ndarray) -> np.ndarray | None:
+        """The lateral column ``a(s) = cn_K(s)``."""
+        if self.reference is None:
+            return None
+        return {"s": np.ones_like, "sin(s)": np.cos, "sinh(s)": np.cosh}[self.reference](s)
 
     def closed_form_variation(self, s: float, epsilons: np.ndarray) -> np.ndarray | None:
         """Exact ``|J|`` from a central difference, where the chord is known exactly.
@@ -135,6 +145,9 @@ class SurfaceConfig:
     # every heading looks much the same and there is no decision to make.
     heading_scan_length: float = 6.0
     heading_scan_steps: int = 3000
+    # A heading whose Jacobi field dips below this away from the start is near
+    # a focus, and cheap forward separation there is bought with conditioning.
+    focus_margin_floor: float = 0.25
     curve_samples: int = 200
 
     analytic_tolerance: float = 1e-11
@@ -145,6 +158,7 @@ class SurfaceConfig:
     chord_closed_form_tolerance: float = 1e-9
     exactness_threshold: float = 1e-13
     speed_drift_tolerance: float = 1e-9
+    wronskian_tolerance: float = 1e-9
     curvature_tolerance: float = 1e-11
     curvature_tolerance_fd: float = 1e-6
 
@@ -186,7 +200,18 @@ def anchor_to_closed_forms(config: SurfaceConfig, cases) -> list[dict[str, Any]]
                     if finite_difference
                     else config.analytic_tolerance
                 ),
+                "lateral_reference": {"s": "1", "sin(s)": "cos(s)", "sinh(s)": "cosh(s)"}[
+                    case.reference
+                ],
                 "max_jacobi_error": float(np.max(np.abs(envelope.jacobi_field - expected))),
+                "max_lateral_error": float(
+                    np.max(np.abs(envelope.lateral_basis - case.lateral_closed_form(
+                        envelope.arc_length
+                    )))
+                ),
+                "max_wronskian_drift": float(
+                    np.max(envelope.transfer_map.wronskian_drift)
+                ),
                 "max_speed_drift": float(np.max(envelope.speed_drift)),
                 "max_curvature_error": _curvature_error(case.surface, envelope),
                 "focus_points": envelope.focus_points(),
@@ -242,6 +267,7 @@ def compare_two_routes(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
                 "case": case.key,
                 "surface": case.surface.name,
                 "arc_length": float(length),
+                "observation_mode": "ambient-euclidean-chord",
                 "jacobi_from_equation": from_equation,
                 "constant_curvature": constant_curvature,
                 "expected_exponent": 2.0,
@@ -253,6 +279,64 @@ def compare_two_routes(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
                     "|J| = sn_K(s) sin(eps)/eps" if exact is not None else None
                 ),
                 "chord_closed_form_max_relative_error": chord_error,
+                "fit": fit.to_dict(),
+                "samples": [
+                    {"epsilon": float(e), "relative_difference": float(d)}
+                    for e, d in zip(epsilons, deviation, strict=True)
+                ],
+            }
+        )
+    return rows
+
+
+def compare_lateral_route(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
+    """The first column of ``Phi``, checked the way the second one is.
+
+    ``b`` is validated by perturbing the initial heading. ``a`` gets its own,
+    structurally different perturbation: the start point is moved sideways
+    along the perpendicular geodesic and the initial direction is parallel
+    transported to it. Nothing about that construction touches the Jacobi
+    equation, so agreement is evidence rather than bookkeeping.
+    """
+    epsilons = np.asarray(config.epsilons, dtype=float)
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        length = config.two_route_arc_length
+        envelope = integrate_path(
+            case.surface,
+            u0=case.u0,
+            v0=case.v0,
+            heading=case.heading,
+            length=length,
+            n_steps=config.two_route_steps,
+        )
+        from_equation = abs(float(envelope.lateral_basis[-1]))
+        _, measured = finite_difference_lateral(
+            case.surface,
+            u0=case.u0,
+            v0=case.v0,
+            heading=case.heading,
+            epsilon=epsilons,
+            length=length,
+            n_steps=config.two_route_steps,
+        )
+        deviation = np.abs(measured[-1] / from_equation - 1.0)
+        exact = bool(np.max(deviation) < config.exactness_threshold)
+        fit = fit_power_law(
+            epsilons, deviation, y_floor=config.fit_floor, y_ceiling=config.fit_ceiling
+        )
+        rows.append(
+            {
+                "case": case.key,
+                "surface": case.surface.name,
+                "arc_length": float(length),
+                "observation_mode": "ambient-euclidean-chord",
+                "lateral_from_equation": from_equation,
+                "lateral_from_displaced_start": float(measured[-1][0]),
+                "regime": "exact-to-roundoff" if exact else "second-order",
+                "expected_exponent": 2.0,
+                "fitted_exponent": None if exact else float(fit.exponent),
+                "max_deviation": float(np.max(deviation)),
                 "fit": fit.to_dict(),
                 "samples": [
                     {"epsilon": float(e), "relative_difference": float(d)}
@@ -394,6 +478,11 @@ def build_envelopes(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
             n_steps=config.n_steps,
         )
         summary = envelope.summary()
+        summary["max_wronskian_drift"] = float(
+            np.max(envelope.transfer_map.wronskian_drift)
+        )
+        summary["max_lateral_amplification"] = float(np.max(np.abs(envelope.lateral_basis)))
+        summary["lateral_focus_points"] = envelope.transfer_map.focus_points(component="a")
         probes = np.linspace(0.0, case.length, 5)[1:]
         stride_index = [int(round(p / (case.length / config.n_steps))) for p in probes]
         summary["budget"] = [
@@ -446,17 +535,34 @@ def scan_for_robust_heading(config: SurfaceConfig, cases) -> dict[str, Any]:
         length=config.heading_scan_length,
         n_steps=config.heading_scan_steps,
     )
-    best, worst = rows[0], rows[-1]
+    lowest, highest = rows[0], rows[-1]
+    clear = [
+        row
+        for row in rows
+        if not row["passes_a_focus"] and row["focus_margin"] >= config.focus_margin_floor
+    ]
     return {
         "case": case.key,
         "surface": case.surface.name,
+        "objective": "minimum-forward-angular-error-amplification",
+        "objective_note": (
+            "Ranked by max |b(s)| alone. That is how far an aiming error is "
+            "carried, not robustness: a heading can score well by passing "
+            "through a focus, where the endpoint map is ill conditioned and a "
+            "family of paths crowds instead of covering. Boundary clearance, "
+            "chart validity, path length, curvature exposure and coverage are "
+            "not modelled."
+        ),
         "start": {"u": case.u0, "v": case.v0},
         "length": float(config.heading_scan_length),
         "n_headings": int(config.heading_scan_count),
-        "most_tolerant": best,
-        "least_tolerant": worst,
-        "sensitivity_ratio": float(
-            worst["max_abs_jacobi_field"] / best["max_abs_jacobi_field"]
+        "focus_margin_floor": float(config.focus_margin_floor),
+        "lowest_amplification": lowest,
+        "highest_amplification": highest,
+        "lowest_amplification_clear_of_a_focus": clear[0] if clear else None,
+        "n_headings_passing_a_focus": sum(1 for row in rows if row["passes_a_focus"]),
+        "amplification_ratio": float(
+            highest["max_forward_amplification"] / lowest["max_forward_amplification"]
         ),
         "headings": rows,
     }
@@ -498,6 +604,50 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
                     ),
                 )
             )
+
+    for row in results["anchored_to_closed_forms"]:
+        checks.append(
+            _check(
+                f"surface-anchor-lateral/{row['case']}",
+                f"the lateral column is recovered as a(s) = {row['lateral_reference']} "
+                f"on {row['surface']}",
+                row["max_lateral_error"],
+                row["tolerance"],
+            )
+        )
+
+    for row in results["envelopes"]:
+        checks.append(
+            _check(
+                f"surface-wronskian/{row['case']}",
+                "det Phi = a b' - a' b stays 1 along the path, an invariant the "
+                "solver never enforces",
+                row["max_wronskian_drift"],
+                config.wronskian_tolerance,
+            )
+        )
+
+    for row in results["lateral_route"]:
+        if row["regime"] == "exact-to-roundoff":
+            checks.append(
+                _check(
+                    f"surface-lateral-route/{row['case']}",
+                    "two parallel geodesics on a flat surface stay exactly as far "
+                    "apart as they started, so a(s) is recovered exactly",
+                    row["max_deviation"],
+                    config.exactness_threshold,
+                )
+            )
+            continue
+        checks.append(
+            _check(
+                f"surface-lateral-route/{row['case']}",
+                "moving the start point sideways and parallel-transporting the "
+                "direction recovers a(s), to second order in the offset",
+                abs(row["fitted_exponent"] - row["expected_exponent"]),
+                config.exponent_tolerance,
+            )
+        )
 
     for row in results["two_routes"]:
         checks.append(
@@ -617,7 +767,7 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
             "surface-heading-scan",
             "starting heading measurably changes how far an aiming error is "
             "carried, so there is a choice to make",
-            scan["sensitivity_ratio"],
+            scan["amplification_ratio"],
             1.1,
             comparison=">=",
         )
@@ -630,6 +780,30 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
             config.speed_drift_tolerance,
         )
     )
+    checks.append(
+        _check(
+            "surface-heading-scan-wronskian",
+            "and every one of them held det Phi = 1",
+            max(row["max_wronskian_drift"] for row in scan["headings"]),
+            config.wronskian_tolerance,
+        )
+    )
+    checks.append(
+        _check(
+            "surface-heading-scan-focus-tradeoff",
+            "lowest forward amplification is not robustness: the best-scoring "
+            "heading passes a focus, and a heading clear of one exists at a "
+            "measurably higher amplification",
+            (
+                scan["lowest_amplification_clear_of_a_focus"]["max_forward_amplification"]
+                / scan["lowest_amplification"]["max_forward_amplification"]
+                if scan["lowest_amplification_clear_of_a_focus"] is not None
+                else None
+            ),
+            1.0,
+            comparison=">=",
+        )
+    )
     return checks
 
 
@@ -639,6 +813,7 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
     results = {
         "anchored_to_closed_forms": anchor_to_closed_forms(config, cases),
         "two_routes": compare_two_routes(config, cases),
+        "lateral_route": compare_lateral_route(config, cases),
         "self_convergence": measure_self_convergence(config, cases),
         "finite_difference_cost": measure_finite_difference_cost(config, cases),
         "envelopes": build_envelopes(config, cases),
@@ -648,9 +823,19 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
     core = _jsonable(
         {
             "schema": REPORT_SCHEMA,
+            "supersedes": SUPERSEDES,
+            "schema_changes": [
+                "adds results.lateral_route: the a column checked by moving the start point",
+                "adds the lateral column and the Wronskian to the anchors and envelopes",
+                "heading_scan: max_abs_jacobi_field -> max_forward_amplification, adds "
+                "focus_margin and passes_a_focus, most/least_tolerant -> "
+                "lowest/highest_amplification, sensitivity_ratio -> amplification_ratio",
+                "adds observation_modes and tags each comparison with one",
+            ],
             "experiment": "curvature-aware-path-sensitivity-on-parametric-surfaces",
             "claim_scope": "numerical-verification-anchored-to-the-constant-curvature-stage",
-            "depends_on": "geodesic-jacobi-report-v1",
+            "depends_on": "geodesic-jacobi-report-v2",
+            "observation_modes": observation_catalogue(),
             "cases": [
                 {
                     "case": case.key,
@@ -676,7 +861,7 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
     }
     report["content_hash"] = content_hash(core)
     report["environment"] = {
-        "geojac_version": __version__,
+        "package_version": __version__,
         "python": platform.python_version(),
         "numpy": np.__version__,
         "platform": platform.platform(terse=True),

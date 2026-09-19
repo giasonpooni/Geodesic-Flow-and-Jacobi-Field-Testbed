@@ -5,8 +5,9 @@ geodesic drift from a nominal one — and over what range is the first-order
 (Jacobi) answer to that question actually correct?
 
 Everything below is produced by `examples/run_experiment.py` and recorded in
-[`validation/report-v1.json`](../validation/report-v1.json) with a pass/fail
-threshold attached to each claim.
+[`validation/report-v1.json`](../validation/report-v1.json), schema
+`geodesic-jacobi-report-v2`, with a pass/fail threshold attached to each claim:
+**126 declared checks, 0 failed.**
 
 ---
 
@@ -96,6 +97,35 @@ The geodesic sweep also records how far the numerical state drifts off the unit
 tangent bundle. At the finest step RK4 holds the constraints to `4e-14` on the
 sphere and `2e-13` on the hyperbolic plane; no projection or re-normalisation is
 applied anywhere, so this is the raw integrator.
+
+### The Wronskian: an invariant, and an exactly known drift
+
+The equation has no first-derivative term, so the Wronskian of its two
+fundamental solutions is conserved and starts at 1:
+
+```text
+det Phi(s) = a(s) b'(s) - a'(s) b(s) = 1      for every s
+```
+
+Nothing in the solver enforces it, so any departure is entirely the
+integrator's — and for a constant `K` and a fixed step it is known *exactly*,
+not asymptotically. The one-step map is a polynomial in `hA` with `A² = -K I`,
+and the determinant of a product is the product of determinants, so
+`det Phi = dⁿ`:
+
+| method | one-step `d` | predicted order | fitted order, `K=+1` / `K=-1` | max relative error vs `ǀdⁿ - 1ǀ` |
+|---|---|---|---|---|
+| euler | `1 + K h²` | 1 | 1.027 / 0.974 | 9.7e-13 / 1.1e-11 |
+| midpoint | `1 + K² h⁴ / 4` | 3 | 3.000 / 3.000 | 2.3e-06 / 7.3e-06 |
+| rk4 | `(1 - Kh²/2 + K²h⁴/24)² + K(h - Kh³/6)²` | 5 | 4.998 / 5.002 | 2.1e-07 / 8.1e-07 |
+
+Three more cleanly separated slopes, measured from a quantity for which no
+reference solution was needed at all — and checked against the closed form
+itself, not merely for its slope. On the flat model every method conserves the
+determinant exactly, so there is nothing to fit and the report says so.
+
+The invariant has teeth: at the finest step Euler has lost it by 1.6e-3 while
+RK4 still holds it to 2e-15, a ratio of 10¹². That is a declared check.
 
 ---
 
@@ -197,4 +227,9 @@ exactly where and by how much that fails.
   would be required to turn this into an instrument, and for the line between
   what is verified here and what is not.
 * **No adaptive stepping, no symplectic integrator, no compiled backend.** The
-  fixed-step methods are what make the order measurement legible.
+  fixed-step methods are what make the order and invariant measurements
+  legible.
+* **One column only, here.** This stage measures the heading column `b`. The
+  lateral column `a` and the full transfer map are carried and checked in
+  [SURFACES.md](SURFACES.md) §2, and the closed forms for both are what
+  `geodesic_testbed.constant_curvature_trace` returns.

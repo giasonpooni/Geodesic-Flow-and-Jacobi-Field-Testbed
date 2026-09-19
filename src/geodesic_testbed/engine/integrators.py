@@ -91,6 +91,37 @@ def integrate(
     return grid, trajectory
 
 
+def integrate_on_grid(
+    rhs: Rhs,
+    y0: State,
+    grid,
+    *,
+    method: str = "rk4",
+) -> np.ndarray:
+    """Integrate onto a caller-supplied, possibly non-uniform, arc-length grid.
+
+    :func:`integrate` owns the fixed-step case, which is what a convergence
+    study needs. This is for the other case: a caller who has already decided
+    where the samples must land -- a CAD parameterisation, a toolpath, a
+    measured scan -- and wants one step per interval between them.
+    """
+    grid = np.asarray(grid, dtype=float)
+    if grid.ndim != 1 or grid.size < 2:
+        raise ValueError("grid must be a one-dimensional array with at least two samples")
+    if np.any(np.diff(grid) <= 0.0):
+        raise ValueError("grid must be strictly increasing")
+    integrator = get_integrator(method)
+    y0 = np.asarray(y0, dtype=float)
+    trajectory = np.empty((grid.size,) + y0.shape, dtype=float)
+    trajectory[0] = y0
+    y = y0
+    for index in range(grid.size - 1):
+        h = float(grid[index + 1] - grid[index])
+        y = integrator.step(rhs, float(grid[index]), y, h)
+        trajectory[index + 1] = y
+    return trajectory
+
+
 def step_ladder(n_min: int = 10, n_levels: int = 9, factor: int = 2) -> tuple[int, ...]:
     """Geometric ladder of step counts, e.g. 10, 20, 40, ... ."""
     return tuple(int(n_min * factor**level) for level in range(n_levels))

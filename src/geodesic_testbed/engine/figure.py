@@ -15,7 +15,7 @@ from typing import Any
 
 import numpy as np
 
-from .jacobi import integrate_jacobi, jacobi_reference
+from .flows import integrate_jacobi, jacobi_reference
 from .spaceforms import all_space_forms
 
 # Categorical slots 1-3 of the validated default palette, assigned to entities

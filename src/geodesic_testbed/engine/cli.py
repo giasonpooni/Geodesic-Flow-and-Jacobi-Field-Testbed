@@ -8,7 +8,22 @@ import pathlib
 from .experiment import ExperimentConfig, run_experiment, write_report
 from .experiment_surfaces import SurfaceConfig, run_surface_experiment
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+def _repository_root() -> pathlib.Path | None:
+    """Find the checkout this package was imported from, if there is one.
+
+    ``--update-committed`` rewrites tracked artefacts, so it needs the working
+    copy, not wherever the package happens to be installed. An installed wheel
+    has no checkout above it and must say so rather than writing files into
+    ``site-packages``.
+    """
+    for candidate in pathlib.Path(__file__).resolve().parents:
+        if (candidate / "pyproject.toml").exists() and (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+ROOT = _repository_root() or pathlib.Path.cwd()
 
 STAGES = {
     "constant-curvature": {
@@ -42,7 +57,7 @@ def _draw(stage: str, report: dict, path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="geojac-experiment",
+        prog="geodesic-sensitivity-experiment",
         description="Run the geodesic-flow and Jacobi-field experiments.",
     )
     parser.add_argument("-o", "--out", default="out", help="output directory (default: out)")
@@ -59,6 +74,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--no-figure", action="store_true", help="skip the figures")
     arguments = parser.parse_args(argv)
+
+    if arguments.update_committed and _repository_root() is None:
+        parser.error(
+            "--update-committed rewrites tracked artefacts and needs a checkout; "
+            "this package was imported from an installed location with no "
+            "repository above it"
+        )
 
     stages = tuple(STAGES) if arguments.stage == "all" else (arguments.stage,)
     out = pathlib.Path(arguments.out)

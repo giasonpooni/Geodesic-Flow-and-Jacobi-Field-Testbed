@@ -28,7 +28,7 @@ Three levels, in increasing order of what they would be worth:
 
 | level | meaning | status here |
 |---|---|---|
-| **Proof of work** | derivation, solver, numerical tests, reproducible reports | **done** — 156 declared checks across two stages: orders 1/2/4 recovered, the `ε²` coefficient matched to ~1e-4 relative, the conjugate point located to 2e-15, and the general parametric solver recovering `s`, `sin s` and `sinh s` to 1e-13 before it is trusted on a saddle. [`report-v1.json`](../validation/report-v1.json), [`report-v2-surfaces.json`](../validation/report-v2-surfaces.json) |
+| **Proof of work** | derivation, solver, numerical tests, reproducible reports | **done** — 191 declared checks across two stages: orders 1/2/4 recovered, the `ε²` coefficient matched to ~1e-4 relative, the conjugate point located to 2e-15, the full 2x2 transfer map with `det Phi = 1` held to 2e-14, and the general parametric solver recovering both columns to 4e-13 before it is trusted on a saddle. [`report-v1.json`](../validation/report-v1.json), [`report-v2-surfaces.json`](../validation/report-v2-surfaces.json) |
 | **Proof of function** | measured physical path separation agrees with the Jacobi prediction inside a quantified error budget | **not attempted** — no physical measurement exists in this repository |
 | **Proof of industrial relevance** | using the sensitivity model produces a better decision: fewer gaps, better coverage, lower endpoint error | **not attempted** |
 
@@ -36,6 +36,25 @@ Nothing in this repository should be read as a claim at the second or third
 level. The distinction is the point of stating it.
 
 ---
+
+## Observation modes
+
+Since a prediction and a measurement are only comparable if they are the same
+quantity, every recorded comparison names its mode
+(`geodesic_testbed.engine.observation`):
+
+| mode | version | implemented |
+|---|---|---|
+| `intrinsic-surface-distance` | 1 | yes |
+| `ambient-euclidean-chord` | 1 | yes |
+| `scanner-reconstructed-chord` | 0 | no — needs a characterised instrument |
+| `camera-image-residual` | 0 | no |
+
+A camera does not measure a chord directly; it measures image coordinates, and
+a chord appears only after calibration, reconstruction and registration. The
+last two modes are declared and left unimplemented rather than quietly
+conflated with the second, and every experimental record should carry its mode,
+calibration, frames, units and uncertainty alongside the number.
 
 ## A finding that changes how a bench must be built
 
@@ -159,17 +178,22 @@ less.
    Triangulated meshes are **not** done: a mesh needs a discrete curvature
    estimator with its own error analysis.
 4. **A sensitivity envelope around every nominal path.** — **done**;
-   `results.envelopes` gives curvature, Jacobi field, amplification, cumulative
-   heading budget and focus flags at every arc length.
+   `results.envelopes` gives curvature, both transfer columns, amplification,
+   cumulative heading budget and focus flags at every arc length. The full
+   `Phi(s)` also propagates a starting-pose covariance as `Phi C Phi^T`, so the
+   envelope can be a distribution rather than a box.
 5. **The three-coupon bench.** — not started.
 6. **Controlled fixture, angle and backlash errors.** — not started.
 7. **A robust path selector** that prefers a starting path with lower
-   sensitivity. — **first version done**: `scan_headings` ranks candidate
-   starting headings by worst-case sensitivity. On a torus it separates the
-   best from the worst by a factor of 21 over the same path length, because the
-   tolerant heading stays on the positively curved side where paths refocus.
-   It scans headings from a fixed start; it does not yet choose among
-   *routes* under a coverage or manufacturing constraint.
+   sensitivity. — **partly done, and instructive about why it is only partly**:
+   `scan_headings` ranks candidate starting headings by
+   `minimum-forward-angular-error-amplification`, separating best from worst by
+   a factor of 21 on a torus. But the best-scoring headings all pass through a
+   focus, where the endpoint map is ill conditioned — low forward separation
+   bought with bad conditioning. The scan therefore also reports a focus
+   margin, and the defensible pick is the lowest amplification *clear of a
+   focus*. A production score still needs boundary clearance, chart validity,
+   path length, curvature exposure and coverage, none of which are modelled.
 8. **Configuration space**, where the manifold is the robot's, not the
    workpiece's. — not started.
 

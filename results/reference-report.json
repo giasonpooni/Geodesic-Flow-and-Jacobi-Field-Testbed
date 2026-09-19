@@ -1,0 +1,79 @@
+{
+  "schema": "geodesic-sensitivity-report-v1",
+  "revision": 2,
+  "revision_note": "Same schema. Revision 2 evaluates the finite ray separation as sn_K(d/2) = sn_K(s) sin(delta/2) instead of through arccos/arccosh, which keeps full precision at small delta; the two max_finite_vs_first_order_error values move by about 2 per cent and are now free of the reference's own rounding.",
+  "claim_scope": "first-order-computational-analysis",
+  "units": {
+    "arclength": "declared length unit",
+    "curvature": "inverse declared length unit squared",
+    "heading": "radian"
+  },
+  "reference_grid": {
+    "start": 0.0,
+    "stop": 1.25,
+    "samples": 126
+  },
+  "numerical_validation": [
+    {
+      "model": "plane",
+      "curvature": 0.0,
+      "max_position_basis_error": 0.0,
+      "max_angle_basis_error": 0.0,
+      "max_finite_vs_first_order_error": 5.208333265539766e-11
+    },
+    {
+      "model": "sphere",
+      "curvature": 1.0,
+      "max_position_basis_error": 9.85762582672578e-11,
+      "max_angle_basis_error": 4.7209680609228144e-11,
+      "max_finite_vs_first_order_error": 1.6036525839896454e-11
+    },
+    {
+      "model": "hyperbolic-plane",
+      "curvature": -1.0,
+      "max_position_basis_error": 1.6523449275496205e-10,
+      "max_angle_basis_error": 1.9532819806045154e-10,
+      "max_finite_vs_first_order_error": 2.3802806622431893e-10
+    }
+  ],
+  "application_examples": {
+    "positive-curvature": {
+      "manufacturing": {
+        "claim_scope": "first-order-deterministic-bound",
+        "max_gap": 0.002019598013377602,
+        "worst_gap_arclength": 0.02,
+        "max_overlap": 0.07099637772397485,
+        "worst_overlap_arclength": 1.25
+      },
+      "inspection": {
+        "claim_scope": "first-order-deterministic-bound",
+        "reliable": true,
+        "max_coverage_gap": 0.0,
+        "worst_cross_track_error": 0.0014141985880698439,
+        "minimum_coverage_margin": 0.017980401986622388
+      }
+    },
+    "negative-curvature": {
+      "manufacturing": {
+        "claim_scope": "first-order-deterministic-bound",
+        "max_gap": 0.09582307363102527,
+        "worst_gap_arclength": 1.25,
+        "max_overlap": 0.002020402013377956,
+        "worst_overlap_arclength": 0.02
+      },
+      "inspection": {
+        "claim_scope": "first-order-deterministic-bound",
+        "reliable": false,
+        "max_coverage_gap": 0.07582307363102528,
+        "worst_cross_track_error": 0.0034903429574618416,
+        "minimum_coverage_margin": -0.07582307363102528
+      }
+    }
+  },
+  "limitations": [
+    "Jacobi fields are first-order variations, not exact finite path distances.",
+    "Gap, overlap, and coverage outputs are deterministic bounds, not probabilities.",
+    "Machine tracking, material deformation, and sensor detection require separate models.",
+    "A geodesic segment is not thereby established as globally shortest."
+  ]
+}
