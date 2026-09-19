@@ -13,6 +13,13 @@
 - Do not add a third finite-difference helper, a local GPU stack, or a compiled
   backend. Fixed-step methods of known order are what make the convergence
   measurement legible.
-- Next foundation piece is surfaces of varying curvature, where there is no
-  closed form to check against and the reference must come from a converged
-  fine-step solution. See `docs/INSTRUMENT.md` for the roadmap.
+- Stage two (parametric surfaces of varying curvature) is implemented. Anything
+  added there must stay anchored: the general machinery has to keep reproducing
+  the constant-curvature closed forms, and that anchor is a declared check, not
+  a comment.
+- A new surface needs only `r(u, v)`; supply analytic derivatives too if the
+  surface has them, since the finite-difference fallback costs about eight
+  significant figures and `experiment_surfaces.py` measures that cost.
+- Next pieces, in order: triangulated meshes (needs a discrete curvature
+  estimator with its own error analysis), then the physical bench. See
+  `docs/INSTRUMENT.md` for the full roadmap and for what is still unproven.

@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from geojac.experiment import ExperimentConfig, run_experiment
+from geojac.experiment_surfaces import SurfaceConfig, run_surface_experiment
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,3 +28,15 @@ def report() -> dict:
 def committed() -> dict:
     """The report checked into ``validation/``."""
     return json.loads((ROOT / "validation" / "report-v1.json").read_text())
+
+
+@pytest.fixture(scope="session")
+def surface_report() -> dict:
+    """The stage-two report, computed now from the code in the working tree."""
+    return run_surface_experiment(SurfaceConfig())
+
+
+@pytest.fixture(scope="session")
+def committed_surface_report() -> dict:
+    """The stage-two report checked into ``validation/``."""
+    return json.loads((ROOT / "validation" / "report-v2-surfaces.json").read_text())

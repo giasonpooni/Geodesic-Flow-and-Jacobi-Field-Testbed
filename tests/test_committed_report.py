@@ -71,3 +71,18 @@ def test_the_committed_report_is_not_stale(committed: dict, report: dict) -> Non
     assert committed_ids == fresh_ids
     assert set(committed["results"]) == set(report["results"])
     assert committed["config"] == report["config"]
+
+
+def test_the_committed_surface_report_exists_and_passed(committed_surface_report: dict) -> None:
+    assert committed_surface_report["summary"]["all_passed"] is True
+    assert committed_surface_report["summary"]["n_failed"] == 0
+    assert (ROOT / "figures" / "surfaces-testbed-v1.png").stat().st_size > 50_000
+
+
+def test_the_committed_surface_report_is_not_stale(
+    committed_surface_report: dict, surface_report: dict
+) -> None:
+    assert [check["id"] for check in committed_surface_report["checks"]] == [
+        check["id"] for check in surface_report["checks"]
+    ]
+    assert committed_surface_report["config"] == surface_report["config"]

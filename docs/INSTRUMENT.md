@@ -15,9 +15,10 @@ and a neighbouring one. Read as an instrument:
 | `j(s) = 0` away from the start | neighbouring paths refocus; the path-to-endpoint map is ill-conditioned there |
 | `εj(s)` departs from the measured separation | the first-order model has left its validity range |
 
-This repository implements and verifies the **mathematical calibration stage**
-of that instrument, on the three surfaces where a closed-form answer exists to
-check against. It is not the application.
+This repository implements and verifies the **mathematical stages** of that
+instrument: first on the three surfaces where a closed-form answer exists to
+check against, then on arbitrary parametric surfaces anchored to those. It is
+not yet the application, because nothing here has been measured physically.
 
 ---
 
@@ -27,7 +28,7 @@ Three levels, in increasing order of what they would be worth:
 
 | level | meaning | status here |
 |---|---|---|
-| **Proof of work** | derivation, solver, numerical tests, reproducible reports | **done** — 109 declared checks, orders 1/2/4 recovered, the `ε²` coefficient matched to ~1e-4 relative, conjugate point located to 2e-15, all in [`validation/report-v1.json`](../validation/report-v1.json) |
+| **Proof of work** | derivation, solver, numerical tests, reproducible reports | **done** — 156 declared checks across two stages: orders 1/2/4 recovered, the `ε²` coefficient matched to ~1e-4 relative, the conjugate point located to 2e-15, and the general parametric solver recovering `s`, `sin s` and `sinh s` to 1e-13 before it is trusted on a saddle. [`report-v1.json`](../validation/report-v1.json), [`report-v2-surfaces.json`](../validation/report-v2-surfaces.json) |
 | **Proof of function** | measured physical path separation agrees with the Jacobi prediction inside a quantified error budget | **not attempted** — no physical measurement exists in this repository |
 | **Proof of industrial relevance** | using the sensitivity model produces a better decision: fewer gaps, better coverage, lower endpoint error | **not attempted** |
 
@@ -35,6 +36,29 @@ Nothing in this repository should be read as a claim at the second or third
 level. The distinction is the point of stating it.
 
 ---
+
+## A finding that changes how a bench must be built
+
+Stage two measures the Jacobi field two independent ways: by integrating
+`j'' + K j = 0`, and by central-differencing the geodesic flow itself. They
+agree to second order in the differencing step, with coefficient
+
+```text
+( cn_K(s)² + κ_n² sn_K(s)² ) / 6
+```
+
+where `κ_n` is the normal curvature transverse to the path. The second term
+exists because the differencing measures a **straight-line chord in space**,
+while the Jacobi field is a **distance in the surface**. On a plate the term
+vanishes; on the pseudosphere it is 2.5 times the intrinsic term.
+
+A camera, a photogrammetry rig or a line-laser scanner measures chords. A bench
+that compares such a measurement directly against `ε j(s)` will see a
+discrepancy that is second order in the perturbation — the same order as the
+first-order model's own failure — and will mistake one for the other. Either
+convert the measurement to an in-surface distance, or predict the chord. The
+coefficient above says how much it matters for a given coupon, before any
+hardware is bought.
 
 ## The readout, today
 
@@ -104,13 +128,13 @@ measurement as the angle grows.
 
 **One caveat that must not be glossed over.** A flat plate has `K = 0` exactly
 and a spherical cap has constant `K > 0` exactly, but a hyperbolic-paraboloid
-saddle does **not** have constant curvature — `K` varies across it. For the
-`K = -1` coupon either machine a surface of genuinely constant negative
-curvature (a pseudosphere/tractricoid patch, which has a singular edge to
-design around) or accept that the constant-curvature prediction is an
-approximation and do step 3 of the roadmap first. Comparing a variable-`K`
-coupon against a constant-`K` prediction and calling the mismatch an
-experimental error would be the easiest way to get a wrong answer here.
+saddle does **not** have constant curvature — `K` varies across it, from -0.78
+at its centre to -0.03 two units out. Comparing a variable-`K` coupon against a
+constant-`K` prediction and calling the mismatch an experimental error would be
+the easiest way to get a wrong answer here. Stage two removes the excuse: the
+saddle's own prediction is computed from its own curvature, and a genuinely
+constant-`K < 0` coupon (a pseudosphere patch, with a singular edge to design
+around) is available for a cleaner comparison.
 
 What a run should report: prediction-versus-measurement RMSE, repeatability
 across runs, maximum gap or overlap, sensitivity to initial position as well as
@@ -124,22 +148,33 @@ less.
 
 ## Roadmap
 
-1. **Complete the constant-curvature numerical experiment.** — done; this repository.
-2. **Verify Jacobi solutions against finite differences between nearby geodesics.** — done;
-   `results.first_order_validity`, including the `ε²` coefficient and both failure modes.
-3. **Arbitrary triangulated or parametric surfaces**, where `K` varies along the
-   path, the Jacobi equation has no closed-form solution, and the reference must
-   come from a converged fine-step solution instead. This is the next piece of
-   work, and the precondition for a meaningful saddle coupon.
-4. **A sensitivity envelope around every nominal path**, not just a scalar at
-   selected arc lengths.
-5. **The three-coupon bench.**
-6. **Controlled fixture, angle and backlash errors.**
-7. **A robust path selector** that prefers a starting path with lower sensitivity.
-8. **Configuration space**, where the manifold is the robot's, not the workpiece's.
+1. **Complete the constant-curvature numerical experiment.** — **done**; stage one.
+2. **Verify Jacobi solutions against finite differences between nearby geodesics.** —
+   **done**; `results.first_order_validity`, including the `ε²` coefficient and both
+   failure modes, and again on every parametric surface in stage two.
+3. **Arbitrary parametric surfaces**, where `K` varies along the path and there
+   is no closed form to check against. — **done**; stage two, verified by
+   anchoring to the constant-curvature answers, by two independent routes to
+   the same field, by self-convergence, and by unit-speed drift.
+   Triangulated meshes are **not** done: a mesh needs a discrete curvature
+   estimator with its own error analysis.
+4. **A sensitivity envelope around every nominal path.** — **done**;
+   `results.envelopes` gives curvature, Jacobi field, amplification, cumulative
+   heading budget and focus flags at every arc length.
+5. **The three-coupon bench.** — not started.
+6. **Controlled fixture, angle and backlash errors.** — not started.
+7. **A robust path selector** that prefers a starting path with lower
+   sensitivity. — **first version done**: `scan_headings` ranks candidate
+   starting headings by worst-case sensitivity. On a torus it separates the
+   best from the worst by a factor of 21 over the same path length, because the
+   tolerant heading stays on the positively curved side where paths refocus.
+   It scans headings from a fixed start; it does not yet choose among
+   *routes* under a coverage or manufacturing constraint.
+8. **Configuration space**, where the manifold is the robot's, not the
+   workpiece's. — not started.
 
-Steps 1 and 2 are the content of this repository. Steps 3 onward are not
-started, and the README does not claim otherwise.
+Steps 1-4 and a first cut of 7 are the content of this repository. Steps 5, 6
+and 8 are not started, and the README does not claim otherwise.
 
 ## Where it would apply
 

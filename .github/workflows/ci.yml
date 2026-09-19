@@ -50,6 +50,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: report-and-figure-py${{ matrix.python-version }}
+          name: reports-and-figures-py${{ matrix.python-version }}
           path: out/
           if-no-files-found: error
