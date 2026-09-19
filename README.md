@@ -50,8 +50,8 @@ shortest.
 Python 3.12 or 3.13, NumPy, and `uv` are supported.
 
 ```bash
-git clone https://github.com/giasonpooni/Curved-Surface-Geodesic-Sensitivity.git
-cd Curved-Surface-Geodesic-Sensitivity
+git clone https://github.com/giasonpooni/Curved-Surface-Geodesic-Sensitivity-Runtime.git
+cd Curved-Surface-Geodesic-Sensitivity-Runtime
 uv run --python 3.13 --dev pytest
 uv run --python 3.13 python examples/write_reference_report.py
 ```
