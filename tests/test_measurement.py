@@ -214,10 +214,27 @@ def test_a_stale_mode_version_is_refused() -> None:
 
 
 def test_a_measurement_covariance_must_be_a_covariance() -> None:
-    assert _record(measurement_covariance=[[1.44e-4]]).measurement_covariance is not None
-    for bad in ([[1.0, 2.0], [2.0, 1.0]], [[float("nan")]], [[1.0, 0.0]]):
+    good = np.diag([1.44e-4, 1.44e-4, 1.44e-4]).tolist()
+    assert _record(measurement_covariance=good).measurement_covariance is not None
+    for bad in (
+        [[1.0, 2.0], [2.0, 1.0]],       # not positive semidefinite
+        [[float("nan")]],                # not finite
+        [[1.0, 0.0]],                    # not square
+        np.array([[1.0, 2.0], [3.0, 4.0]]).tolist(),  # not symmetric
+    ):
         with pytest.raises(ValueError):
             _record(measurement_covariance=bad)
+
+
+def test_a_measurement_covariance_of_the_wrong_size_is_refused() -> None:
+    """Square, symmetric and positive semidefinite, and still the wrong matrix.
+
+    A 1x1 covariance on a trial that measured three separations passes every
+    other check here. It is a covariance -- of some other trial -- and pairing
+    it with these arc lengths is the failure mode the shape bound exists for.
+    """
+    with pytest.raises(ValueError, match="1x1 and this trial measured 3"):
+        _record(measurement_covariance=[[1.44e-4]])
 
 
 # -- binding a trial to the record the prediction came from ----------------
@@ -285,3 +302,107 @@ def test_an_unbound_prediction_reports_that_no_tie_was_established() -> None:
     assert result["calibration"]["agreed"] is None
     assert result["calibration"]["prediction"]["bound"] is False
     assert result["calibration"]["trial"]["calibration_ids"] == ["bench-cal-2026-09"]
+
+
+# -- the comparison statistic ----------------------------------------------
+
+
+def test_a_comparison_with_no_covariance_says_so_rather_than_implying_a_verdict() -> None:
+    """The scalars are a summary of the residual, not a statistic about it."""
+    verdict = compare(_record(), _filtered([0.0, 1.70, 3.40]))
+    statistics = verdict["residual_statistics"]
+    assert statistics["available"] is False
+    assert "no covariance" in statistics["reason"]
+    assert "not a statistic" in statistics["reason"]
+
+
+def test_a_trial_that_declares_a_covariance_is_compared_against_it() -> None:
+    """Declaring one and not using it was the defect: it is the whole comparison."""
+    record = _record(measurement_covariance=np.diag([4e-4, 4e-4, 4e-4]).tolist())
+    verdict = compare(record, _filtered([0.0, 1.70, 3.40]))
+    statistics = verdict["residual_statistics"]
+    assert statistics["available"] is True
+    assert statistics["source"] == "trial-declared"
+    assert statistics["degrees_of_freedom"] == 3
+    assert statistics["band"]["lower"] < statistics["band"]["upper"]
+    assert statistics["verdict"] in {
+        "consistent", "covariance-too-large", "residual-too-large"
+    }
+    assert 0.0 <= statistics["probability_less_than"] <= 1.0
+
+
+def test_the_band_is_closed_at_both_ends_so_an_inflated_covariance_fails() -> None:
+    """A budget large enough to cover everything is rejected, not rewarded.
+
+    The same residual against two covariances: one honest, one a hundred times
+    too large. A one-sided test passes both. Only the lower limit distinguishes
+    them, and overstating is the direction a measurement budget usually errs.
+    """
+    def unfiltered(**overrides):
+        return _record(
+            filter_identifier="none",
+            filter_version="",
+            filter_causal=True,
+            filter_operator_digest="",
+            **overrides,
+        )
+
+    # The residual is [0, 0.02, 0.04]; a variance of 6.7e-4 makes the reduced
+    # chi-square one by construction, and a hundred times that does not.
+    predicted = [0.0, 1.70, 3.40]
+    honest = compare(
+        unfiltered(measurement_covariance=np.diag([6.7e-4] * 3).tolist()), predicted
+    )["residual_statistics"]
+    inflated = compare(
+        unfiltered(measurement_covariance=np.diag([6.7e-2] * 3).tolist()), predicted
+    )["residual_statistics"]
+
+    assert honest["reduced_chi_square"] == pytest.approx(1.0, rel=0.02)
+
+    assert honest["verdict"] == "consistent"
+    assert inflated["verdict"] == "covariance-too-large"
+    assert inflated["chi_square"] < honest["chi_square"]
+
+
+def test_a_residual_far_larger_than_the_declared_covariance_is_rejected() -> None:
+    verdict = compare(
+        _record(measurement_covariance=np.diag([1e-8] * 3).tolist()),
+        _filtered([0.0, 1.50, 3.00]),
+    )["residual_statistics"]
+    assert verdict["verdict"] == "residual-too-large"
+    assert verdict["max_abs_whitened_residual"] > 10.0
+
+
+def test_an_assembled_covariance_of_the_wrong_size_is_refused() -> None:
+    """Two matrices that are each fine and are not the same comparison."""
+    from geodesic_testbed.engine.output_covariance import OutputCovariance
+
+    wrong = OutputCovariance(
+        arclength=np.array([0.0, 1.0, 2.0, 3.0]),
+        outputs=("signed-transverse-separation",),
+        blocks={"observation-noise": np.diag([1e-4] * 4)},
+    )
+    with pytest.raises(ValueError, match="not the same comparison"):
+        compare(_record(), _filtered([0.0, 1.70, 3.40]), covariance=wrong)
+
+
+def test_an_assembled_covariance_takes_precedence_over_the_trial_s_own() -> None:
+    """The trial knows its instrument; the assembled total knows the whole chain."""
+    from geodesic_testbed.engine.output_covariance import OutputCovariance
+
+    assembled = OutputCovariance(
+        arclength=np.array([0.0, 100.0, 200.0]),
+        outputs=("signed-transverse-separation",),
+        blocks={
+            "observation-noise": np.diag([4e-4] * 3),
+            "shared-parameters": np.full((3, 3), 9e-4),
+        },
+    )
+    verdict = compare(
+        _record(measurement_covariance=np.diag([4e-4] * 3).tolist()),
+        _filtered([0.0, 1.70, 3.40]),
+        covariance=assembled,
+    )["residual_statistics"]
+    assert verdict["source"] == "assembled"
+    assert set(verdict["shares"]) == {"observation-noise", "shared-parameters"}
+    assert sum(verdict["shares"].values()) == pytest.approx(1.0)

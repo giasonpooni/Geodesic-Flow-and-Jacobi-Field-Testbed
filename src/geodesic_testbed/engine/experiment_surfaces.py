@@ -39,6 +39,7 @@ them, and the difference is reported.
 
 from __future__ import annotations
 
+import json
 import platform
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
@@ -47,7 +48,7 @@ import numpy as np
 
 from .. import __version__
 from .analysis import fit_power_law, successive_orders
-from .contract import GeometryUncertainty
+from .contract import GeometryUncertainty, Units
 from .envelope import (
     PathEnvelope,
     estimate_convergence,
@@ -60,6 +61,7 @@ from .envelope import (
 from .experiment import _check, _jsonable, content_hash
 from .observation import catalogue as observation_catalogue
 from .observation_model import ObservationModel
+from .path_artefact import ARTEFACT_DOMAIN, PATH_GEOMETRY_SCHEMA
 from .planning import (
     ChartBoundary,
     Objective,
@@ -1434,6 +1436,166 @@ def _resolvability_scale_invariance(config: SurfaceConfig) -> dict[str, Any]:
     }
 
 
+def measure_imported_path_boundary(config: SurfaceConfig, cases) -> dict[str, Any]:
+    """What survives the crossing when the path arrives as a file.
+
+    The adapter's whole risk is that it is the one place a path this runtime
+    did not compute becomes a transfer record. Four things are measured, and
+    each answers a way that could go wrong without a symptom:
+
+    *anchor* -- an artefact built from each model space still reproduces its
+    closed form after a JSON round trip, so the container did not lose
+    anything the equation reads;
+
+    *interpolation order* -- the declared curvature interpolation is a choice
+    with a convergence rate, measured against a path solved on the surface at
+    ``reference_steps``. The monotone cubic and the piecewise-linear one
+    differ by orders, which is why the policy is a required field;
+
+    *invariance* -- a rigid transform of the artefact leaves the map bit for
+    bit alone, and a change of length unit moves each quantity by its own
+    exponent;
+
+    *refusal* -- an artefact whose producer already failed is not integrated.
+    """
+    from .imported_path import (
+        artefact_from_envelope,
+        transfer_map_from_artefact,
+        transfer_record_from_artefact,
+    )
+    from .path_artefact import PathGeometryArtefact
+
+    units = Units(length="metre", angle="radian")
+
+    def artefact_for(case, n_steps: int, interpolation: str = "pchip-monotone"):
+        envelope = integrate_paths(
+            case.surface,
+            u0=case.u0,
+            v0=case.v0,
+            headings=[case.heading],
+            length=case.length,
+            n_steps=n_steps,
+        )[0]
+        return artefact_from_envelope(
+            envelope,
+            identifier=f"{case.key}-{n_steps}",
+            surface_digest=f"surface:{case.surface.name}",
+            path_digest=f"path:{case.key}:{n_steps}",
+            units=units,
+            curvature_interpolation=interpolation,
+        )
+
+    anchors: list[dict[str, Any]] = []
+    for case in cases:
+        closed = case.closed_form(np.linspace(0.0, case.length, config.n_steps + 1))
+        if closed is None:
+            continue
+        artefact = artefact_for(case, config.n_steps)
+        replayed = PathGeometryArtefact.from_dict(
+            json.loads(json.dumps(artefact.to_dict()))
+        )
+        produced = transfer_map_from_artefact(replayed)
+        record = transfer_record_from_artefact(replayed)
+        anchors.append(
+            {
+                "case": case.key,
+                "reference": case.reference,
+                "samples": int(replayed.samples),
+                "heading_column_error": float(np.max(np.abs(produced.b - closed))),
+                "determinant_error": float(np.max(np.abs(record.determinant - 1.0))),
+                "domain": record.domain,
+                "round_tripped": True,
+            }
+        )
+
+    saddle = next(case for case in cases if case.key == "saddle")
+    reference = integrate_paths(
+        saddle.surface,
+        u0=saddle.u0,
+        v0=saddle.v0,
+        headings=[saddle.heading],
+        length=saddle.length,
+        n_steps=config.reference_steps,
+    )[0].transfer_map
+    target = float(reference.b[-1])
+    counts = tuple(int(n) for n in config.step_counts)
+    interpolation: list[dict[str, Any]] = []
+    for policy in ("pchip-monotone", "linear"):
+        errors = [
+            abs(float(transfer_map_from_artefact(artefact_for(saddle, n, policy)).b[-1]) - target)
+            for n in counts
+        ]
+        order, _ = np.polyfit(
+            np.log(1.0 / np.asarray(counts, dtype=float)), np.log(errors), 1
+        )
+        interpolation.append(
+            {
+                "policy": policy,
+                "step_counts": list(counts),
+                "errors": [float(value) for value in errors],
+                "fitted_order": float(order),
+                "error_at_coarsest": float(errors[0]),
+            }
+        )
+    coarse_ratio = interpolation[1]["error_at_coarsest"] / interpolation[0]["error_at_coarsest"]
+
+    artefact = artefact_for(saddle, config.n_steps)
+    rotation = _rotation_matrix(np.array([0.3, -0.5, 0.8]), 0.9)
+    moved = replace(
+        artefact,
+        position=artefact.position @ rotation.T + np.array([12.0, -3.5, 0.25]),
+        tangent=artefact.tangent @ rotation.T,
+        transverse=artefact.transverse @ rotation.T,
+    )
+    here = transfer_map_from_artefact(artefact)
+    there = transfer_map_from_artefact(moved)
+    rigid_error = float(np.max(np.abs(here.b - there.b)))
+
+    scale = 1000.0
+    rescaled = transfer_map_from_artefact(artefact.converted_to("millimetre", scale))
+    expected = here.b * scale
+    unit_error = float(
+        np.max(np.abs(rescaled.b - expected)) / max(float(np.max(np.abs(expected))), 1.0)
+    )
+
+    failed = replace(
+        artefact,
+        upstream_status="failed",
+        upstream_note="the upstream trace left the patch it was solved on",
+    )
+    try:
+        transfer_map_from_artefact(failed)
+    except ValueError:
+        refused = True
+    else:  # pragma: no cover - the refusal is the point
+        refused = False
+
+    return {
+        "schema": PATH_GEOMETRY_SCHEMA,
+        "domain": ARTEFACT_DOMAIN,
+        "anchors": anchors,
+        "interpolation": interpolation,
+        "linear_over_cubic_at_coarsest": float(coarse_ratio),
+        "rigid_transform_error": rigid_error,
+        "unit_conversion_relative_error": unit_error,
+        "failed_artefact_refused": bool(refused),
+        "note": (
+            "the adapter reads the artefact's arclength and curvature and nothing "
+            "else, which is why a rigid transform is exactly rather than nearly "
+            "invariant"
+        ),
+    }
+
+
+def _rotation_matrix(axis: np.ndarray, angle: float) -> np.ndarray:
+    axis = np.asarray(axis, dtype=float)
+    axis = axis / np.linalg.norm(axis)
+    cross = np.array(
+        [[0.0, -axis[2], axis[1]], [axis[2], 0.0, -axis[0]], [-axis[1], axis[0], 0.0]]
+    )
+    return np.eye(3) + np.sin(angle) * cross + (1.0 - np.cos(angle)) * (cross @ cross)
+
+
 def measure_chart_rescaling_invariance(cases) -> dict[str, Any]:
     """The defect that retired ``sqrt(EG - F^2) / max(E, G)``.
 
@@ -2300,6 +2462,85 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
         )
     )
 
+    imported = results["imported_path_boundary"]
+    for row in imported["anchors"]:
+        checks.append(
+            _check(
+                f"imported-path-anchor/{row['case']}",
+                "a path handed over as a path-geometry-v1 file, written to JSON and "
+                f"read back, still reproduces {row['reference']} through the adapter: "
+                "the boundary loses nothing the Jacobi equation reads",
+                row["heading_column_error"],
+                5e-9,
+            )
+        )
+        checks.append(
+            _check(
+                f"imported-path-determinant/{row['case']}",
+                "and the record it produces holds det Phi = 1, which is the "
+                "invariant an imported path could most easily break by arriving "
+                "on a grid that is not arclength",
+                row["determinant_error"],
+                1e-12,
+            )
+        )
+    for row in imported["interpolation"]:
+        floor = 3.5 if row["policy"] == "pchip-monotone" else 1.8
+        checks.append(
+            _check(
+                f"imported-path-interpolation-order/{row['policy']}",
+                "the declared curvature interpolation converges at its own order "
+                "against a path solved on the surface, so the policy is a "
+                "numerical choice and not a label",
+                row["fitted_order"],
+                floor,
+                comparison=">=",
+            )
+        )
+    checks.append(
+        _check(
+            "imported-path-interpolation-matters",
+            "and at the coarsest sampling the two policies differ by orders of "
+            "magnitude, which is why the artefact requires the field rather than "
+            "defaulting it",
+            imported["linear_over_cubic_at_coarsest"],
+            50.0,
+            comparison=">=",
+        )
+    )
+    checks.append(
+        _check(
+            "imported-path-rigid-invariance",
+            "rotating and translating the artefact leaves the transfer map exactly "
+            "alone, because the adapter reads arclength and curvature and never a "
+            "position -- an adapter that had started differencing positions to "
+            "recover a tangent would not be exact here",
+            imported["rigid_transform_error"],
+            0.0,
+            comparison="<=",
+        )
+    )
+    checks.append(
+        _check(
+            "imported-path-unit-conversion",
+            "and converting metres to millimetres scales b by exactly the same "
+            "factor: a is dimensionless, b is a length, K is an inverse area",
+            imported["unit_conversion_relative_error"],
+            1e-12,
+        )
+    )
+    checks.append(
+        _check(
+            "imported-path-failed-artefact-refused",
+            "an artefact whose producer reports a failed run is refused rather "
+            "than integrated, because a path that is wrong in a way upstream "
+            "already detected looks exactly like one that is not",
+            0.0 if imported["failed_artefact_refused"] else 1.0,
+            0.0,
+            comparison="<=",
+        )
+    )
+
     rescaling = results["chart_rescaling_invariance"]
     checks.append(
         _check(
@@ -2384,6 +2625,7 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
         "route_planning": measure_route_planning(config, cases),
         "jet_step_sensitivity": measure_jet_step_sensitivity(config, cases),
         "envelopes": build_envelopes(config, cases),
+        "imported_path_boundary": measure_imported_path_boundary(config, cases),
         "chart_rescaling_invariance": measure_chart_rescaling_invariance(cases),
         "focus_versus_resolvability": measure_focus_versus_resolvability(config, cases),
         "heading_scan": scan_for_robust_heading(config, cases),

@@ -38,7 +38,7 @@ drift is therefore a free measure of how well it is integrating.
 
 ## Verification
 
-**310 declared checks across two stages, 0 failed.** Every number below has a
+**324 declared checks across two stages, 0 failed.** Every number below has a
 threshold attached in `engine/experiment.py` or `engine/experiment_surfaces.py`,
 and the committed reports are regenerated and compared in CI.
 
@@ -84,6 +84,8 @@ form left, four things replace it:
 | **the jet's step, along a whole path** | the transfer error spans four orders of magnitude over relative steps from 1e-2 to 1e-6; no step in the sweep invents or erases a focus |
 | **the prediction chain** — naming the two second-order transformations between `Phi dz0` and an ambient chord | the disagreement with an independently flowed finite-difference chord falls from the size of the effect to 3e-10 or better, a factor of 3.8e3 to 1.4e6, on every surface where both corrections exist |
 | **the uncertainty budget's curvature term** — `dj(s) = -∫ G(s,t) dK j(t) dt` through the Jacobi Green's function | reproduces an actual re-integration at the perturbed curvature, with the residual falling linearly in `dK` (order 1.000) — so it is the derivative, not something close to it |
+| **the inbound boundary** — a path handed over as a `path-geometry-v1` file, written to JSON and read back | still reproduces `s`, `s`, `sin s`, `sinh s` through the adapter to 4.4e-13 or better, and the record it produces holds `det Phi = 1` to 2.5e-14 |
+| **the declared curvature interpolation** — which curve fills `K` between the producer's samples | a numerical choice with an order: monotone cubic 3.8, piecewise-linear 1.9997, differing by a factor of 580 at the coarsest sampling in the ladder |
 
 Three results worth stating plainly:
 
@@ -103,6 +105,10 @@ Three results worth stating plainly:
 - **The two columns focus at different places.** On a spherical cap `b`
   vanishes at `s = pi` and `a` at `s = pi/2`. A heading error and a lateral
   offset are not interchangeable.
+- **A rigid transform of an imported path leaves the transfer map exactly
+  alone** — 0.0, not 1e-16. The adapter reads arclength and curvature and never
+  a position, so an adapter that had started differencing positions to recover
+  a tangent would fail this check rather than pass it slightly worse.
 
 ### From the transfer map to something a sensor could have reported
 

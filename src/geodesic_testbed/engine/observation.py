@@ -46,9 +46,18 @@ from typing import Any
 #: varies, and there is no embedding either, because a curvature profile is
 #: not a surface. Folding it into either neighbour would have to claim one of
 #: those, and the modes divide on exactly that line.
+#:
+#: ``imported-path-artefact`` is a path this runtime did not compute: a
+#: ``path-geometry-v1`` artefact from upstream, carrying sampled positions, a
+#: transported frame and ``K`` at its own samples. It has an embedding, so a
+#: chord exists, but it has no chart and no surface map, so the intrinsic
+#: distance is no more available than on a parametric surface -- and ``K``
+#: between two samples is an interpolant the producer declared rather than a
+#: quantity anything here can evaluate.
 DOMAINS: tuple[str, ...] = (
     "constant-curvature",
     "declared-curvature-profile",
+    "imported-path-artefact",
     "parametric-surface",
     "physical-instrument",
 )
@@ -101,6 +110,7 @@ MODES: dict[str, ObservationMode] = {
             support={
                 "constant-curvature": "exact",
                 "declared-curvature-profile": "exact",
+                "imported-path-artefact": "numerical",
                 "parametric-surface": "numerical",
                 "physical-instrument": "unavailable",
             },
@@ -121,6 +131,7 @@ MODES: dict[str, ObservationMode] = {
             support={
                 "constant-curvature": "exact",
                 "declared-curvature-profile": "numerical",
+                "imported-path-artefact": "unavailable",
                 "parametric-surface": "unavailable",
                 "physical-instrument": "unavailable",
             },
@@ -140,6 +151,7 @@ MODES: dict[str, ObservationMode] = {
                 # A curvature profile is not an embedding, so there is no chord
                 # to measure between two of its points.
                 "declared-curvature-profile": "unavailable",
+                "imported-path-artefact": "numerical",
                 "parametric-surface": "numerical",
                 "physical-instrument": "unavailable",
             },
@@ -158,6 +170,7 @@ MODES: dict[str, ObservationMode] = {
             support={
                 "constant-curvature": "unavailable",
                 "declared-curvature-profile": "unavailable",
+                "imported-path-artefact": "unavailable",
                 "parametric-surface": "unavailable",
                 "physical-instrument": "unavailable",
             },
@@ -173,6 +186,7 @@ MODES: dict[str, ObservationMode] = {
             support={
                 "constant-curvature": "unavailable",
                 "declared-curvature-profile": "unavailable",
+                "imported-path-artefact": "unavailable",
                 "parametric-surface": "unavailable",
                 "physical-instrument": "unavailable",
             },

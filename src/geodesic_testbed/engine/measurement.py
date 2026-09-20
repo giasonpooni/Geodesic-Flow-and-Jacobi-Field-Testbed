@@ -41,6 +41,7 @@ import numpy as np
 from .contract import CalibrationBinding
 from .observation import mode as observation_mode
 from .observation_model import FilteredPrediction
+from .output_covariance import OutputCovariance
 from .record import TransferRecord, to_transfer_record
 
 MEASUREMENT_SCHEMA = "path-sensitivity-observation-v1"
@@ -234,6 +235,24 @@ class MeasurementRecord:
                 raise ValueError("measurement_covariance must be symmetric")
             if np.linalg.eigvalsh(0.5 * (matrix + matrix.T))[0] < -1e-12:
                 raise ValueError("measurement_covariance must be positive semidefinite")
+            # Square, symmetric and PSD is not enough: it has to be square *on
+            # the observation vector it belongs to*. A covariance of the wrong
+            # size is a covariance of some other trial, and every check above
+            # passes for it. This trial reports one scalar per arc length, so
+            # the matrix is (n, n) over the measured separations.
+            expected = len(self.signed_transverse_separation)
+            if expected and matrix.shape[0] != expected:
+                raise ValueError(
+                    f"measurement_covariance is {matrix.shape[0]}x{matrix.shape[0]} and "
+                    f"this trial measured {expected} separations; a covariance that is "
+                    "not on the observation vector pairs uncertainty with the wrong "
+                    "arc lengths"
+                )
+            if not expected:
+                raise ValueError(
+                    "a measurement covariance was declared but the trial carries no "
+                    "measured separations for it to be the covariance of"
+                )
         for name in (
             "geometry_model_digest",
             "calibration_transform_digest",
@@ -296,6 +315,8 @@ def compare(
     mode: str | None = None,
     resolvability_threshold: float | None = None,
     prediction_source: Any = None,
+    covariance: OutputCovariance | None = None,
+    coverage: float = 0.95,
 ):
     """Residual of a prediction against a trial, refusing a mismatched comparison.
 
@@ -313,6 +334,18 @@ def compare(
     perturbation, which is the same order as the model's own failure, so the
     comparison would read as a model failure that is really a
     units-of-measurement error. The filter check: the same, for the smoothing.
+
+    ``covariance`` is the assembled ``Sigma_y`` the residual is judged against
+    -- ``A C0 A^T + J C_theta J^T + R + Sigma_num``, from
+    :mod:`~geodesic_testbed.engine.output_covariance`. When it is supplied, or
+    when the trial declares its own ``measurement_covariance``, the result
+    carries the whitened residual, the chi-square with its degrees of freedom,
+    a *two-sided* acceptance band and the empirical interval coverage. When
+    neither is available the result says so in ``residual_statistics`` rather
+    than leaving the scalars to be read as a verdict: a maximum absolute
+    residual throws away the covariance, cannot be compared between
+    instruments, and cannot be held to any threshold that is not already in
+    the measurement's own units.
 
     ``resolvability_threshold``, when given, is the signal-to-noise bar the
     *instrument protocol* declares. This module reports the ratio and never
@@ -456,4 +489,67 @@ def compare(
         result["filtered_noise_covariance_shape"] = list(
             np.shape(predicted_separation.noise_covariance)
         )
+    result["residual_statistics"] = _residual_statistics(
+        record, residual, covariance=covariance, coverage=coverage
+    )
     return result
+
+
+def _residual_statistics(
+    record: MeasurementRecord,
+    residual: np.ndarray,
+    *,
+    covariance: OutputCovariance | None,
+    coverage: float,
+) -> dict[str, Any]:
+    """The covariance-aware half of the comparison, or a statement of why not.
+
+    A scalar summary of a residual is not a comparison statistic. It cannot be
+    compared between instruments, it has no distribution, and the only bar that
+    can be put against it is one already in the measurement's units -- which is
+    a declared limit smuggled in as arithmetic. What replaces it is the
+    whitened residual and a chi-square with stated degrees of freedom, against
+    a band that is closed at *both* ends.
+    """
+    if covariance is None and record.measurement_covariance is None:
+        return {
+            "available": False,
+            "reason": (
+                "no covariance: the trial declares no measurement_covariance and none "
+                "was assembled for the comparison. The scalars above are a summary of "
+                "the residual and not a statistic about it."
+            ),
+        }
+    total = covariance
+    source = "assembled"
+    if total is None:
+        source = "trial-declared"
+        total = OutputCovariance(
+            arclength=np.asarray(record.arclength, dtype=float),
+            outputs=("signed-transverse-separation",),
+            blocks={
+                "observation-noise": np.asarray(record.measurement_covariance, dtype=float)
+            },
+            note="the covariance the trial itself declared",
+        )
+    if total.degrees_of_freedom != residual.size:
+        raise ValueError(
+            f"the covariance is over {total.degrees_of_freedom} scalars and the "
+            f"residual has {residual.size}; they are not the same comparison"
+        )
+    outcome = total.accepts(residual, coverage=coverage)
+    whitened = total.whiten(residual)
+    return {
+        "available": True,
+        "source": source,
+        "chi_square": outcome["statistic"],
+        "degrees_of_freedom": outcome["degrees_of_freedom"],
+        "reduced_chi_square": outcome["reduced"],
+        "probability_less_than": outcome["probability_less_than"],
+        "band": outcome["band"],
+        "verdict": outcome["verdict"],
+        "accepted": outcome["accepted"],
+        "max_abs_whitened_residual": float(np.max(np.abs(whitened))),
+        "interval_coverage": total.interval_coverage(residual, sigmas=1.0),
+        "shares": outcome["shares"],
+    }

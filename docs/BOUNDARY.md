@@ -8,7 +8,7 @@ observability and operational decisions are a different kind of work and belong
 to a different system. The two are adjacent:
 
 ```text
-geometry / path artefact
+geometry / path artefact                <- path-geometry-v1, the inbound contract
         |
         v
 geodesic sensitivity runtime            <- this repository
@@ -174,6 +174,80 @@ treat as independent exactly the samples the filter made dependent. What counts
 as too far is still not decided here; that belongs to the instrument's
 protocol.
 
+## The inbound half: `path-geometry-v1`
+
+The diagram has two arrows and the repository had only implemented one. A path
+computed upstream now arrives as a declared artefact rather than as whatever a
+caller happened to have in memory:
+
+```python
+from geodesic_testbed.boundary import read_artefact, transfer_record_from_artefact
+
+artefact = read_artefact("path-geometry-v1.json")
+record = transfer_record_from_artefact(artefact)
+```
+
+`engine/path_artefact.py` is the schema and `engine/imported_path.py` is the
+adapter. The adapter interpolates `K(s)` under the policy the artefact
+declares, calls the same `transfer_rhs` and `integrate_on_grid` every other
+producer here calls, and wraps the result as an ordinary `TransferRecord`.
+There is no second solver and there is no mesh tracing: the artefact's
+curvature samples are the whole of the input.
+
+Nine things cross inbound, each because it cannot be recovered on this side.
+
+| field | why it cannot be recomputed here |
+| --- | --- |
+| `arclength` | a producer that resampled knows what it resampled along; chord lengths would lose exactly the curvature-dependent difference being computed |
+| `position`, `tangent` | where the path is, in the producer's frame |
+| `transverse` | parallel transport needs the connection, which needs the surface, which stayed upstream |
+| `gaussian_curvature` | the one coefficient of the equation |
+| `units`, `frame`, `coordinate_frame`, `datum_frame` | there is no safe default for any of them |
+| `surface_digest`, `path_digest` | "which surface was this?" has to be answerable later |
+| `sampling`, `curvature_interpolation` | see below |
+| `uncertainty` | how well the surface and path are actually known, with its basis |
+| `validity`, `upstream_status` | how much of the path the producer could produce, and whether the run succeeded |
+
+**The curvature between samples is a declared choice, not a convention.** A
+producer samples `K` where it chose to; a consumer has to evaluate it
+everywhere the integrator steps. Which interpolant fills the gap is a numerical
+decision with an order, and the report measures it: on the saddle the monotone
+cubic converges at order 3.8 and the piecewise-linear one at 1.9997 -- second
+order, as it must be -- and at the coarsest sampling in the ladder they differ
+by a factor of 580. A field that
+changes the answer by 580 is not a field to default quietly, so the artefact
+requires it.
+
+**Only the monotone cubic is offered as the default.** A natural spline through
+a curvature profile that is flat and then bends overshoots at the corner and
+dips `K` below zero, which a Jacobi solver reads as a patch of hyperbolic
+surface that is not there — a conjugate point in a region where the surface is
+flat. Fritsch–Carlson slopes cost the same and cannot do that.
+
+**What the artefact refuses.** Construction validates and does not repair: a
+tangent that is not unit (the grid is then not arclength), a triad that is not
+orthogonal (the transverse direction has left the tangent plane), an arclength
+that repeats or steps backwards, a length unit nobody declared, a missing
+surface or path digest, an unknown frame or interpolation policy, and an
+`upstream_status` of `failed` — which is refused at integration rather than at
+construction, because a failed artefact is still a real artefact worth being
+able to hold and inspect.
+
+**Normal curvatures are declared three at a time.** `normal_curvature_along`,
+`normal_curvature_transverse` and `mean_curvature` arrive together or not at
+all, and Euler's theorem is checked on arrival. Two of the three would put a
+number into the contract that nothing here could check, and a producer that has
+none says so — the record then carries no `PathGeometry` rather than a
+fabricated one.
+
+**A mode the domain supports is not a mode this artefact earned.** Records from
+an imported path live in the `imported-path-artefact` domain, where the
+intrinsic distance is unavailable for the same reason it is unavailable on a
+parametric surface, and the ambient chord is available — but only to an
+artefact that actually declared the transverse normal curvature the chord
+correction needs. The first is a statement about the repository; the second is
+a statement about one file, and they fail differently.
+
 ## What does not cross, in either direction
 
 Narrow means everything below stays on exactly one side.
@@ -185,8 +259,12 @@ sampled on a declared grid with the resolution that produced it stated.
 
 **Mesh processing.** Triangulated surfaces, discrete curvature estimators, mesh
 path convergence — the Intrinsic Surface Geodesics Testbed's work. It arrives
-here as a versioned path artefact named in `UpstreamArtefact`, and this
-repository does not grow a second mesh solver.
+here as a `path-geometry-v1` artefact named in `UpstreamArtefact`, and this
+repository does not grow a second mesh solver. `artefact_from_envelope` runs
+the other way and looks like an exporter; it is not one. It reads what a
+parametric surface already computed and changes the container, so that the
+adapter can be anchored against the closed forms — it estimates nothing and
+traces nothing.
 
 **Filters.** A filter is part of an observation instrument, not of a solver.
 Smoothing inside `engine/flows.py` or `engine/transfer.py` would tune the model

@@ -86,9 +86,22 @@ from .engine.contract import (
     frame_catalogue,
     validated_covariance,
 )
+from .engine.imported_path import (
+    artefact_from_envelope,
+    transfer_map_from_artefact,
+    transfer_record_from_artefact,
+)
 from .engine.observation import DOMAINS, MODES
 from .engine.observation import catalogue as observation_catalogue
 from .engine.observation import mode as observation_mode
+from .engine.path_artefact import (
+    CURVATURE_INTERPOLATIONS,
+    PATH_GEOMETRY_SCHEMA,
+    SAMPLING_POLICIES,
+    UPSTREAM_STATUS,
+    PathGeometryArtefact,
+    SamplingPolicy,
+)
 from .engine.record import (
     RECORD_SCHEMA,
     SUPPORTED_RECORD_SCHEMAS,
@@ -109,6 +122,7 @@ SUBSTRATE: tuple[str, ...] = (
     "geodesic_testbed.engine.flows",
     "geodesic_testbed.engine.transfer",
     "geodesic_testbed.engine.envelope",
+    "geodesic_testbed.engine.imported_path",
     "geodesic_testbed.engine.analysis",
     "geodesic_testbed.jacobi",
 )
@@ -120,6 +134,7 @@ CONTRACT: tuple[str, ...] = (
     "geodesic_testbed.engine.contract",
     "geodesic_testbed.engine.canonical",
     "geodesic_testbed.engine.observation",
+    "geodesic_testbed.engine.path_artefact",
     "geodesic_testbed.engine.record",
 )
 
@@ -127,6 +142,7 @@ CONTRACT: tuple[str, ...] = (
 #: in :data:`SUBSTRATE` consumes them.
 INSTRUMENT_FACING: tuple[str, ...] = (
     "geodesic_testbed.engine.observation_model",
+    "geodesic_testbed.engine.output_covariance",
     "geodesic_testbed.engine.planning",
     "geodesic_testbed.engine.prediction",
     "geodesic_testbed.engine.uncertainty",
@@ -170,6 +186,28 @@ LAYERS: dict[str, tuple[str, ...]] = {
     "consumers": CONSUMERS,
     "harness": HARNESS,
 }
+
+
+def write_artefact(
+    artefact: PathGeometryArtefact, path: str | Path, *, indent: int = 2
+) -> Path:
+    """Write a ``path-geometry-v1`` artefact as JSON.
+
+    The inbound direction of the boundary is a file too. A consumer that can
+    only be handed a live object is a consumer that has to run inside the
+    producer, which is the coupling the boundary exists to remove.
+    """
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(artefact.to_dict(), indent=indent) + "\n", encoding="utf-8"
+    )
+    return destination
+
+
+def read_artefact(path: str | Path) -> PathGeometryArtefact:
+    """Read a ``path-geometry-v1`` artefact, validating it on the way in."""
+    return PathGeometryArtefact.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
 def write_record(record: TransferRecord, path: str | Path, *, indent: int = 2) -> Path:
@@ -236,5 +274,16 @@ __all__ = [
     "observation_mode",
     "read_record",
     "to_transfer_record",
+    "CURVATURE_INTERPOLATIONS",
+    "PATH_GEOMETRY_SCHEMA",
+    "SAMPLING_POLICIES",
+    "UPSTREAM_STATUS",
+    "PathGeometryArtefact",
+    "SamplingPolicy",
+    "artefact_from_envelope",
+    "read_artefact",
+    "transfer_map_from_artefact",
+    "transfer_record_from_artefact",
+    "write_artefact",
     "write_record",
 ]

@@ -39,13 +39,35 @@ DOCUMENT_STAGE = {
 SCHEMA_IN_PROSE = re.compile(r"geodesic-jacobi-(?:report|surfaces)-v\d+")
 COUNT_IN_PROSE = re.compile(r"(\d+) declared checks(?: (across two stages))?")
 
-#: ``(document, quoted text, bound, check-id prefixes)``.  The bound must appear
-#: in the document verbatim and must bound every value in those families.
+#: ``(document, quoted text, bound, comparison, check-id prefixes)``.  The bound
+#: must appear in the document verbatim, and must bound every value in those
+#: families in the stated direction.  ``"<="`` means the prose quotes a ceiling
+#: ("held to 6e-15"); ``">="`` means it quotes a floor ("converges at order
+#: 3.8"), where the claim is that no measurement falls below it.
 QUOTED_BOUNDS = (
-    ("docs/INSTRUMENT.md", "4e-4", 4e-4, ("variation-coefficient",)),
-    ("docs/INSTRUMENT.md", "3e-15", 3e-15, ("conjugate-point/jacobi-zero",)),
-    ("docs/INSTRUMENT.md", "6e-15", 6e-15, ("transfer-determinant",)),
-    ("docs/INSTRUMENT.md", "5e-13", 5e-13, ("surface-anchor",)),
+    ("docs/INSTRUMENT.md", "4e-4", 4e-4, "<=", ("variation-coefficient",)),
+    ("docs/INSTRUMENT.md", "3e-15", 3e-15, "<=", ("conjugate-point/jacobi-zero",)),
+    ("docs/INSTRUMENT.md", "6e-15", 6e-15, "<=", ("transfer-determinant",)),
+    ("docs/INSTRUMENT.md", "5e-13", 5e-13, "<=", ("surface-anchor",)),
+    (
+        "docs/BOUNDARY.md",
+        "order 3.8",
+        3.8,
+        ">=",
+        ("imported-path-interpolation-order/pchip-monotone",),
+    ),
+    (
+        "docs/BOUNDARY.md",
+        "1.9997",
+        1.999,
+        ">=",
+        ("imported-path-interpolation-order/linear",),
+    ),
+    ("README.md", "1.9997", 1.999, ">=", ("imported-path-interpolation-order/linear",)),
+    ("docs/BOUNDARY.md", "580", 580.0, ">=", ("imported-path-interpolation-matters",)),
+    ("README.md", "580", 580.0, ">=", ("imported-path-interpolation-matters",)),
+    ("README.md", "4.4e-13", 4.4e-13, "<=", ("imported-path-anchor",)),
+    ("README.md", "2.5e-14", 2.5e-14, "<=", ("imported-path-determinant",)),
 )
 
 
@@ -118,21 +140,26 @@ def test_a_prose_claim_of_no_failures_is_true(document: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("document", "quoted", "bound", "prefixes"),
+    ("document", "quoted", "bound", "comparison", "prefixes"),
     QUOTED_BOUNDS,
-    ids=[f"{d}:{q}" for d, q, _, _ in QUOTED_BOUNDS],
+    ids=[f"{d}:{q}" for d, q, _, _, _ in QUOTED_BOUNDS],
 )
 def test_a_bound_quoted_in_prose_bounds_the_checks_it_describes(
-    document: str, quoted: str, bound: float, prefixes: tuple[str, ...]
+    document: str, quoted: str, bound: float, comparison: str, prefixes: tuple[str, ...]
 ) -> None:
     text = (ROOT / document).read_text()
     assert quoted in text, f"{document} no longer quotes {quoted}; this table is stale"
     values = _values_for(prefixes)
     assert values, f"no check in either report has an id starting with {prefixes}"
-    worst_id, worst = max(values, key=lambda pair: pair[1])
-    assert worst <= bound, (
-        f"{document} quotes {quoted} for {prefixes}, but {worst_id} measures {worst:.6g}"
-    )
+    worst_id, worst = _worst(values, comparison)
+    if comparison == "<=":
+        assert worst <= bound, (
+            f"{document} quotes {quoted} for {prefixes}, but {worst_id} measures {worst:.6g}"
+        )
+    else:
+        assert worst >= bound, (
+            f"{document} quotes {quoted} for {prefixes}, but {worst_id} measures {worst:.6g}"
+        )
 
 
 def test_the_bounds_table_is_tight_enough_to_catch_a_regression() -> None:
@@ -142,9 +169,16 @@ def test_the_bounds_table_is_tight_enough_to_catch_a_regression() -> None:
     measured.  Each quoted bound must sit within one decade of the worst value
     in the family it describes, or it is decoration rather than a claim.
     """
-    for document, quoted, bound, prefixes in QUOTED_BOUNDS:
-        worst_id, worst = max(_values_for(prefixes), key=lambda pair: pair[1])
-        assert bound <= 10.0 * worst, (
+    for document, quoted, bound, comparison, prefixes in QUOTED_BOUNDS:
+        worst_id, worst = _worst(_values_for(prefixes), comparison)
+        slack = bound <= 10.0 * worst if comparison == "<=" else bound >= worst / 10.0
+        assert slack, (
             f"{document} quotes {quoted} for {prefixes}, but the worst value is {worst:.6g} "
             f"({worst_id}); a bound that loose does not constrain anything"
         )
+
+
+def _worst(values: list[tuple[str, float]], comparison: str) -> tuple[str, float]:
+    """The measurement closest to failing the quoted bound."""
+    pick = max if comparison == "<=" else min
+    return pick(values, key=lambda pair: pair[1])

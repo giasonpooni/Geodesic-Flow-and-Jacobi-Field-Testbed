@@ -32,6 +32,7 @@
       "support": {
         "constant-curvature": "exact",
         "declared-curvature-profile": "exact",
+        "imported-path-artefact": "numerical",
         "parametric-surface": "numerical",
         "physical-instrument": "unavailable"
       },
@@ -44,6 +45,7 @@
       "support": {
         "constant-curvature": "exact",
         "declared-curvature-profile": "numerical",
+        "imported-path-artefact": "unavailable",
         "parametric-surface": "unavailable",
         "physical-instrument": "unavailable"
       },
@@ -56,6 +58,7 @@
       "support": {
         "constant-curvature": "exact",
         "declared-curvature-profile": "unavailable",
+        "imported-path-artefact": "numerical",
         "parametric-surface": "numerical",
         "physical-instrument": "unavailable"
       },
@@ -68,6 +71,7 @@
       "support": {
         "constant-curvature": "unavailable",
         "declared-curvature-profile": "unavailable",
+        "imported-path-artefact": "unavailable",
         "parametric-surface": "unavailable",
         "physical-instrument": "unavailable"
       },
@@ -80,6 +84,7 @@
       "support": {
         "constant-curvature": "unavailable",
         "declared-curvature-profile": "unavailable",
+        "imported-path-artefact": "unavailable",
         "parametric-surface": "unavailable",
         "physical-instrument": "unavailable"
       },
@@ -11496,6 +11501,89 @@
         "case": "torus"
       }
     ],
+    "imported_path_boundary": {
+      "schema": "path-geometry-v1",
+      "domain": "imported-path-artefact",
+      "anchors": [
+        {
+          "case": "plate",
+          "reference": "s",
+          "samples": 2001,
+          "heading_column_error": 0.0,
+          "determinant_error": 0.0,
+          "domain": "imported-path-artefact",
+          "round_tripped": true
+        },
+        {
+          "case": "rolled-sheet",
+          "reference": "s",
+          "samples": 2001,
+          "heading_column_error": 0.0,
+          "determinant_error": 0.0,
+          "domain": "imported-path-artefact",
+          "round_tripped": true
+        },
+        {
+          "case": "spherical-cap",
+          "reference": "sin(s)",
+          "samples": 2001,
+          "heading_column_error": 4.39204228542e-13,
+          "determinant_error": 3.33066907388e-15,
+          "domain": "imported-path-artefact",
+          "round_tripped": true
+        },
+        {
+          "case": "pseudosphere",
+          "reference": "sinh(s)",
+          "samples": 2001,
+          "heading_column_error": 1.06581410364e-14,
+          "determinant_error": 2.48689957516e-14,
+          "domain": "imported-path-artefact",
+          "round_tripped": true
+        }
+      ],
+      "interpolation": [
+        {
+          "policy": "pchip-monotone",
+          "step_counts": [
+            40,
+            80,
+            160,
+            320
+          ],
+          "errors": [
+            2.80823440058e-07,
+            2.20649214455e-08,
+            1.53112100776e-09,
+            1.00612407294e-10
+          ],
+          "fitted_order": 3.81890126584,
+          "error_at_coarsest": 2.80823440058e-07
+        },
+        {
+          "policy": "linear",
+          "step_counts": [
+            40,
+            80,
+            160,
+            320
+          ],
+          "errors": [
+            0.000163370473913,
+            4.08638272971e-05,
+            1.02172809573e-05,
+            2.55440290298e-06
+          ],
+          "fitted_order": 1.99968650975,
+          "error_at_coarsest": 0.000163370473913
+        }
+      ],
+      "linear_over_cubic_at_coarsest": 581.755119443,
+      "rigid_transform_error": 0.0,
+      "unit_conversion_relative_error": 1.2102271552e-15,
+      "failed_artefact_refused": true,
+      "note": "the adapter reads the artefact's arclength and curvature and nothing else, which is why a rigid transform is exactly rather than nearly invariant"
+    },
     "chart_rescaling_invariance": {
       "surface": "torus(R=2, r=1)",
       "reparameterisation": "v -> v/3",
@@ -15979,6 +16067,118 @@
       "passed": true
     },
     {
+      "id": "imported-path-anchor/plate",
+      "statement": "a path handed over as a path-geometry-v1 file, written to JSON and read back, still reproduces s through the adapter: the boundary loses nothing the Jacobi equation reads",
+      "value": 0.0,
+      "threshold": 5e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "imported-path-determinant/plate",
+      "statement": "and the record it produces holds det Phi = 1, which is the invariant an imported path could most easily break by arriving on a grid that is not arclength",
+      "value": 0.0,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "imported-path-anchor/rolled-sheet",
+      "statement": "a path handed over as a path-geometry-v1 file, written to JSON and read back, still reproduces s through the adapter: the boundary loses nothing the Jacobi equation reads",
+      "value": 0.0,
+      "threshold": 5e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "imported-path-determinant/rolled-sheet",
+      "statement": "and the record it produces holds det Phi = 1, which is the invariant an imported path could most easily break by arriving on a grid that is not arclength",
+      "value": 0.0,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "imported-path-anchor/spherical-cap",
+      "statement": "a path handed over as a path-geometry-v1 file, written to JSON and read back, still reproduces sin(s) through the adapter: the boundary loses nothing the Jacobi equation reads",
+      "value": 4.39204228542e-13,
+      "threshold": 5e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "imported-path-determinant/spherical-cap",
+      "statement": "and the record it produces holds det Phi = 1, which is the invariant an imported path could most easily break by arriving on a grid that is not arclength",
+      "value": 3.33066907388e-15,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "imported-path-anchor/pseudosphere",
+      "statement": "a path handed over as a path-geometry-v1 file, written to JSON and read back, still reproduces sinh(s) through the adapter: the boundary loses nothing the Jacobi equation reads",
+      "value": 1.06581410364e-14,
+      "threshold": 5e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "imported-path-determinant/pseudosphere",
+      "statement": "and the record it produces holds det Phi = 1, which is the invariant an imported path could most easily break by arriving on a grid that is not arclength",
+      "value": 2.48689957516e-14,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "imported-path-interpolation-order/pchip-monotone",
+      "statement": "the declared curvature interpolation converges at its own order against a path solved on the surface, so the policy is a numerical choice and not a label",
+      "value": 3.81890126584,
+      "threshold": 3.5,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "imported-path-interpolation-order/linear",
+      "statement": "the declared curvature interpolation converges at its own order against a path solved on the surface, so the policy is a numerical choice and not a label",
+      "value": 1.99968650975,
+      "threshold": 1.8,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "imported-path-interpolation-matters",
+      "statement": "and at the coarsest sampling the two policies differ by orders of magnitude, which is why the artefact requires the field rather than defaulting it",
+      "value": 581.755119443,
+      "threshold": 50.0,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "imported-path-rigid-invariance",
+      "statement": "rotating and translating the artefact leaves the transfer map exactly alone, because the adapter reads arclength and curvature and never a position -- an adapter that had started differencing positions to recover a tangent would not be exact here",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "imported-path-unit-conversion",
+      "statement": "and converting metres to millimetres scales b by exactly the same factor: a is dimensionless, b is a length, K is an inverse area",
+      "value": 1.2102271552e-15,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "imported-path-failed-artefact-refused",
+      "statement": "an artefact whose producer reports a failed run is refused rather than integrated, because a path that is wrong in a way upstream already detected looks exactly like one that is not",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
       "id": "surface-chart-orthogonality-rescaling-invariant",
       "statement": "reparameterising a coordinate does not change how orthogonal the chart is, so the conditioning number measures the chart and not the parameterisation",
       "value": 1.32649446982e-12,
@@ -16076,12 +16276,12 @@
     }
   ],
   "summary": {
-    "n_checks": 167,
+    "n_checks": 181,
     "n_failed": 0,
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "058da668d11fbf2de763ae9b2fc5514c927be596f9cf1f88a0238755c7c662d7",
+  "content_hash": "ee87e4b2b12de161d83fe17d9015f2542d0b40c224b06c87f79139ade5747ed6",
   "environment": {
     "package_version": "0.2.1",
     "python": "3.11.15",

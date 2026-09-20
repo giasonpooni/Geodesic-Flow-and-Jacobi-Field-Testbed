@@ -24,6 +24,7 @@
       "support": {
         "constant-curvature": "exact",
         "declared-curvature-profile": "exact",
+        "imported-path-artefact": "numerical",
         "parametric-surface": "numerical",
         "physical-instrument": "unavailable"
       },
@@ -36,6 +37,7 @@
       "support": {
         "constant-curvature": "exact",
         "declared-curvature-profile": "numerical",
+        "imported-path-artefact": "unavailable",
         "parametric-surface": "unavailable",
         "physical-instrument": "unavailable"
       },
@@ -48,6 +50,7 @@
       "support": {
         "constant-curvature": "exact",
         "declared-curvature-profile": "unavailable",
+        "imported-path-artefact": "numerical",
         "parametric-surface": "numerical",
         "physical-instrument": "unavailable"
       },
@@ -60,6 +63,7 @@
       "support": {
         "constant-curvature": "unavailable",
         "declared-curvature-profile": "unavailable",
+        "imported-path-artefact": "unavailable",
         "parametric-surface": "unavailable",
         "physical-instrument": "unavailable"
       },
@@ -72,6 +76,7 @@
       "support": {
         "constant-curvature": "unavailable",
         "declared-curvature-profile": "unavailable",
+        "imported-path-artefact": "unavailable",
         "parametric-surface": "unavailable",
         "physical-instrument": "unavailable"
       },
@@ -9708,7 +9713,7 @@
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "31c63f4e00164d36731272ce231d0a30fcc4b983c166f1f489ae91533c6f7cf6",
+  "content_hash": "3f15231d8e45ad434ca4bc5b24030510f4b469e05715f61f13621237e7fc9963",
   "environment": {
     "package_version": "0.2.1",
     "python": "3.11.15",
