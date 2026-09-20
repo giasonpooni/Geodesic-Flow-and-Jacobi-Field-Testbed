@@ -304,7 +304,10 @@ sums in whatever order they finish), and the **working directory**. Then it
 requires the artefacts to be identical, and the pipeline to be idempotent —
 run twice into two directories, compare the bytes.
 
-**100 of 100 consecutive cycles passed**, and 3 of 3 at the full profile.
+**200 of 200 consecutive cycles passed** — two independent blocks of a
+hundred, on unrelated seed ranges — and **13 of 13** at the full profile, which
+adds stage two and the whole test suite in a shuffled file order. CI runs five
+more on a different machine.
 
 A content hash is an identity *within one environment* and nothing more. Four
 numpy builds here produce four different content hashes, because the last
