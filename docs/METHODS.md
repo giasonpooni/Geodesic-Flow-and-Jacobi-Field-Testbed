@@ -102,6 +102,92 @@ gap and overlap bounds.
 This first slice does not model compaction, tow steering limits, material
 shear, adhesion, thermal distortion, or machine tracking dynamics.
 
+## The observation model
+
+The transfer map propagates a starting-pose error. No instrument reports that
+error. It reports some linear functional of it, corrupted by its own noise:
+
+```text
+delta_z(s) = Phi(s) delta_z0
+y(s)       = H(s) delta_z(s) + eta(s)
+Cov(y)     = H Phi C0 Phi^T H^T + R
+```
+
+`H` is the observation mode made concrete — a scanner that reports transverse
+deviation only is `[1, 0]`; one that also tracks orientation is the identity —
+and `R` is the metrology covariance. `C0` is the starting-pose covariance, or
+`diag(dp^2, da^2)` for a tolerance box treated as independent.
+
+### Resolvability, and what a focus really is
+
+```text
+rho(s) = sqrt(diag(H Phi C0 Phi^T H^T)) / sqrt(diag R)
+```
+
+With `H = [1, 0]` and uncertainty in heading alone this is exactly
+`|b(s)| sigma_alpha / sigma_measurement`. A focus is where `rho` falls below
+one: the place at which the instrument cannot tell two admissible starting
+headings apart.
+
+This is the quantity a route constraint must use. `|b|` has units of length per
+radian, so a threshold on it — the repository briefly used 0.25 — is specific
+to one part size and one angle unit: the same physical situation drawn at twice
+the scale, or stated in degrees, changes the verdict. `rho` is dimensionless
+and does not, and that invariance is a declared check.
+
+## Chart validity
+
+A parameterisation is not the surface. Each surface declares a `Chart`: the
+parameter region where its chart is a chart, plus a conditioning floor. A chart
+fails two independent ways, and they need two numbers rather than one.
+
+**The coordinate curves become parallel.** Measured by `chart_orthogonality`,
+the ratio of singular values of the *direction-normalised* Jacobian, which with
+`cos t = |F| / sqrt(EG)` is
+
+```text
+sqrt((1 - cos t) / (1 + cos t))
+```
+
+— 1 where the coordinate directions meet at a right angle, 0 where they
+coincide. Normalising each column first is the whole point: this then depends
+only on the angle between the directions and is unchanged when `u` and `v` are
+rescaled independently.
+
+The obvious alternative, `sqrt(EG - F^2) / max(E, G)`, is **not**, and that is
+not a fine distinction. It confuses an anisotropic chart with a degenerate one:
+reparameterise the torus by `v -> v/3` and it falls from 0.3339 to 0.1113 — by
+exactly the factor of three, since `r_v -> 3 r_v` puts a 3 in the numerator and
+a 9 in the denominator — for a chart that has not become any less regular.
+`chart_orthogonality` moves by 1.3e-12 across the same reparameterisation.
+The repository used the wrong one; both halves of that statement are declared
+checks (`surface-chart-orthogonality-rescaling-invariant` and
+`surface-retired-chart-criterion-is-not`).
+
+**A coordinate direction collapses**, as longitude does at a sphere's pole.
+Measured by `chart_scale_ratio`: the shorter of `|r_u| u_scale` and
+`|r_v| v_scale` against the chart's declared `reference_length`. This one
+genuinely needs declared scales, because "short" means nothing on its own.
+
+`chart_conditioning` is the worse of the two, and it is the quantity the floor
+applies to.
+
+A start the chart cannot represent is refused. A path that leaves the valid
+region is reported, with where and why, rather than being allowed to become
+NaNs or — worse — a plausible-looking envelope computed from a degenerate
+metric.
+
+## Derivatives
+
+A surface may supply analytic first and second derivatives; a surface given as
+`r(u, v)` alone gets them by central differences. The differencing step is
+**relative** to the parameter scale, because an absolute one is a scale defect
+that second derivatives amplify, and `derivative_convergence` reports how much
+the curvature moves when the step is doubled — so a surface supplied as a black
+box states how far it can be trusted instead of having it assumed. For scanned
+geometry, fit a smooth surface and difference the fit; do not difference raw
+points.
+
 ## Observation modes
 
 A prediction is comparable with a measurement only if both are the same

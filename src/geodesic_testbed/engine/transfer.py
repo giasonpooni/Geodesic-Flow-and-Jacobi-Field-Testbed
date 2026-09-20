@@ -46,7 +46,8 @@ assumed.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import Any
 
 import numpy as np
 
@@ -56,6 +57,81 @@ Array = np.ndarray
 # same block can ride along with either a scalar or a parametric flow.
 COMPONENTS = ("a", "a_rate", "b", "b_rate")
 INITIAL_STATE = (1.0, 0.0, 0.0, 1.0)
+
+
+@dataclass(frozen=True)
+class FocusEvent:
+    """A refined zero of one column of ``Phi``, with how well it is located."""
+
+    column: str
+    arc_length: float
+    location_uncertainty: float
+    derivative: float
+    bracket: tuple[float, float]
+    order: int
+    distance_to_end: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def _hermite(t: float, left: float, right: float, left_slope: float,
+             right_slope: float, h: float) -> tuple[float, float]:
+    """Cubic Hermite value and derivative in ``t`` on a unit interval."""
+    t2, t3 = t * t, t * t * t
+    value = (
+        (2.0 * t3 - 3.0 * t2 + 1.0) * left
+        + (t3 - 2.0 * t2 + t) * h * left_slope
+        + (-2.0 * t3 + 3.0 * t2) * right
+        + (t3 - t2) * h * right_slope
+    )
+    slope = (
+        (6.0 * t2 - 6.0 * t) * left
+        + (3.0 * t2 - 4.0 * t + 1.0) * h * left_slope
+        + (-6.0 * t2 + 6.0 * t) * right
+        + (3.0 * t2 - 2.0 * t) * h * right_slope
+    )
+    return value, slope
+
+
+def _refine_root(
+    left_s: float,
+    right_s: float,
+    left: float,
+    right: float,
+    left_slope: float,
+    right_slope: float,
+    *,
+    iterations: int = 60,
+) -> tuple[float, float, float]:
+    """Root of the cubic Hermite through one bracket: location, uncertainty, slope.
+
+    Newton, safeguarded by bisection so it cannot leave the bracket even where
+    the interpolant has a near-zero derivative. The uncertainty returned is the
+    distance the root moved from the linear estimate, which is the size of the
+    error the refinement removed and a conservative proxy for what remains.
+    """
+    h = right_s - left_s
+    linear = left / (left - right)
+    lower, upper = 0.0, 1.0
+    t = min(max(linear, 0.0), 1.0)
+    for _ in range(iterations):
+        value, slope = _hermite(t, left, right, left_slope, right_slope, h)
+        if value == 0.0:
+            break
+        if value * left < 0.0:
+            upper = t
+        else:
+            lower = t
+        candidate = t - value / slope if slope != 0.0 else 0.5 * (lower + upper)
+        if not (lower < candidate < upper):
+            candidate = 0.5 * (lower + upper)
+        if abs(candidate - t) <= 1e-16:
+            t = candidate
+            break
+        t = candidate
+    _, slope = _hermite(t, left, right, left_slope, right_slope, h)
+    return left_s + t * h, abs(t - linear) * abs(h), slope / h
 
 
 @dataclass(frozen=True)
@@ -117,38 +193,142 @@ class TransferMap:
         statement to use when the starting error is characterised statistically
         instead.
         """
-        covariance = np.asarray(covariance, dtype=float)
-        if covariance.shape != (2, 2):
-            raise ValueError("covariance must be 2x2 in the (lateral, heading) basis")
-        if not np.allclose(covariance, covariance.T, atol=0.0, rtol=1e-12):
-            raise ValueError("covariance must be symmetric")
+        covariance = _validated_covariance(covariance)
         phi = self.matrices()
         return phi @ covariance @ np.swapaxes(phi, -1, -2)
 
-    def focus_points(self, *, component: str = "b") -> list[float]:
-        """Arc lengths at which a column of ``Phi`` vanishes away from the start.
+    def focus_events(self, *, component: str = "b") -> list[FocusEvent]:
+        """Every focus of one column, located to better than the sample spacing.
 
-        ``b`` vanishing is a conjugate point of the heading variation: paths
-        that left at different angles meet again. ``a`` vanishing is the
-        corresponding focus of the lateral variation.
+        ``b`` vanishing away from the start is a conjugate point of the heading
+        variation: paths that left at different angles meet again. ``a``
+        vanishing is the corresponding focus of the lateral variation, and it is
+        generally somewhere else.
+
+        A sign change between samples with linear interpolation is accurate
+        enough to *report* a focus and too coarse to *constrain a route by* one:
+        the location error is first order in the sample spacing, and a route
+        clearance of "0.2 away from a focus" is meaningless if the focus itself
+        is only known to 0.05. Both the value and the slope are available at
+        every sample, so each root is refined on the cubic Hermite interpolant
+        through them -- fourth-order accurate instead of first -- by a Newton
+        iteration safeguarded with bisection, and the shift from the linear
+        estimate is reported as the location uncertainty.
         """
-        values = {"a": self.a, "b": self.b}[component]
-        found: list[float] = []
-        for index in range(1, len(values) - 1):
-            if self.arc_length[index] <= 0.0:
+        values, slopes = self._column(component)
+        grid = self.arc_length
+        # An exact zero is not reliably exact in floating point: sin(pi) comes
+        # back as 1.2e-16, so a focus that lands on a sample would be missed by
+        # a strict `== 0` and by the sign-change test alike. Anything within a
+        # few ulps of zero, measured against the column's own scale, counts.
+        scale = float(np.max(np.abs(values))) or 1.0
+        negligible = 8.0 * np.finfo(float).eps * scale
+        events: list[FocusEvent] = []
+        consumed = -1
+        for index in range(len(values)):
+            if grid[index] < 0.0 or index <= consumed:
                 continue
-            left, right = values[index], values[index + 1]
-            if left == 0.0:
-                found.append(float(self.arc_length[index]))
-            elif left * right < 0.0:
-                weight = left / (left - right)
-                found.append(
-                    float(
-                        self.arc_length[index]
-                        + weight * (self.arc_length[index + 1] - self.arc_length[index])
-                    )
+            value = float(values[index])
+            # b starts at zero by construction; that is the variation's origin,
+            # not a focus.
+            if index == 0 and abs(value) <= negligible and component == "b":
+                continue
+            if abs(value) <= negligible:
+                location, uncertainty, derivative = (
+                    float(grid[index]),
+                    0.0,
+                    float(slopes[index]),
                 )
-        return found
+                bracket = (float(grid[index]), float(grid[index]))
+                # Do not also report the sign change straddling this sample.
+                consumed = index
+            elif index + 1 < len(values) and value * float(values[index + 1]) < 0.0:
+                if abs(float(values[index + 1])) <= negligible:
+                    continue  # the next sample is the zero; report it there
+                location, uncertainty, derivative = _refine_root(
+                    float(grid[index]),
+                    float(grid[index + 1]),
+                    value,
+                    float(values[index + 1]),
+                    float(slopes[index]),
+                    float(slopes[index + 1]),
+                )
+                bracket = (float(grid[index]), float(grid[index + 1]))
+            else:
+                continue
+            events.append(
+                FocusEvent(
+                    column=component,
+                    arc_length=location,
+                    location_uncertainty=uncertainty,
+                    derivative=derivative,
+                    bracket=bracket,
+                    order=len(events) + 1,
+                    distance_to_end=float(grid[-1]) - location,
+                )
+            )
+        return events
+
+    def focus_points(self, *, component: str = "b") -> list[float]:
+        """Refined focus locations only, for callers that want the bare numbers."""
+        return [event.arc_length for event in self.focus_events(component=component)]
+
+    def _column(self, component: str) -> tuple[Array, Array]:
+        try:
+            return {"a": (self.a, self.a_rate), "b": (self.b, self.b_rate)}[component]
+        except KeyError as exc:  # pragma: no cover - guard
+            raise KeyError(f"column must be 'a' or 'b', not {component!r}") from exc
+
+    def clearance_from_focus(self, *, component: str = "b") -> float:
+        """Smallest distance from any sample to a focus of this column.
+
+        ``inf`` when the path has none -- which is the useful answer for a route
+        constraint, since nothing is being approached.
+        """
+        events = self.focus_events(component=component)
+        if not events:
+            return float("inf")
+        return float(
+            min(
+                min(abs(event.arc_length - float(self.arc_length[0])),
+                    abs(float(self.arc_length[-1]) - event.arc_length))
+                for event in events
+            )
+        )
+
+    def crossed_first_conjugate_point(self, *, component: str = "b") -> bool:
+        """Whether the path continues past the first focus of this column."""
+        events = self.focus_events(component=component)
+        return bool(events) and events[0].arc_length < float(self.arc_length[-1])
+
+
+def _validated_covariance(covariance) -> Array:
+    """A 2x2 starting-pose covariance, or a refusal that says which property failed.
+
+    Congruence by ``Phi`` preserves indefiniteness as faithfully as it preserves
+    anything else, so a matrix that is not a covariance in goes to something
+    that is not a covariance out, silently and with plausible-looking numbers.
+    Symmetry alone does not catch it: ``[[1, 2], [2, 1]]`` is symmetric and has
+    eigenvalues 3 and -1.
+    """
+    covariance = np.asarray(covariance, dtype=float)
+    if covariance.shape != (2, 2):
+        raise ValueError("covariance must be 2x2 in the (lateral, heading) basis")
+    if not np.all(np.isfinite(covariance)):
+        raise ValueError("covariance must be finite")
+    if not np.allclose(covariance, covariance.T, atol=0.0, rtol=1e-12):
+        raise ValueError("covariance must be symmetric")
+    symmetric = 0.5 * (covariance + covariance.T)
+    eigenvalues = np.linalg.eigvalsh(symmetric)
+    # Scale the tolerance to the matrix: an absolute floor would reject a
+    # legitimate covariance in micrometres and accept a bad one in metres.
+    tolerance = 1e-12 * max(float(np.max(np.abs(eigenvalues))), 1.0)
+    if eigenvalues[0] < -tolerance:
+        raise ValueError(
+            "covariance must be positive semidefinite; smallest eigenvalue is "
+            f"{eigenvalues[0]!r}"
+        )
+    return covariance
 
 
 def constant_curvature_transfer(arc_length, curvature: float) -> TransferMap:

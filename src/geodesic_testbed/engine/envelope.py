@@ -25,14 +25,75 @@ check it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 
 from .integrators import integrate
+from .record import (
+    FirstOrderValidity,
+    Resolution,
+    TransferRecord,
+    Units,
+    digest,
+)
 from .surfaces import ParametricSurface
-from .transfer import TransferMap
+from .transfer import FocusEvent, TransferMap
+
+
+def _chart_report(surface: ParametricSurface, grid, u, v) -> dict[str, Any]:
+    """Where, if anywhere, the path left the chart it was computed in.
+
+    Reported rather than raised: a path that runs off the edge of a
+    parameterisation is a legitimate thing to have asked for and a useful thing
+    to be told about, and the samples before the event are still valid. What is
+    not acceptable is returning the samples after it without saying so.
+    """
+    validity = surface.chart_validity(u, v)
+    usable = np.asarray(validity["in_domain"]) & np.asarray(validity["well_conditioned"])
+    if bool(np.all(usable)):
+        return {
+            "valid": True,
+            "valid_until": float(grid[-1]),
+            "first_invalid_index": None,
+            "reason": None,
+            "min_conditioning": float(np.min(validity["conditioning"])),
+            "min_domain_margin": float(np.min(validity["domain_margin"])),
+            "declared_domain": surface.chart.to_dict(),
+        }
+    index = int(np.argmax(~usable))
+    reason = (
+        "left the declared parameter domain"
+        if not bool(validity["in_domain"][index])
+        else "chart became degenerate: EG - F^2 unresolved"
+    )
+    return {
+        "valid": False,
+        "valid_until": float(grid[index - 1]) if index > 0 else float(grid[0]),
+        "first_invalid_index": index,
+        "reason": reason,
+        "min_conditioning": float(np.min(validity["conditioning"])),
+        "min_domain_margin": float(np.min(validity["domain_margin"])),
+        "declared_domain": surface.chart.to_dict(),
+    }
+
+
+def _validated_epsilons(epsilon) -> np.ndarray:
+    """Differencing steps must be finite and strictly positive.
+
+    A zero or a NaN divides silently into the separation and produces an
+    infinity or a NaN that looks like a Jacobi field, so it is refused here
+    rather than discovered three plots later.
+    """
+    epsilons = np.atleast_1d(np.asarray(epsilon, dtype=float))
+    if epsilons.size == 0:
+        raise ValueError("epsilon must contain at least one value")
+    if not np.all(np.isfinite(epsilons)):
+        raise ValueError("epsilon must be finite")
+    if np.any(epsilons <= 0.0):
+        raise ValueError("epsilon must be strictly positive")
+    return epsilons
 
 
 @dataclass(frozen=True)
@@ -54,6 +115,7 @@ class PathEnvelope:
     jacobi_field: np.ndarray
     jacobi_derivative: np.ndarray
     speed: np.ndarray
+    chart: dict[str, Any] = field(default_factory=dict)
 
     # -- readout -----------------------------------------------------------
     @property
@@ -65,6 +127,57 @@ class PathEnvelope:
             a_rate=self.lateral_rate,
             b=self.jacobi_field,
             b_rate=self.jacobi_derivative,
+        )
+
+    def as_transfer_record(
+        self,
+        *,
+        units: Units | None = None,
+        observation_mode: str = "ambient-euclidean-chord",
+        validity: FirstOrderValidity | None = None,
+    ) -> TransferRecord:
+        """Present this path as the public transfer record.
+
+        The default observation mode is the ambient chord, because that is what
+        this repository can actually compute on a general surface: the
+        in-surface distance between two nearby geodesics would be a
+        boundary-value problem, and claiming it here would be claiming a
+        quantity nothing produces.
+
+        Validity is declared not established by default, for the same reason --
+        the ``eps^2`` coefficient is known in closed form only on the constant
+        curvature model spaces. A caller who has measured it can pass one in.
+        """
+        steps = int(self.n_steps)
+        return TransferRecord(
+            arclength=self.arc_length,
+            gaussian_curvature=self.curvature,
+            a=self.lateral_basis,
+            a_rate=self.lateral_rate,
+            b=self.jacobi_field,
+            b_rate=self.jacobi_derivative,
+            frame="transverse-to-gamma, parallel-transported",
+            units=units or Units(),
+            source_digest=digest(
+                {
+                    "surface": self.surface.name,
+                    "description": self.surface.description,
+                    "start": {"u": self.start[0], "v": self.start[1], "heading": self.start[2]},
+                    "length": self.length,
+                }
+            ),
+            resolution=Resolution(
+                method=self.integrator,
+                samples=steps + 1,
+                max_step=float(self.length) / steps,
+                uniform=True,
+            ),
+            validity=validity
+            or FirstOrderValidity.not_established(
+                "no closed form for the eps^2 coefficient on a varying-curvature surface"
+            ),
+            observation_mode=observation_mode,
+            domain="parametric-surface",
         )
 
     @property
@@ -98,26 +211,18 @@ class PathEnvelope:
         with np.errstate(divide="ignore", invalid="ignore"):
             return np.where(scale > 0.0, float(transverse_tolerance) / scale, np.inf)
 
-    def focus_points(self) -> list[float]:
-        """Arc lengths at which the Jacobi field vanishes away from the start.
+    def focus_points(self, *, component: str = "b") -> list[float]:
+        """Arc lengths at which a column of the transfer map vanishes.
 
-        These are conjugate points: neighbouring geodesics refocus, the first
-        order deviation carries no information about which one you are on, and
-        the path-to-endpoint map is ill conditioned there.
+        Delegates to :meth:`TransferMap.focus_events`, so these are the
+        Hermite-refined locations rather than the sample-spacing ones, and
+        there is a single implementation of the root finding.
         """
-        field = self.jacobi_field
-        grid = self.arc_length
-        found: list[float] = []
-        for index in range(1, len(field) - 1):
-            if grid[index] <= 0.0:
-                continue
-            left, right = field[index], field[index + 1]
-            if left == 0.0:
-                found.append(float(grid[index]))
-            elif left * right < 0.0:
-                weight = left / (left - right)
-                found.append(float(grid[index] + weight * (grid[index + 1] - grid[index])))
-        return found
+        return self.transfer_map.focus_points(component=component)
+
+    def focus_events(self, *, component: str = "b") -> list[FocusEvent]:
+        """The same foci, with their location uncertainty and slope."""
+        return self.transfer_map.focus_events(component=component)
 
     def summary(self) -> dict[str, Any]:
         focus = self.focus_points()
@@ -137,7 +242,13 @@ class PathEnvelope:
             "amplification_at_end": float(self.amplification[-1]),
             "max_abs_jacobi_field": float(np.max(np.abs(self.jacobi_field))),
             "max_speed_drift": float(np.max(self.speed_drift)),
+            "chart": self.chart,
             "focus_points": focus,
+            "focus_events": [event.to_dict() for event in self.focus_events()],
+            "focus_clearance": self.transfer_map.clearance_from_focus(),
+            "crossed_first_conjugate_point": (
+                self.transfer_map.crossed_first_conjugate_point()
+            ),
             "well_conditioned": not focus,
         }
 
@@ -158,6 +269,9 @@ def integrate_paths(
     the expense is the per-step Python overhead, which the fan shares.
     """
     angles = np.atleast_1d(np.asarray(headings, dtype=float))
+    # Refuse a start the chart cannot represent, rather than integrating out of
+    # a singularity and returning something that looks like an envelope.
+    surface.require_valid_chart(u0, v0, where="the starting point")
     starts = np.stack(
         [surface.initial_state(u0, v0, float(angle)) for angle in angles], axis=0
     )
@@ -185,6 +299,7 @@ def integrate_paths(
                 jacobi_field=trajectory[:, index, 6],
                 jacobi_derivative=trajectory[:, index, 7],
                 speed=np.asarray(surface.speed(u, v, du, dv), dtype=float),
+                chart=_chart_report(surface, grid, u, v),
             )
         )
     return envelopes
@@ -230,7 +345,7 @@ def finite_difference_jacobi(
     ``epsilon`` is an array.  This never touches the Jacobi equation, so it is
     a genuinely independent measurement of the same quantity.
     """
-    epsilons = np.atleast_1d(np.asarray(epsilon, dtype=float))
+    epsilons = _validated_epsilons(epsilon)
     offsets = np.concatenate([heading + epsilons, heading - epsilons])
     starts = np.stack(
         [surface.initial_state(u0, v0, float(angle)) for angle in offsets], axis=0
@@ -272,9 +387,7 @@ def finite_difference_lateral(
     Returns ``(s, |J|)``, the sweep on the second axis when ``epsilon`` is an
     array. The measured quantity is an ``ambient-euclidean-chord``.
     """
-    epsilons = np.atleast_1d(np.asarray(epsilon, dtype=float))
-    if np.any(epsilons <= 0.0):
-        raise ValueError("epsilon must be positive")
+    epsilons = _validated_epsilons(epsilon)
     rhs = surface.geodesic_transfer_rhs()
     tangent = surface.unit_direction(u0, v0, heading)
     normal = surface.perpendicular_direction(u0, v0, *tangent)

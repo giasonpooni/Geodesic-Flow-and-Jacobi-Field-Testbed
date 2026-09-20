@@ -28,7 +28,7 @@ surfaces and reports the difference.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import numpy as np
@@ -37,6 +37,66 @@ Array = np.ndarray
 
 # (a, a', b, b') at s = 0: the identity transfer map.
 TRANSFER_INITIAL_STATE = (1.0, 0.0, 0.0, 1.0)
+
+INFINITY = float("inf")
+
+
+@dataclass(frozen=True)
+class Chart:
+    """The parameter region in which a surface's chart is actually a chart.
+
+    A parameterisation is not the surface. Latitude and longitude cover a
+    sphere everywhere except the poles, where the longitude direction collapses
+    and the Christoffel symbols diverge; the pseudosphere's ``u`` must stay
+    positive and bounded. A path that leaves the region does not stop being a
+    path -- it stops being *this chart's* path -- and the distinction has to be
+    reported rather than left to appear as NaNs or, worse, as a plausible
+    envelope computed from a degenerate metric.
+    """
+
+    u_min: float = -INFINITY
+    u_max: float = INFINITY
+    v_min: float = -INFINITY
+    v_max: float = INFINITY
+    u_period: float | None = None
+    v_period: float | None = None
+    #: Declared coordinate scales and a reference length, so that a collapsing
+    #: coordinate direction can be detected without smuggling in the units the
+    #: part happens to be drawn in.
+    u_scale: float = 1.0
+    v_scale: float = 1.0
+    reference_length: float = 1.0
+    note: str = ""
+
+    def margin(self, u, v) -> Array:
+        """Distance to the nearest non-periodic boundary; ``inf`` when unbounded.
+
+        Negative outside. Periodic coordinates are unbounded by construction and
+        contribute nothing.
+        """
+        u = np.asarray(u, dtype=float)
+        v = np.asarray(v, dtype=float)
+        margins = [np.full(np.broadcast(u, v).shape, INFINITY)]
+        if self.u_period is None:
+            margins.extend([u - self.u_min, self.u_max - u])
+        if self.v_period is None:
+            margins.extend([v - self.v_min, self.v_max - v])
+        return np.min(np.broadcast_arrays(*margins), axis=0)
+
+    def contains(self, u, v) -> Array:
+        return self.margin(u, v) >= 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "u": [self.u_min, self.u_max],
+            "v": [self.v_min, self.v_max],
+            "u_period": self.u_period,
+            "v_period": self.v_period,
+            "u_scale": self.u_scale,
+            "v_scale": self.v_scale,
+            "reference_length": self.reference_length,
+            "note": self.note,
+        }
 
 
 @dataclass(frozen=True)
@@ -59,7 +119,19 @@ class ParametricSurface:
     position: Callable[[Any, Any], Array]
     jet: Callable[[Any, Any], SurfaceJet] | None = None
     exact_curvature: Callable[[Any, Any], Array] | None = None
-    fd_step: float = 1e-4
+    #: Step for the finite-difference fallback, *relative* to the parameter
+    #: scale. An absolute step is a scale defect: the same 1e-4 that is right
+    #: for a unit torus is far too small on a part parameterised in millimetres
+    #: and far too large on one in metres, and a second derivative amplifies
+    #: both failures.
+    fd_relative_step: float = 1e-4
+    #: The parameter magnitude below which the relative step stops shrinking.
+    fd_floor: float = 1.0
+    chart: Chart = field(default_factory=Chart)
+    #: A chart whose dimensionless conditioning falls below this is degenerate
+    #: -- a coordinate direction is collapsing or the coordinate curves are
+    #: becoming parallel -- and nothing computed from it can be trusted.
+    chart_conditioning_floor: float = 1e-6
     description: str = ""
 
     # -- derivatives -------------------------------------------------------
@@ -68,8 +140,17 @@ class ParametricSurface:
             return self.jet(u, v)
         return self._finite_difference_jet(u, v)
 
+    def fd_step_at(self, u, v) -> float:
+        """Scale-aware differencing step for the fallback jet."""
+        scale = max(
+            float(self.fd_floor),
+            float(np.max(np.abs(np.asarray(u, dtype=float)))),
+            float(np.max(np.abs(np.asarray(v, dtype=float)))),
+        )
+        return float(self.fd_relative_step) * scale
+
     def _finite_difference_jet(self, u, v) -> SurfaceJet:
-        h = self.fd_step
+        h = self.fd_step_at(u, v)
         u = np.asarray(u, dtype=float)
         v = np.asarray(v, dtype=float)
         r = self.position(u, v)
@@ -87,6 +168,106 @@ class ParametricSurface:
             ruv=(upvp - upvm - umvp + umvm) / (4.0 * h**2),
             rvv=(vp - 2.0 * r + vm) / h**2,
         )
+
+    def derivative_convergence(self, u, v) -> dict[str, float]:
+        """How much the fallback jet's curvature moves when the step is doubled.
+
+        A Richardson-style estimate of the finite-difference error, so a surface
+        supplied as a black box can say how far its curvature can be trusted
+        rather than having it assumed. Meaningless -- and returned as zero --
+        for a surface that supplies analytic derivatives.
+        """
+        if self.jet is not None:
+            return {"relative_change": 0.0, "step": 0.0, "source": "analytic"}
+        step = self.fd_step_at(u, v)
+        coarse = replace(self, fd_relative_step=2.0 * float(self.fd_relative_step))
+        fine = float(np.max(np.abs(self.gaussian_curvature(u, v))))
+        doubled = float(np.max(np.abs(coarse.gaussian_curvature(u, v))))
+        scale = max(fine, 1e-300)
+        return {
+            "relative_change": float(abs(doubled - fine) / scale),
+            "step": step,
+            "source": "finite-difference",
+        }
+
+    # -- chart validity ----------------------------------------------------
+    def chart_orthogonality(self, u, v) -> Array:
+        """``sigma_2/sigma_1`` of the *direction-normalised* surface Jacobian.
+
+        One where the coordinate curves meet at a right angle, zero where they
+        become parallel. Because each column is normalised first, this depends
+        only on the angle between the coordinate directions, so it is unchanged
+        by rescaling ``u`` and ``v`` independently -- which
+        ``sqrt(EG - F^2)/max(E, G)`` is not: that quantity confuses an
+        anisotropic chart with a degenerate one, and on a torus it reads 0.34
+        for a chart that is perfectly regular.
+        """
+        E, F, G = self.first_fundamental_form(u, v)
+        cosine = np.abs(F) / np.sqrt(np.maximum(E * G, 1e-300))
+        cosine = np.clip(cosine, 0.0, 1.0)
+        return np.sqrt((1.0 - cosine) / (1.0 + cosine))
+
+    def chart_scale_ratio(self, u, v) -> Array:
+        """Shortest coordinate direction against the chart's declared reference.
+
+        The other way a chart fails: a coordinate direction collapsing, as
+        longitude does at a sphere's pole. It needs declared scales, because
+        "short" is only meaningful against something.
+        """
+        jet = self.jet_at(u, v)
+        lengths = np.stack(
+            [
+                np.sqrt(_dot(jet.ru, jet.ru)) * float(self.chart.u_scale),
+                np.sqrt(_dot(jet.rv, jet.rv)) * float(self.chart.v_scale),
+            ],
+            axis=0,
+        )
+        return np.min(lengths, axis=0) / float(self.chart.reference_length)
+
+    def chart_conditioning(self, u, v) -> Array:
+        """The worse of the two failure modes, as one dimensionless number."""
+        return np.minimum(self.chart_orthogonality(u, v), self.chart_scale_ratio(u, v))
+
+    def chart_validity(self, u, v) -> dict[str, Array]:
+        """Per-sample chart diagnostics: inside the domain, and well conditioned."""
+        margin = self.chart.margin(u, v)
+        orthogonality = self.chart_orthogonality(u, v)
+        scale_ratio = self.chart_scale_ratio(u, v)
+        conditioning = np.minimum(orthogonality, scale_ratio)
+        E, F, G = self.first_fundamental_form(u, v)
+        return {
+            "in_domain": margin >= 0.0,
+            "domain_margin": margin,
+            "orthogonality": orthogonality,
+            "scale_ratio": scale_ratio,
+            "conditioning": conditioning,
+            "well_conditioned": conditioning >= self.chart_conditioning_floor,
+            "metric_determinant": E * G - F * F,
+        }
+
+    def require_valid_chart(self, u, v, *, where: str = "point") -> None:
+        """Refuse a point the chart cannot represent, instead of returning NaNs."""
+        validity = self.chart_validity(u, v)
+        if not np.all(validity["in_domain"]):
+            raise ValueError(
+                f"{where} lies outside the declared domain of {self.name}: "
+                f"{self.chart.to_dict()}"
+            )
+        if not np.all(validity["well_conditioned"]):
+            worst = float(np.min(validity["conditioning"]))
+            orthogonality = float(np.min(validity["orthogonality"]))
+            scale_ratio = float(np.min(validity["scale_ratio"]))
+            cause = (
+                "the coordinate curves are becoming parallel"
+                if orthogonality <= scale_ratio
+                else "a coordinate direction is collapsing"
+            )
+            raise ValueError(
+                f"{where} is in a degenerate part of the chart of {self.name}: "
+                f"conditioning {worst:.3e} is below the floor "
+                f"{self.chart_conditioning_floor:.3e} ({cause}; orthogonality "
+                f"{orthogonality:.3e}, scale ratio {scale_ratio:.3e})"
+            )
 
     # -- fundamental forms -------------------------------------------------
     # Everything below is derived from a single jet.  The flow evaluates the
@@ -295,6 +476,7 @@ def plane() -> ParametricSurface:
         position=position,
         jet=jet,
         exact_curvature=lambda u, v: np.zeros_like(np.asarray(u, dtype=float) * 1.0),
+        chart=Chart(note="global: the identity chart covers the plane"),
         description="flat plate",
     )
 
@@ -331,6 +513,14 @@ def sphere(radius: float = 1.0) -> ParametricSurface:
         jet=jet,
         exact_curvature=lambda u, v: np.full_like(
             np.asarray(u, dtype=float) * np.asarray(v, dtype=float) * 1.0, 1.0 / radius**2
+        ),
+        chart=Chart(
+            u_min=0.0,
+            u_max=float(np.pi),
+            v_period=2.0 * float(np.pi),
+            reference_length=radius,
+            note="colatitude and longitude; the poles u = 0, pi are chart "
+            "singularities where the longitude direction collapses",
         ),
         description="spherical cap",
     )
@@ -369,6 +559,11 @@ def cylinder(radius: float = 1.0) -> ParametricSurface:
         jet=jet,
         exact_curvature=lambda u, v: np.zeros_like(
             np.asarray(u, dtype=float) * np.asarray(v, dtype=float) * 1.0
+        ),
+        chart=Chart(
+            u_period=2.0 * float(np.pi),
+            reference_length=radius,
+            note="u wraps around the axis; v runs along it without bound",
         ),
         description="rolled sheet: extrinsically curved, intrinsically flat",
     )
@@ -411,6 +606,14 @@ def pseudosphere() -> ParametricSurface:
         exact_curvature=lambda u, v: np.full_like(
             np.asarray(u, dtype=float) * np.asarray(v, dtype=float) * 1.0, -1.0
         ),
+        chart=Chart(
+            u_min=0.05,
+            u_max=6.0,
+            v_period=2.0 * float(np.pi),
+            note="u > 0 strictly: the cusp circle u = 0 is an edge of the "
+            "surface, and the chart also degenerates as u grows and the tube "
+            "closes on the axis",
+        ),
         description="tractricoid, constant K = -1",
     )
 
@@ -447,6 +650,7 @@ def hyperbolic_paraboloid(scale: float = 1.0) -> ParametricSurface:
         position=position,
         jet=jet,
         exact_curvature=curvature,
+        chart=Chart(note="global: a graph over the whole (u, v) plane"),
         description="saddle coupon: K < 0 but not constant",
     )
 
@@ -486,6 +690,12 @@ def torus(major: float = 2.0, minor: float = 1.0) -> ParametricSurface:
         position=position,
         jet=jet,
         exact_curvature=curvature,
+        chart=Chart(
+            u_period=2.0 * float(np.pi),
+            v_period=2.0 * float(np.pi),
+            reference_length=minor,
+            note="both angles wrap; the chart is regular everywhere for R > r",
+        ),
         description="curvature of both signs on one part",
     )
 

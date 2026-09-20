@@ -22,6 +22,13 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from .engine.integrators import integrate_on_grid
+from .engine.record import (
+    FirstOrderValidity,
+    Resolution,
+    TransferRecord,
+    Units,
+    digest,
+)
 from .engine.spaceforms import asin_k, sin_k
 from .engine.surfaces import TRANSFER_INITIAL_STATE
 from .engine.transfer import constant_curvature_transfer
@@ -99,6 +106,67 @@ class JacobiTrace:
         offset = _finite_scalar(initial_offset, "initial_offset")
         angle = _finite_scalar(initial_angle, "initial_angle")
         return self.position_basis * offset + self.angle_basis * angle
+
+    def as_transfer_record(
+        self,
+        *,
+        units: Units | None = None,
+        observation_mode: str = "intrinsic-surface-distance",
+        relative_tolerance: float = 1.0e-6,
+    ) -> TransferRecord:
+        """Present this trace as the public transfer record.
+
+        Where the curvature is constant the first-order validity range is not a
+        guess: the exact separation expands as
+        ``d = eps sn_K(s) [1 - cn_K(s)^2 eps^2/24 + ...]``, so the largest
+        heading perturbation holding a given relative tolerance anywhere on the
+        path is ``sqrt(24 tol) / max|cn_K(s)|``. That bound is filled in here;
+        on a varying profile it is left not established rather than invented.
+        """
+        constant = bool(np.ptp(self.gaussian_curvature) < 1e-12)
+        if constant:
+            worst = float(np.max(np.abs(self.position_basis)))
+            limit = (
+                float(np.sqrt(24.0 * relative_tolerance) / worst) if worst > 0.0 else None
+            )
+            validity = FirstOrderValidity(
+                basis="closed-form: relative error is cn_K(s)^2 eps^2 / 24",
+                relative_tolerance=float(relative_tolerance),
+                max_heading=limit,
+            )
+        else:
+            validity = FirstOrderValidity.not_established(
+                "curvature varies along the path; no closed-form eps^2 coefficient"
+            )
+        return TransferRecord(
+            arclength=self.arclength,
+            gaussian_curvature=self.gaussian_curvature,
+            a=self.position_basis,
+            a_rate=self.position_rate,
+            b=self.angle_basis,
+            b_rate=self.angle_rate,
+            frame="transverse-to-gamma, parallel-transported",
+            units=units or Units(),
+            source_digest=digest(
+                {
+                    "curvature": self.gaussian_curvature.tolist()[:1] if constant
+                    else "varying",
+                    "constant": constant,
+                    "span": [float(self.arclength[0]), float(self.arclength[-1])],
+                }
+            ),
+            resolution=Resolution(
+                method=self.method,
+                samples=int(self.arclength.size),
+                max_step=float(np.max(np.diff(self.arclength))),
+                uniform=bool(
+                    np.allclose(np.diff(self.arclength), self.arclength[1] - self.arclength[0])
+                ),
+            ),
+            validity=validity,
+            observation_mode=observation_mode,
+            domain="constant-curvature" if constant else "declared-curvature-profile",
+        )
 
     def as_dict(self) -> dict[str, object]:
         return {

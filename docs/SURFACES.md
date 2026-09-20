@@ -118,11 +118,17 @@ intrinsically flat, so `cn = 1` and `sn(1) = 1`, and at heading `θ` the
 transverse normal curvature is `sin²θ`, predicting `(1 + sin⁴θ)/6 = 0.18360`
 at `θ = 0.6`. Measured: 0.18363. That prediction is a unit test.
 
-**This matters for hardware.** A camera or a laser scanner measures chords in
-space; the Jacobi field is a distance in the surface. On the pseudosphere the
-difference is 2.5 times the intrinsic effect. Any bench that compares a
-measured separation with `ε j(s)` has to account for it or it will report a
-model failure that is really an instrument definition.
+**This matters for hardware.** A reconstructed pair of 3-D points gives a chord
+in space; the Jacobi field is a distance in the surface. On the pseudosphere at
+`s = 1` the measured second-order coefficient is 0.4090, of which the intrinsic
+term is 0.1667 and the chord excess 0.2423 — the excess is 1.45 times the
+intrinsic term, and a chord measurement therefore sees 2.5 times the
+coefficient an in-surface distance would. And a camera does not report even
+the chord directly — it reports image coordinates, and a chord appears only
+after calibration, reconstruction and registration, each with its own error.
+Any bench that compares a measured separation with `ε j(s)` has to account for
+the whole chain or it will report a model failure that is really an instrument
+definition.
 
 ### 3. Self-convergence
 
@@ -190,7 +196,6 @@ amplification `max ǀb(s)ǀ`:
 | | heading | `max ǀbǀ` | focus margin | passes a focus | mean `K` |
 |---|---|---|---|---|---|
 | lowest amplification | 97° | 1.74 | 0.000106 | **yes**, at `s = 5.50` | +0.325 |
-| lowest with a margin ≥ 0.25 | 127° | 1.92 | 0.785 | no | +0.248 |
 | highest amplification | 15° | 36.90 | 1.136 | no | -0.328 |
 
 A factor of **21** between the extremes, from the same start and the same path
@@ -207,18 +212,62 @@ conjugate point, local minimality can be lost, and a family of such paths
 crowds together instead of covering. Choosing purely by minimum amplification
 walks straight into one.
 
-So the scan reports both an upper measure (`max_forward_amplification`) and a
-lower one (`focus_margin`: the smallest `ǀbǀ` after the initial dead zone where
-`b` is small only because it starts at zero), and the objective is recorded as
-`minimum-forward-angular-error-amplification` — not "most robust". The
-defensible answer here is 127°: ten per cent more amplification than the best
-score, for a focus margin of 0.785 against 0.000106 — four orders of magnitude.
-Rank seven, 120°, is technically clear of a focus but comes within 0.20 of one,
-so the margin floor excludes it too.
+### Why the criterion is not a threshold on `ǀbǀ`
 
-A production score would also need boundary clearance, chart validity, path
-length, curvature exposure and gap/overlap or sensor-swath constraints. None of
-those are modelled.
+The obvious patch is to require a focus margin above some floor. It is the
+wrong kind of quantity. `ǀbǀ` has units of length per radian, so a floor of
+0.25 means one thing on a 300 mm coupon in radians and something else on a
+3 m part in degrees; it is a number chosen here, not a property of the job.
+
+The criterion the scan actually uses is the one the instrument imposes.
+Introduce the observation model — `δz(s) = Φ(s) δz₀`, `y(s) = H(s) δz(s) +
+η(s)`, `Cov(y) = H Φ C₀ Φᵀ Hᵀ + R` — and the heading component of a starting
+pose error is visible to the sensor at
+
+```text
+rho(s) = ǀb(s)ǀ · sigma_alpha / sigma_measurement
+```
+
+which is dimensionless. `sigma_alpha = 0.1°` of aiming uncertainty against a
+25 µm metrology system on a 300 mm coupon is the declared example here, and
+the report checks that `rho` does not move when the same physical situation is
+drawn at twice the size (`max_relative_difference` 0.0).
+
+`rho` is also not used as a minimum, because `rho(0) = 0` on every route — a
+whole-path minimum is unsatisfiable, and a route first crossing the threshold
+at its last sample would pass vacuously. It is used as a **schedule**
+(`engine/tracking.py`): acquire above `rho = 5` within the first 1.0 of path
+length, hold above `rho = 3` thereafter, tolerate at most 0.1 of continuous
+loss, and require at least 3.0 of tracked distance. Outcomes are explicit:
+`TRACKED`, `NEVER_ACQUIRED`, `LATE_ACQUISITION`, `TRACK_LOST`,
+`INSUFFICIENT_TRACKED_DISTANCE`.
+
+### What the instrument decides
+
+| | declared process limits only | plus the acquisition schedule |
+|---|---|---|
+| feasible routes, of 24 | 15 | 8 |
+| recommended | 97°, `max ǀbǀ` = 1.74 | 120°, `max ǀbǀ` = 1.82 |
+| fate of 97° | feasible | `TRACK_LOST` — `rho` below 3 from `s = 5.354` |
+
+Five per cent more amplification, for a route the scanner can actually follow.
+And the routes it cannot follow are **exactly** the seven that pass through a
+focus — a coincidence of two independent computations, the zeros of `b` and
+the schedule of `rho`, and a declared check
+(`surface-track-loss-coincides-with-focus`) rather than an observation.
+
+Note what this costs the old floor: 120° has a focus margin of 0.200, *below*
+the 0.25 that a hand-chosen threshold would have demanded, and the scanner
+holds it for the whole path. The floor was rejecting a route on a number that
+did not describe the sensor. `focus_margin_report_level` survives in the report
+as a reported quantity and is explicitly not a criterion.
+
+The ranking scalar is therefore recorded as
+`minimum-forward-angular-error-amplification` — not "most robust" — and it
+decides nothing. The recommendation comes from `engine/routing.py`:
+cross-track error, heading error, coverage margin, and the tracking outcome.
+Boundary clearance, curvature exposure and path length are declared in
+`RouteConstraints` but left unbounded in this example.
 
 ---
 
@@ -228,12 +277,27 @@ those are modelled.
   [INSTRUMENT.md](INSTRUMENT.md).
 * **No triangulated meshes.** Surfaces are parametric. A mesh needs a discrete
   curvature estimator, which is a different problem with its own error analysis.
-* **No boundaries, no obstacles, no cut locus search.** A geodesic that leaves
-  the chart is not detected; the domains here are chosen so that none does.
+* **No obstacles, no cut locus search.** Leaving the declared parameter domain
+  *is* now detected — `ParametricSurface.chart_validity` reports domain
+  containment, orthogonality and scale ratio, `require_valid_chart` refuses to
+  continue without it, and every envelope carries a `surface-chart-validity`
+  check. What is absent is anything beyond the chart: obstacles, fixtures, and
+  the cut locus. `RouteConstraints.min_boundary_clearance` exists and is left
+  unbounded in the example.
 * **Full envelope only to first order.** `Phi(s)` maps a starting pose error to
   a downstream one linearly. Stage one measured exactly where that stops being
-  the truth; the same limit applies here and has not been re-measured on the
-  varying-curvature cases.
-* **No route selection under constraints.** `scan_headings` ranks headings from
-  a fixed start by one scalar. It does not choose among routes subject to
-  coverage, clearance or manufacturing constraints.
+  the truth; the same limit applies here and has **not** been re-measured on
+  the varying-curvature cases. A path-specific nonlinear validity region is the
+  next thing this stage needs.
+* **Observability is a threshold schedule, not an integral.** Tracking asks
+  whether `rho(s)` clears declared levels sample by sample. The accumulated
+  observability Gramian `W(s0, s1) = ∫ Φᵀ Hᵀ R⁻¹ H Φ ds`, which would say how
+  much information a whole span carries rather than how much any one sample
+  does, is not computed.
+* **`R` is diagonal and stationary.** The observation noise covariance is
+  declared constant and uncorrelated along the path. Real scanner noise is
+  neither. Correlated and block-structured `R` are not modelled.
+* **Fixed step, no adaptive error estimate.** Step size is declared, not
+  chosen. There is no step-doubling estimate and therefore no per-run numerical
+  error budget; what exists instead is self-convergence measured after the
+  fact, and the invariants.
