@@ -252,9 +252,27 @@ loss, and require at least 3.0 of tracked distance. Outcomes are explicit:
 
 Five per cent more amplification, for a route the scanner can actually follow.
 And the routes it cannot follow are **exactly** the seven that pass through a
-focus — a coincidence of two independent computations, the zeros of `b` and
-the schedule of `rho`, and a declared check
-(`surface-track-loss-coincides-with-focus`) rather than an observation.
+focus — two independent computations agreeing, the zeros of `b` and the
+schedule of `rho`, recorded as a declared check rather than an observation.
+
+That check is named
+`surface-track-loss-coincides-with-focus-in-this-configuration`, and the
+qualifier is the point. The agreement holds for *this* torus, this starting
+uncertainty, this `H`, this scanner noise, this schedule and this candidate
+set. It is corroboration, not an identity, and the two quantities come apart
+in both directions:
+
+| | focus present? | resolvable? |
+|---|---|---|
+| plate, heading tolerance shrunk 10⁴× | no — `b(s) = s` never vanishes | no: `rho` peaks at 0.0042 |
+| spherical cap, 0.01 before `s = pi` | yes | yes, given 1.0 µm metrology on a 300 mm coupon |
+
+A noisier scanner loses a path with no focus in it; a better one holds a path
+that has one, because `ǀbǀ` beside a conjugate point is small but not zero.
+Both are declared checks (`surface-unresolvable-without-a-focus`,
+`surface-resolvable-beside-a-focus`), and both outputs are reported:
+`focus_points` is the geometric claim, the tracking outcome is the
+instrument's, and only the second decides a route.
 
 Note what this costs the old floor: 120° has a focus margin of 0.200, *below*
 the 0.25 that a hand-chosen threshold would have demanded, and the scanner

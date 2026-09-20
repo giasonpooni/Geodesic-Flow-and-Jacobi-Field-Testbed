@@ -708,6 +708,110 @@ def measure_chart_rescaling_invariance(cases) -> dict[str, Any]:
     }
 
 
+def measure_focus_versus_resolvability(config: SurfaceConfig, cases) -> dict[str, Any]:
+    """Two statements that correlate here, and are not the same statement.
+
+    A *geometric focus* is a zero of a transfer column: a property of the
+    surface and the path, present whatever instrument is pointed at it. *Low
+    resolvability* is a property of the whole chain, and moves when the
+    tolerance or the scanner moves. Collapsing one into the other would let a
+    route be called "clear of a focus" because the scanner happened to be good,
+    or a genuine conjugate point be reported wherever a sensor was noisy.
+
+    Two measurements separate them:
+
+    * a path with **no focus anywhere** driven below threshold by shrinking the
+      admitted starting uncertainty -- low ``rho``, no focus;
+    * a point a declared distance from a **real** conjugate point, resolved by
+      sharpening the scanner -- a focus nearby, and ``rho`` above threshold
+      anyway.
+    """
+    heading_sigma = float(np.deg2rad(config.route_heading_sigma_degrees))
+
+    # 1. The plate: b(s) = s, so there is no focus at any arc length. Shrink
+    #    the admitted heading error and the scanner stops being able to see the
+    #    difference between the poses the tolerance allows -- with no focus
+    #    anywhere near it.
+    plate = next(case for case in cases if case.key == "plate")
+    flat = integrate_path(
+        plate.surface, u0=plate.u0, v0=plate.v0, heading=plate.heading,
+        length=plate.length, n_steps=config.n_steps,
+    )
+    instrument, _ = _instrument(config)
+    tiny = heading_sigma / 1.0e4
+    rho_flat = instrument.resolvability(flat, np.diag([0.0, tiny**2]))[:, 0]
+    flat_focus_points = [float(event.arc_length) for event in flat.transfer_map.focus_events()]
+
+    # 2. The spherical cap: b(s) = sin(s), a genuine conjugate point at pi.
+    #    At a declared offset from it the signal is small but not zero, so a
+    #    sharp enough scanner still separates the admitted poses.
+    offsets = [0.1, 0.05, 0.01]
+    cap = integrate_path(
+        sphere(1.0), u0=float(np.pi / 2), v0=0.0, heading=float(np.pi / 2),
+        length=float(np.pi) + 0.5, n_steps=config.n_steps,
+    )
+    transfer = cap.transfer_map
+    focus = [float(event.arc_length) for event in transfer.focus_events()]
+    near_focus = []
+    for offset in offsets:
+        target = focus[0] - offset if focus else float(np.pi) - offset
+        index = int(np.argmin(np.abs(cap.arc_length - target)))
+        signal = abs(float(transfer.b[index])) * heading_sigma
+        # The metrology sigma at which rho reaches the acquire threshold here.
+        required = signal / float(config.route_acquire_threshold)
+        near_focus.append(
+            {
+                "offset_from_focus": float(offset),
+                "arclength": float(cap.arc_length[index]),
+                "abs_b": abs(float(transfer.b[index])),
+                "rho_with_declared_scanner": signal / float(config.route_measurement_sigma),
+                "metrology_sigma_to_reach_acquire_threshold": float(required),
+                "metrology_sigma_micrometres_on_a_300mm_coupon": float(
+                    required * 300_000.0
+                ),
+                "resolvable_with_declared_scanner": bool(
+                    signal / float(config.route_measurement_sigma)
+                    >= float(config.route_acquire_threshold)
+                ),
+            }
+        )
+
+    return {
+        "no_focus_but_unresolvable": {
+            "case": "plate",
+            "surface": plate.surface.name,
+            "heading_sigma": tiny,
+            "heading_sigma_ratio_to_declared": tiny / heading_sigma,
+            "n_focus_points": len(flat_focus_points),
+            "max_resolvability": float(np.max(rho_flat)),
+            "acquire_threshold": float(config.route_acquire_threshold),
+            "note": (
+                "b(s) = s has no zero on this path, so there is no focus at any "
+                "arc length; rho is below the acquire threshold everywhere "
+                "regardless, because the tolerance admits less than the scanner "
+                "can see"
+            ),
+        },
+        "focus_nearby_but_resolvable": {
+            "case": "spherical-cap",
+            "surface": "sphere(R=1)",
+            "focus_points": focus,
+            "declared_metrology_sigma": float(config.route_measurement_sigma),
+            "samples": near_focus,
+            "note": (
+                "|b| is small near a conjugate point but not zero, so the "
+                "metrology sigma that resolves the admitted poses there is "
+                "finite; a focus does not by itself make a path unobservable"
+            ),
+        },
+        "note": (
+            "a focus is a fact about the surface and the path; resolvability is "
+            "a fact about the surface, the tolerance and the instrument together. "
+            "Both are reported, and the route constraint uses the second"
+        ),
+    }
+
+
 def scan_for_robust_heading(config: SurfaceConfig, cases) -> dict[str, Any]:
     """Rank starting headings, then choose among them by declared process limits.
 
@@ -1125,12 +1229,55 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
     }
     checks.append(
         _check(
-            "surface-track-loss-coincides-with-focus",
-            "under this declared schedule the routes the scanner cannot hold are "
-            "exactly the routes that pass through a focus -- two independent "
-            "computations, the zeros of b and the schedule of rho, agreeing",
+            "surface-track-loss-coincides-with-focus-in-this-configuration",
+            "for THIS torus, starting uncertainty, H, scanner noise and schedule, "
+            "the routes the scanner cannot hold are exactly the routes that pass "
+            "through a focus -- corroboration from two independent computations, "
+            "not a general identity: see surface-unresolvable-without-a-focus and "
+            "surface-resolvable-beside-a-focus for the two ways they come apart",
             float(len(lost_labels ^ focus_labels)),
             0.0,
+        )
+    )
+
+    distinct = results["focus_versus_resolvability"]
+    unresolvable = distinct["no_focus_but_unresolvable"]
+    checks.append(
+        _check(
+            "surface-unresolvable-without-a-focus",
+            "shrinking the admitted starting uncertainty drives rho below the "
+            "acquire threshold on a path with no focus at any arc length, so low "
+            "resolvability is not evidence of a focus",
+            float(unresolvable["n_focus_points"])
+            + (
+                0.0
+                if unresolvable["max_resolvability"] < unresolvable["acquire_threshold"]
+                else 1.0
+            ),
+            0.0,
+        )
+    )
+    nearest = distinct["focus_nearby_but_resolvable"]["samples"][-1]
+    checks.append(
+        _check(
+            "surface-resolvable-beside-a-focus",
+            "and |b| beside a genuine conjugate point is small but not zero, so "
+            "the metrology sigma that resolves the admitted poses there is "
+            "finite -- a focus does not by itself make a path unobservable",
+            0.0 if np.isfinite(nearest["metrology_sigma_to_reach_acquire_threshold"])
+            and nearest["metrology_sigma_to_reach_acquire_threshold"] > 0.0
+            else 1.0,
+            0.0,
+        )
+    )
+    checks.append(
+        _check(
+            "surface-focus-is-instrument-independent",
+            "the conjugate point on the spherical cap is at pi whatever scanner "
+            "is pointed at it, which is what makes it a different quantity from "
+            "rho",
+            abs(distinct["focus_nearby_but_resolvable"]["focus_points"][0] - float(np.pi)),
+            1e-9,
         )
     )
     checks.append(
@@ -1223,6 +1370,7 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
         "finite_difference_cost": measure_finite_difference_cost(config, cases),
         "envelopes": build_envelopes(config, cases),
         "chart_rescaling_invariance": measure_chart_rescaling_invariance(cases),
+        "focus_versus_resolvability": measure_focus_versus_resolvability(config, cases),
         "heading_scan": scan_for_robust_heading(config, cases),
     }
     checks = collect_checks(results, config)
@@ -1242,6 +1390,13 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
                 "lowest/highest_amplification, sensitivity_ratio -> amplification_ratio",
                 "adds results.chart_rescaling_invariance: the anisotropic-rescaling "
                 "defect that retired sqrt(EG - F^2)/max(E, G)",
+                "adds results.focus_versus_resolvability: a geometric focus and low "
+                "instrument resolvability are separate quantities, and both are reported",
+                "route_selection: min_focus_clearance is removed, not deprecated; a "
+                "dimensionful clearance may be reported but may not decide",
+                "tracking outcomes carry acquisition_window_started_at / "
+                "acquisition_declared_at and loss_started_at / track_loss_declared_at, "
+                "because a causal instrument cannot act on a window before it closes",
                 "heading_scan.route_selection_with_tracking: adds per-route "
                 "assessments so each candidate carries its own tracking outcome",
                 "adds observation_modes and tags each comparison with one",

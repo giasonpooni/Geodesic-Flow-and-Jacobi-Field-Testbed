@@ -43,6 +43,32 @@
   `rho = sqrt(diag(H Phi C0 Phi^T H^T)) / sqrt(diag R)`, which asks whether the
   declared instrument can distinguish the starting poses the tolerance admits.
   Dimensionful quantities may be reported; they may not decide.
+- **A declared constraint is never skipped.** If its evidence is missing,
+  `assess_route` raises. An acquisition schedule with no observation model or
+  no starting covariance, or a boundary limit with no boundary data, is an
+  error, not a pass: a route must never look feasible *because* the data for a
+  limit it has to meet was absent.
+- **An event and the knowledge of it are different times.** A sustained window
+  is recognised only when it closes, so every tracking outcome carries both
+  `acquisition_window_started_at` / `acquisition_declared_at` and
+  `loss_started_at` / `track_loss_declared_at`. `processing="causal"` acts on
+  the declaration; `offline` may use the retrospective start. Reporting an
+  offline schedule as a real-time result is a defect.
+- **A geometric focus is not low resolvability.** A focus is a zero of a
+  transfer column and belongs to the surface and the path; resolvability
+  belongs to the surface, the tolerance and the instrument together. A tight
+  tolerance gives low `rho` with no focus present, and a sharp instrument
+  stays resolvable beside a real conjugate point. Report both, never rename
+  one as the other, and let only the instrument's answer decide a route.
+- **Filter agreement is proved, not asserted.** A comparison against a filtered
+  trial takes a `FilteredPrediction` whose identifier, version, operator digest
+  and causality all match the record. A boolean cannot tell the declared
+  operator from a different one with the same name, which is the case that
+  manufactures agreement.
+- **Thresholds that decide come from the instrument protocol.** The numerical
+  layer reports signal-to-noise, resolvability and margins; it does not decide
+  what counts as resolved. A constant like `SNR >= 3` compiled into the
+  comparison is a declared limit smuggled into arithmetic.
 - A path that leaves its chart must say so. Every surface declares a `Chart`
   and a conditioning floor; `require_valid_chart` refuses a start the
   parameterisation cannot represent, and `PathEnvelope.chart` records where a

@@ -73,10 +73,6 @@ class RouteConstraints:
     #: on every route, and a minimum taken only after the first crossing lets a
     #: route pass by acquiring at its very last sample.
     acquisition: AcquisitionSpec | None = None
-    #: A dimensionful fallback for paths with no observation model. It is in
-    #: length per radian and therefore specific to one scale and one angle
-    #: unit; prefer ``acquisition``.
-    min_focus_clearance: float | None = None
     min_boundary_clearance: float | None = None
     max_path_length: float | None = None
     coverage: CoverageSpec | None = None
@@ -84,6 +80,15 @@ class RouteConstraints:
     def __post_init__(self) -> None:
         if self.min_coverage_margin is not None and self.coverage is None:
             raise ValueError("a coverage margin needs a CoverageSpec to measure against")
+
+    def required_inputs(self) -> tuple[str, ...]:
+        """Data a caller must supply for these constraints to be evaluable."""
+        needed: list[str] = []
+        if self.acquisition is not None:
+            needed.extend(("observation", "initial_covariance"))
+        if self.min_boundary_clearance is not None:
+            needed.append("boundary_clearance")
+        return tuple(needed)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -178,15 +183,37 @@ def assess_route(
     edge of the workable region at each sample. It has to come from the caller
     because it depends on the part, not on the transfer map.
 
-    ``observation`` and ``initial_covariance`` enable the resolvability
+    ``observation`` and ``initial_covariance`` carry the resolvability
     constraint, which is the one worth using: it asks whether the instrument
     can distinguish the starting poses the tolerance admits, rather than
     whether a dimensionful quantity cleared a chosen number.
+
+    A constraint that was declared but cannot be evaluated is an error, not a
+    pass. Skipping it would make a route look feasible *because* the evidence
+    for the limit it must meet is missing, which is the one failure mode a
+    feasibility check must never have.
     """
+    supplied = {
+        "observation": observation,
+        "initial_covariance": initial_covariance,
+        "boundary_clearance": boundary_clearance,
+    }
+    missing = [name for name in constraints.required_inputs() if supplied[name] is None]
+    if missing:
+        raise ValueError(
+            f"route {label!r} declares constraints needing {', '.join(missing)}, "
+            "which were not supplied; an unevaluated constraint must not be "
+            "reported as a satisfied one"
+        )
+
     record: TransferRecord = to_transfer_record(source)
     grid = record.arclength
     cross_track = record.cross_track_error(max_lateral, max_heading)
     heading = record.heading_error(max_lateral, max_heading)
+    # Reported, never decisive: |a| and |b| carry length per unit of starting
+    # error, so a threshold on either is specific to one part size and one
+    # angle unit. The geometric fact is still worth publishing beside the
+    # instrument's verdict -- they answer different questions.
     focus_clearance = record.clearance_from_focus(component="b")
     lateral_focus_clearance = record.clearance_from_focus(component="a")
     clearance = min(focus_clearance, lateral_focus_clearance)
@@ -200,8 +227,6 @@ def assess_route(
                 upper_bound=True),
         _margin("path-length", constraints.max_path_length, np.array([length]),
                 np.array([grid[-1]]), upper_bound=True),
-        _margin("focus-clearance", constraints.min_focus_clearance, np.array([clearance]),
-                np.array([grid[-1]]), upper_bound=False),
     ):
         if margin is not None:
             margins.append(margin)
@@ -225,11 +250,8 @@ def assess_route(
             margins.append(found)
 
     tracking: TrackingOutcome | None = None
-    if (
-        constraints.acquisition is not None
-        and observation is not None
-        and initial_covariance is not None
-    ):
+    if constraints.acquisition is not None:
+        assert observation is not None and initial_covariance is not None  # checked above
         rho = observation.resolvability(record, initial_covariance)
         profile = np.min(rho, axis=1) if rho.ndim > 1 else rho
         tracking = evaluate_tracking(grid, profile, constraints.acquisition)
@@ -253,7 +275,8 @@ def assess_route(
             )
         )
 
-    if boundary_clearance is not None and constraints.min_boundary_clearance is not None:
+    if constraints.min_boundary_clearance is not None:
+        assert boundary_clearance is not None  # checked above
         found = _margin(
             "boundary-clearance",
             constraints.min_boundary_clearance,

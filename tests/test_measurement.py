@@ -12,8 +12,25 @@ from geodesic_testbed import (
     MeasurementRecord,
     Perturbation,
     Uncertainty,
+    apply_filter,
     compare,
 )
+from geodesic_testbed.engine.observation_model import FilteredPrediction, operator_digest
+
+#: A three-sample smoother, standing in for the bench's real one.
+SMOOTHER = np.array([
+    [0.75, 0.25, 0.00],
+    [0.25, 0.50, 0.25],
+    [0.00, 0.25, 0.75],
+])
+SMOOTHER_DIGEST = operator_digest(SMOOTHER)
+
+
+def _filtered(values, *, matrix=SMOOTHER, identifier="rts-smoother", version="1.2.0"):
+    """A prediction put through the bench's declared operator."""
+    return apply_filter(
+        matrix, values, identifier=identifier, version=version, causal=False
+    )
 
 
 def _record(**overrides) -> MeasurementRecord:
@@ -30,6 +47,7 @@ def _record(**overrides) -> MeasurementRecord:
         "filter_identifier": "rts-smoother",
         "filter_version": "1.2.0",
         "filter_causal": False,
+        "filter_operator_digest": SMOOTHER_DIGEST,
         "filter_tuned_on": "calibration-set-A",
         "units": {"length": "mm", "angle": "radian"},
         "coordinate_frame": "coupon-datum-A",
@@ -71,21 +89,31 @@ def test_signal_to_noise_is_reported_so_an_unresolvable_trial_is_visible() -> No
     assert resolvable.signal_to_noise > 100.0
     faint = _record(signed_transverse_separation=[0.0, 0.01, 0.02])
     assert faint.signal_to_noise < 3.0
-    verdict = compare(faint, [0.0, 0.009, 0.019], filtered_prediction=True)
-    assert verdict["resolvable"] is False
+
+    # With no declared bar the module reports the ratio and draws no conclusion.
+    verdict = compare(faint, _filtered([0.0, 0.009, 0.019]))
+    assert verdict["signal_to_noise"] == pytest.approx(faint.signal_to_noise)
+    assert verdict["meets_declared_resolvability"] is None
+
+    # The bar comes from the instrument protocol.
+    assert compare(
+        faint, _filtered([0.0, 0.009, 0.019]), resolvability_threshold=3.0
+    )["meets_declared_resolvability"] is False
+    assert compare(
+        faint, _filtered([0.0, 0.009, 0.019]), resolvability_threshold=1.0
+    )["meets_declared_resolvability"] is True
 
 
 def test_a_comparison_refuses_a_mode_mismatch() -> None:
     record = _record()
     with pytest.raises(ValueError, match="convert one before comparing"):
         compare(
-            record, [0.0, 1.7, 3.4], mode="intrinsic-surface-distance",
-            filtered_prediction=True,
+            record, _filtered([0.0, 1.7, 3.4]), mode="intrinsic-surface-distance"
         )
-    verdict = compare(record, [0.0, 1.70, 3.40], filtered_prediction=True)
+    verdict = compare(record, _filtered([0.0, 1.70, 3.40]))
     assert verdict["observation_mode"] == "ambient-euclidean-chord"
-    assert verdict["max_abs_residual"] == pytest.approx(0.04)
     assert verdict["role"] == "validation"
+    assert verdict["filter"]["operator_digest"] == SMOOTHER_DIGEST
 
 
 def test_a_filtered_trial_cannot_be_compared_with_an_unfiltered_prediction() -> None:
@@ -93,8 +121,60 @@ def test_a_filtered_trial_cannot_be_compared_with_an_unfiltered_prediction() -> 
     record = _record()
     with pytest.raises(ValueError, match="F R F"):
         compare(record, [0.0, 1.70, 3.40])
-    unfiltered = _record(filter_identifier="none", filter_version="", filter_causal=True)
+    unfiltered = _record(
+        filter_identifier="none", filter_version="", filter_causal=True,
+        filter_operator_digest="",
+    )
     assert compare(unfiltered, [0.0, 1.70, 3.40])["filter"]["identifier"] == "none"
+
+    # ... and filtering only the prediction is the same bias the other way up.
+    with pytest.raises(ValueError, match="biases it towards agreement"):
+        compare(unfiltered, _filtered([0.0, 1.70, 3.40]))
+
+
+def test_a_different_operator_with_the_same_name_is_refused() -> None:
+    """The failure a boolean flag cannot catch."""
+    record = _record()
+    impostor = np.array([
+        [0.50, 0.50, 0.00],
+        [0.10, 0.80, 0.10],
+        [0.00, 0.50, 0.50],
+    ])
+    assert operator_digest(impostor) != SMOOTHER_DIGEST
+
+    # Same identifier, same version, different matrix: the label agrees and the
+    # operator does not, which is exactly how a filter manufactures agreement.
+    with pytest.raises(ValueError, match="operator digest"):
+        compare(record, _filtered([0.0, 1.70, 3.40], matrix=impostor))
+
+    # And the same operator under a different name is refused too.
+    with pytest.raises(ValueError, match="identifier"):
+        compare(record, _filtered([0.0, 1.70, 3.40], identifier="butterworth"))
+
+
+def test_a_causal_prediction_cannot_stand_in_for_an_offline_one() -> None:
+    record = _record()
+    causal_artifact = FilteredPrediction(
+        values=np.array([0.0, 1.70, 3.40]),
+        identifier="rts-smoother",
+        version="1.2.0",
+        operator_digest=SMOOTHER_DIGEST,
+        causal=True,
+    )
+    with pytest.raises(ValueError, match="causal"):
+        compare(record, causal_artifact)
+
+
+def test_applying_the_filter_carries_the_output_covariance() -> None:
+    """R_f = F R F^T, and a filter correlates samples that were independent."""
+    artifact = apply_filter(
+        SMOOTHER, [0.0, 1.70, 3.40], identifier="rts-smoother", version="1.2.0",
+        causal=False, noise_covariance=0.04,
+    )
+    expected = SMOOTHER @ (0.04 * np.eye(3)) @ SMOOTHER.T
+    assert artifact.noise_covariance == pytest.approx(expected)
+    off_diagonal = artifact.noise_covariance[0, 1]
+    assert off_diagonal != 0.0, "a filter correlates neighbouring samples"
 
 
 def test_rejected_samples_need_a_declared_rule() -> None:

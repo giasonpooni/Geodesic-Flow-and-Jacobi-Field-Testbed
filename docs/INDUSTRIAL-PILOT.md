@@ -86,10 +86,19 @@ quoting the original `R` overstates the agreement by exactly the factor the
 filter removed. `engine/observation_model.py` carries `TemporalFilter` and
 `filtered_noise_covariance(F, R)`, `ObservationModel` holds the filter it was
 built with, and `measurement.compare` raises on a trial whose
-`filter_identifier` is not `"none"` unless the caller passes
-`filtered_prediction=True` — that is, unless the prediction has been put
-through the same `F`. The default refuses the mismatch; the flag is an
-assertion that the work was done, and it is recorded in the result.
+`filter_identifier` is not `"none"` unless the prediction arrives as a
+`FilteredPrediction`.
+
+**A boolean would not have been enough.** "Yes, I filtered it" is an assertion
+by the caller; it cannot distinguish the right operator from a different one
+wearing the same name, which is the case that silently manufactures agreement.
+So the artifact carries `operator_digest` — a hash of the matrix that actually
+ran — and the record carries `filter_operator_digest` for the operator that
+filtered the measurement. `compare` requires identifier, version, digest *and*
+causality to match, and refuses a filtered prediction against an unfiltered
+trial as well, since filtering one side of a comparison biases it either way
+round. Build the artifact with `apply_filter`, which applies `F`, takes the
+digest from the same `F`, and returns `F R F^T` alongside the values.
 
 ### Prohibitions
 
@@ -107,12 +116,21 @@ assertion that the work was done, and it is recorded in the result.
 ### What each MeasurementRecord carries
 
 `engine/measurement.py` requires, alongside the geometry and calibration
-provenance: `filter_identifier`, `filter_version`, `filter_parameters`,
-`filter_causal`, `filter_group_delay`, `filter_tuned_on`,
+provenance: `filter_identifier`, `filter_version`, `filter_operator_digest`,
+`filter_parameters`, `filter_causal`, `filter_group_delay`, `filter_tuned_on`,
 `input_sampling_rate`, `output_sampling_rate`, `measurement_covariance`,
 `rejected_sample_mask`, `outlier_rule` and `raw_data_digest`. A record without
 them does not describe an instrument, and `MEASUREMENT_SCHEMA` is
 `path-sensitivity-observation-v1`.
+
+The record also refuses what would otherwise pass quietly: a non-finite or
+negative uncertainty component, a zero combined uncertainty (which reports an
+infinite signal-to-noise ratio), a non-finite or non-increasing arclength, a
+non-finite separation, a non-symmetric or non-PSD measurement covariance, and
+a non-positive sampling rate. `compare` reports the signal-to-noise ratio and
+draws no conclusion from it; pass `resolvability_threshold` to have the
+*protocol's* bar applied, since which ratio counts as resolved is a statement
+about the experiment and not about the arithmetic.
 
 ### Three datasets, preserved separately
 
@@ -125,6 +143,33 @@ For the plate--cylinder trial and every one after it:
 
 Keeping all three is what makes it possible, later, to ask whether an agreement
 was in the surface or in the smoothing.
+
+## Real time, and when the instrument knows
+
+A sustained condition is recognised only at the end of its window. Looking back
+at a finished run, acquisition began where `rho` first crossed the threshold; a
+live scanner cannot say so until the window completes, because until then the
+run might still be cut short. The gap is the window length, and it is real
+distance travelled with the tool committed and the sensor not yet confident.
+
+`engine/tracking.py` therefore records both times, for acquisition and for
+loss:
+
+| | retrospective | causal |
+|---|---|---|
+| acquisition | `acquisition_window_started_at` | `acquisition_declared_at` |
+| loss | `loss_started_at` | `track_loss_declared_at` |
+
+`AcquisitionSpec.processing` selects which drives latency, the
+maximum-acquisition distance and the tracked span. This is not bookkeeping: on
+the same profile, a 1.0 window and a 2.5 limit give `TRACKED` read offline and
+`LATE_ACQUISITION` read causally, because the declaration lands at 3.0.
+
+Tracked distance is always measured to `loss_started_at`, never to the
+declaration — the samples between the two are degraded whether or not the
+sensor had noticed. Any pilot claiming a real-time result must declare
+`processing="causal"`, and an offline schedule reported as a real-time one is
+the error the distinction exists to prevent.
 
 ## Acceptance evidence
 

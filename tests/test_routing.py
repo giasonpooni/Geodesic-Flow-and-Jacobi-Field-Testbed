@@ -156,3 +156,63 @@ def test_boundary_clearance_comes_from_the_caller() -> None:
     )
     assert not assessment.feasible
     assert assessment.binding_constraint == "boundary-clearance"
+
+
+def test_a_declared_constraint_without_its_data_is_refused_not_skipped() -> None:
+    """An unevaluated required constraint must never behave like a satisfied one."""
+    candidates = _candidates()
+    envelope = candidates["90deg"]
+    schedule = AcquisitionSpec(
+        acquire_threshold=5.0, hold_threshold=3.0, acquisition_window=0.05,
+        max_acquisition_distance=1.0, min_tracked_distance=3.0, max_loss_distance=0.1,
+    )
+    instrument = ObservationModel.transverse_only(SIGMA_MEASUREMENT)
+
+    # Acquisition declared, but nothing to evaluate it with. Skipping would
+    # make the route look feasible *because* the evidence is missing.
+    for missing in (
+        {},
+        {"observation": instrument},
+        {"initial_covariance": HEADING_ONLY},
+    ):
+        with pytest.raises(ValueError, match="unevaluated constraint"):
+            assess_route(
+                envelope,
+                constraints=RouteConstraints(acquisition=schedule),
+                label="90deg",
+                **TOLERANCE,
+                **missing,
+            )
+
+    # A boundary limit with no boundary data is the same failure.
+    with pytest.raises(ValueError, match="boundary_clearance"):
+        assess_route(
+            envelope,
+            constraints=RouteConstraints(min_boundary_clearance=0.1),
+            label="90deg",
+            **TOLERANCE,
+        )
+
+    # Supplied in full, it evaluates.
+    assessment = assess_route(
+        envelope,
+        constraints=RouteConstraints(acquisition=schedule),
+        observation=instrument,
+        initial_covariance=HEADING_ONLY,
+        label="90deg",
+        **TOLERANCE,
+    )
+    assert assessment.tracking is not None
+
+
+def test_focus_clearance_is_reported_but_can_no_longer_decide() -> None:
+    """The dimensionful fallback is gone; the geometric fact is still published."""
+    assert not hasattr(RouteConstraints(), "min_focus_clearance")
+    assessment = assess_route(
+        _candidates()["90deg"],
+        constraints=RouteConstraints(max_cross_track_error=1.0),
+        label="90deg",
+        **TOLERANCE,
+    )
+    assert np.isfinite(assessment.focus_clearance)
+    assert "focus-clearance" not in {margin.name for margin in assessment.margins}

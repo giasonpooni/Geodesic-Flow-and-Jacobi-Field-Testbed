@@ -118,22 +118,45 @@ deviation only is `[1, 0]`; one that also tracks orientation is the identity —
 and `R` is the metrology covariance. `C0` is the starting-pose covariance, or
 `diag(dp^2, da^2)` for a tolerance box treated as independent.
 
-### Resolvability, and what a focus really is
+### Resolvability, which is not a focus
 
 ```text
 rho(s) = sqrt(diag(H Phi C0 Phi^T H^T)) / sqrt(diag R)
 ```
 
 With `H = [1, 0]` and uncertainty in heading alone this is exactly
-`|b(s)| sigma_alpha / sigma_measurement`. A focus is where `rho` falls below
-one: the place at which the instrument cannot tell two admissible starting
-headings apart.
+`|b(s)| sigma_alpha / sigma_measurement`. Below one, the instrument cannot tell
+two admissible starting headings apart.
 
 This is the quantity a route constraint must use. `|b|` has units of length per
 radian, so a threshold on it — the repository briefly used 0.25 — is specific
 to one part size and one angle unit: the same physical situation drawn at twice
 the scale, or stated in degrees, changes the verdict. `rho` is dimensionless
 and does not, and that invariance is a declared check.
+
+**It is still a different quantity from a focus**, and the two must not be
+collapsed into one name. A geometric focus is a zero of a transfer column: a
+property of the surface and the path, present whatever instrument is pointed
+at it. Low resolvability is a property of the whole chain. They come apart in
+both directions, and both directions are measured:
+
+| | focus present? | `rho` above the acquire threshold? |
+|---|---|---|
+| plate, heading tolerance shrunk 10⁴× | no — `b(s) = s` has no zero | no: peaks at 0.0042 |
+| spherical cap, 0.01 before the conjugate point | yes, at `s = pi` | yes, for a metrology sigma of 1.0 µm on a 300 mm coupon |
+
+So a tight tolerance produces low `rho` with no focus anywhere, and a sharp
+enough scanner stays resolvable beside a real conjugate point, because `|b|`
+near a focus is small but not zero. `results.focus_versus_resolvability`
+carries both, with `surface-unresolvable-without-a-focus` and
+`surface-resolvable-beside-a-focus` as declared checks.
+
+Both outputs therefore survive: `focus_points` on the transfer map is the
+geometric claim, which no scanner can move; the tracking outcome is the
+instrument's, and it is the one the route constraint uses. Where the two agree
+— as they do for every candidate in the torus scan — that is corroboration
+under one configuration, which is what the check is named for, and not an
+identity.
 
 ## Chart validity
 

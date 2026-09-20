@@ -38,7 +38,7 @@ drift is therefore a free measure of how well it is integrating.
 
 ## Verification
 
-**232 declared checks across two stages, 0 failed.** Every number below has a
+**235 declared checks across two stages, 0 failed.** Every number below has a
 threshold attached in `engine/experiment.py` or `engine/experiment_surfaces.py`,
 and the committed reports are regenerated and compared in CI.
 
@@ -144,6 +144,16 @@ focus, two independent computations agreeing, as a declared check rather than
 a remark. Note that 120° has a focus margin of 0.200: a hand-chosen floor of
 0.25 would have rejected a route the instrument holds for the whole path.
 
+That agreement is corroboration under one configuration, not an identity, and
+the check is named for the configuration. A geometric focus is a zero of a
+transfer column and belongs to the surface; resolvability belongs to the whole
+chain, and the two come apart in both directions. Shrink the admitted heading
+tolerance by 10⁴ and the plate — whose `b(s) = s` never vanishes — drops to
+`rho` = 0.0042 everywhere, unresolvable with no focus in it. Stand 0.01 before
+the sphere's conjugate point and 1.0 µm metrology on a 300 mm coupon resolves
+it, because `|b|` beside a focus is small but not zero. Both are declared
+checks, and both quantities stay in the report.
+
 The ranking scalar is therefore named
 `minimum-forward-angular-error-amplification`, not robustness, and it decides
 nothing. Boundary clearance, curvature exposure and path length are declared in
@@ -156,7 +166,7 @@ observability `W = ∫ Phi^T H^T R^-1 H Phi ds` is not computed at all.
 
 ```bash
 uv sync --locked --extra dev          # or: pip install -e ".[dev]"
-uv run pytest -q                      # 271 tests, no network, about three minutes
+uv run pytest -q                      # 283 tests, no network, about three minutes
 uv run python examples/run_experiment.py --out out        # both stages: reports + figures
 uv run python examples/write_reference_report.py          # application reference report
 ```

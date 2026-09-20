@@ -16,9 +16,12 @@ from .engine.measurement import (
     compare,
 )
 from .engine.observation_model import (
+    FilteredPrediction,
     ObservationModel,
     TemporalFilter,
+    apply_filter,
     filtered_noise_covariance,
+    operator_digest,
 )
 from .engine.record import (
     RECORD_SCHEMA,
@@ -73,7 +76,10 @@ __all__ = [
     "assess_route",
     "compare",
     "evaluate_tracking",
+    "FilteredPrediction",
+    "apply_filter",
     "filtered_noise_covariance",
+    "operator_digest",
     "rank_routes",
     "to_transfer_record",
     "InspectionAssessment",
