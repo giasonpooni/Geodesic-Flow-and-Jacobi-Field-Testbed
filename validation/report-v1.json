@@ -3,6 +3,7 @@
   "supersedes": "geodesic-jacobi-report-v2",
   "schema_changes": [
     "observation_modes: support is now per domain, not one boolean",
+    "adds results.curvature_sensitivity: the uncertainty budget's curvature term, checked against a re-integration",
     "every float is canonicalised to 12 significant digits before hashing, so the content hash is reproducible across platforms",
     "transfer_determinant: the invariant is checked as det Phi directly, not as a product of singular values, which measured the SVD's conditioning rather than the flow's accuracy",
     "adds results.focus_refinement: Hermite-refined focus location against a linear one",
@@ -7432,6 +7433,80 @@
         }
       }
     ],
+    "curvature_sensitivity": [
+      {
+        "curvature": 0.0,
+        "curvature_label": "K=0",
+        "kernel": "G(s, t) = b(s) a(t) - a(s) b(t), det Phi = 1",
+        "worst_relative_residual": 1.99999761311e-06,
+        "residual_order_in_delta": 1.00028851689,
+        "levels": [
+          {
+            "delta_curvature": 1e-05,
+            "max_abs_measured": 1.33333066668e-05,
+            "relative_residual": 1.99999761311e-06
+          },
+          {
+            "delta_curvature": 1e-06,
+            "max_abs_measured": 1.33333306684e-06,
+            "relative_residual": 1.99866938656e-07
+          },
+          {
+            "delta_curvature": 1e-07,
+            "max_abs_measured": 1.33333330599e-07,
+            "relative_residual": 2.1237492086e-08
+          }
+        ]
+      },
+      {
+        "curvature": 1.0,
+        "curvature_label": "K=+1",
+        "kernel": "G(s, t) = b(s) a(t) - a(s) b(t), det Phi = 1",
+        "worst_relative_residual": 2.27893595568e-06,
+        "residual_order_in_delta": 1.00044610702,
+        "levels": [
+          {
+            "delta_curvature": 1e-05,
+            "max_abs_measured": 8.70793565477e-06,
+            "relative_residual": 2.27893595568e-06
+          },
+          {
+            "delta_curvature": 1e-06,
+            "max_abs_measured": 8.70795351715e-07,
+            "relative_residual": 2.27659623595e-07
+          },
+          {
+            "delta_curvature": 1e-07,
+            "max_abs_measured": 8.70795531238e-08,
+            "relative_residual": 2.29557842998e-08
+          }
+        ]
+      },
+      {
+        "curvature": -1.0,
+        "curvature_label": "K=-1",
+        "kernel": "G(s, t) = b(s) a(t) - a(s) b(t), det Phi = 1",
+        "worst_relative_residual": 1.80556117838e-06,
+        "residual_order_in_delta": 0.999681431564,
+        "levels": [
+          {
+            "delta_curvature": 1e-05,
+            "max_abs_measured": 1.94876196855e-05,
+            "relative_residual": 1.80556117838e-06
+          },
+          {
+            "delta_curvature": 1e-06,
+            "max_abs_measured": 1.94876513504e-06,
+            "relative_residual": 1.80688609922e-07
+          },
+          {
+            "delta_curvature": 1e-07,
+            "max_abs_measured": 1.94876545123e-07,
+            "relative_residual": 1.99712553855e-08
+          }
+        ]
+      }
+    ],
     "conjugate_point": {
       "curvature": 1.0,
       "curvature_label": "K=+1",
@@ -9547,6 +9622,54 @@
       "passed": true
     },
     {
+      "id": "curvature-sensitivity/K=0",
+      "statement": "the Green's-function sensitivity to a curvature bias reproduces an actual re-integration at the perturbed curvature",
+      "value": 1.99999761311e-06,
+      "threshold": 0.0001,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "curvature-sensitivity-order/K=0",
+      "statement": "and its residual falls linearly in dK, which is what makes it the derivative rather than something merely close to it",
+      "value": 0.000288516889948,
+      "threshold": 0.05,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "curvature-sensitivity/K=+1",
+      "statement": "the Green's-function sensitivity to a curvature bias reproduces an actual re-integration at the perturbed curvature",
+      "value": 2.27893595568e-06,
+      "threshold": 0.0001,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "curvature-sensitivity-order/K=+1",
+      "statement": "and its residual falls linearly in dK, which is what makes it the derivative rather than something merely close to it",
+      "value": 0.000446107024302,
+      "threshold": 0.05,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "curvature-sensitivity/K=-1",
+      "statement": "the Green's-function sensitivity to a curvature bias reproduces an actual re-integration at the perturbed curvature",
+      "value": 1.80556117838e-06,
+      "threshold": 0.0001,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "curvature-sensitivity-order/K=-1",
+      "statement": "and its residual falls linearly in dK, which is what makes it the derivative rather than something merely close to it",
+      "value": 0.000318568435565,
+      "threshold": 0.05,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
       "id": "conjugate-point/jacobi-zero",
       "statement": "numerically integrated Jacobi field vanishes at s = pi",
       "value": 2.22044604925e-15,
@@ -9580,12 +9703,12 @@
     }
   ],
   "summary": {
-    "n_checks": 137,
+    "n_checks": 143,
     "n_failed": 0,
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "92d60e18fd7d613bfad56007580b5dd2e515f5f7721a94a6d1422ffd4688f8dd",
+  "content_hash": "31c63f4e00164d36731272ce231d0a30fcc4b983c166f1f489ae91533c6f7cf6",
   "environment": {
     "package_version": "0.2.0",
     "python": "3.11.15",

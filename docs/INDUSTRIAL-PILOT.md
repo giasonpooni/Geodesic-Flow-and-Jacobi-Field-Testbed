@@ -3,6 +3,20 @@
 A CNC, small robot, or custom positioning rig traces neighbouring courses on
 interchangeable coupons with deliberately varied starting position and heading.
 
+The programme below is also declared in code, as `engine/campaign.py`:
+`default_program()` returns the stages, their dependencies, the perturbation
+plan and the scales, and `conformance(program, trials)` checks a submitted set
+of `MeasurementRecord`s against every structural rule here — both axes
+perturbed, calibration and validation split by *coupon*, achieved perturbations
+reported, one observation mode per stage, at least two scales. It is a checker
+rather than a loader, because the programme is what exists now and the data is
+what it is waiting for. Its status is `not-started` and stays there.
+
+Conformance is about bookkeeping and says nothing about agreement. A set of
+trials can satisfy every rule and disagree with the prediction entirely — which
+is the point. The programme is what makes a disagreement mean something, not
+what decides whether there is one.
+
 ## Start with plate against cylinder
 
 The first experiment should be a **matched plate and rolled cylinder**, not a
@@ -19,6 +33,14 @@ patch for varying curvature. A pseudosphere -- the only embedded surface of
 constant negative curvature -- is worth making only if the singular edge can be
 handled, and is not needed before the variable-curvature runtime has been used
 on a measured patch.
+
+`intrinsic_flatness_control(plate, cylinder)` performs this comparison on
+matched conditions and returns the difference scaled by the combined
+uncertainty. It is worth doing first for a second reason: it is
+**differential**. The calibration offset, the registration shift and the
+fixture datum are common to the two coupons and cancel in the difference, so
+the stage can falsify the claim before any absolute accuracy has been
+established.
 
 **A hyperbolic-paraboloid saddle does not have constant curvature.** Its `K`
 runs from about -0.78 at the centre to -0.03 two units out. Comparing it with a
@@ -170,6 +192,36 @@ declaration — the samples between the two are degraded whether or not the
 sensor had noticed. Any pilot claiming a real-time result must declare
 `processing="causal"`, and an offline schedule reported as a real-time one is
 the error the distinction exists to prevent.
+
+## The uncertainty budget, and which term dominates
+
+The starting pose is one contribution and rarely the largest.
+`engine/uncertainty.py` assembles the rest — surface reconstruction, fixture
+and datum, calibration transform, path registration, sensor noise — into one
+residual covariance, with the breakdown that says which to improve.
+
+The shape of each term matters more than its size. Most are **systematic**: one
+unknown surface fit, one unknown datum offset, one unknown registration shift,
+each wrong in the same direction at every sample. A systematic term is a
+rank-one covariance `sigma^2 v v^T`, not a per-sample variance, and the
+difference is not academic — averaging along the path suppresses noise and does
+nothing at all to a bias. The budget reports `systematic_fraction`, which is
+exactly the part more samples cannot buy down.
+
+Two terms are computable from the transfer record and nowhere else:
+
+- **a curvature error**, through the Jacobi operator's own Green's function.
+  `dj'' + K dj = -dK j` gives `dj(s) = -int G(s,t) dK j(t) dt` with
+  `G(s,t) = b(s)a(t) - a(s)b(t)` — no Wronskian in the denominator, because
+  `det Phi = 1` exactly. Checked against an actual re-integration at the
+  perturbed curvature, with the residual falling linearly in `dK`;
+- **a registration error**, `dj = j'(s) ds`, largest where the prediction is
+  *steepest* rather than where it is largest.
+
+A budget of purely systematic terms is singular, and correctly so: a perfectly
+correlated error is perfectly predictable. Whitening needs at least one
+full-rank term, which in practice is the sensor's own noise — and a campaign
+that forgot to declare it finds out there rather than three layers down.
 
 ## Acceptance evidence
 

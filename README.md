@@ -38,7 +38,7 @@ drift is therefore a free measure of how well it is integrating.
 
 ## Verification
 
-**278 declared checks across two stages, 0 failed.** Every number below has a
+**302 declared checks across two stages, 0 failed.** Every number below has a
 threshold attached in `engine/experiment.py` or `engine/experiment_surfaces.py`,
 and the committed reports are regenerated and compared in CI.
 
@@ -83,6 +83,7 @@ form left, four things replace it:
 | **the frame the record publishes** — Euler's theorem, `kappa_n(along) + kappa_n(across) = 2H` | machine precision on every surface, with no closed form needed |
 | **the jet's step, along a whole path** | the transfer error spans four orders of magnitude over relative steps from 1e-2 to 1e-6; no step in the sweep invents or erases a focus |
 | **the prediction chain** — naming the two second-order transformations between `Phi dz0` and an ambient chord | the disagreement with an independently flowed finite-difference chord falls from the size of the effect to 3e-10 or better, a factor of 3.8e3 to 1.4e6, on every surface where both corrections exist |
+| **the uncertainty budget's curvature term** — `dj(s) = -∫ G(s,t) dK j(t) dt` through the Jacobi Green's function | reproduces an actual re-integration at the perturbed curvature, with the residual falling linearly in `dK` (order 1.000) — so it is the derivative, not something close to it |
 
 Three results worth stating plainly:
 
@@ -133,6 +134,48 @@ covariance, the whitened residual and the chi-square — and a filtered
 comparison gets one covariance over every scalar residual at once, because a
 filter correlates arc lengths and keeping only the diagonal blocks would treat
 as independent exactly the samples it made dependent.
+
+### The starting pose is one term, and rarely the largest
+
+A campaign that propagates `C0` and calls the result the total has bounded one
+contribution. The surface was fitted to a scan, the part was fixtured against a
+datum, the metrology frame was calibrated, the prediction was registered to the
+measurement at *some* arc length, and the sensor's noise is not white.
+
+Shape matters more than size, because most of those are **systematic**: one
+unknown fit, one unknown offset, one unknown shift, each wrong in the same
+direction at every sample. A systematic term is a rank-one covariance
+`σ² v vᵀ`, not a per-sample variance, and the difference decides whether
+measuring more of the path helps at all. On the declared example budget, 99.8%
+of the worst-sample variance is systematic — which is the sentence an
+instrument engineer needs before buying more samples.
+
+Two terms are computable from the transfer record and nowhere else. A curvature
+error enters through the Jacobi operator's own Green's function,
+
+```text
+dj'' + K dj = -dK j   =>   dj(s) = -∫₀ˢ [b(s)a(t) - a(s)b(t)] dK j(t) dt
+```
+
+with no Wronskian in the denominator, because `det Phi = 1` exactly — and it is
+checked against an actual re-integration at the perturbed curvature. A
+registration error is `dj = j'(s) ds`, largest where the prediction is
+*steepest* rather than where it is largest. A budget of purely systematic terms
+is singular, and correctly so: a perfectly correlated error is perfectly
+predictable, so a campaign that forgot to declare its sensor noise finds out
+there rather than three layers down.
+
+The coupon programme that would test any of this is declared in
+`engine/campaign.py` and has status `not-started`. It leads with the plate
+against the rolled cylinder, because that stage is **differential** — the
+calibration offset, the registration shift and the fixture datum are common to
+the two coupons and cancel in the difference, so it can falsify the claim
+before any absolute accuracy has been established. `conformance()` checks a
+submitted set of trials against the structural rules: both perturbation axes
+exercised, calibration and validation split by *coupon* rather than by run,
+achieved perturbations reported rather than commanded ones, one observation
+mode per stage, at least two scales. Conformance is bookkeeping and says
+nothing about agreement — it is what would make a disagreement mean something.
 
 ### The decision, and what is allowed to make it
 
@@ -201,7 +244,7 @@ observability `W = ∫ Phi^T H^T R^-1 H Phi ds` is not computed at all.
 
 ```bash
 uv sync --locked --extra dev          # or: pip install -e ".[dev]"
-uv run pytest -q                      # 373 tests, no network, about five minutes
+uv run pytest -q                      # 417 tests, no network, about six minutes
 uv run python examples/run_experiment.py --out out        # both stages: reports + figures
 uv run python examples/write_reference_report.py          # application reference report
 ```
@@ -332,6 +375,9 @@ may import neither. [`docs/BOUNDARY.md`](docs/BOUNDARY.md) is the whole of it.
 | `geodesic_testbed` | the public API: `PathTolerance`, manufacturing and inspection assessments, the reference report |
 | `geodesic_testbed.boundary` | the shared contract, on its own: the record, its vocabulary, and the layers the one-way import rule is checked against |
 | `geodesic_testbed.engine` | the verified numerical core: space forms, parametric surfaces, integrators, transfer maps, envelopes, observation modes, both experiment stages and their figures |
+| `geodesic_testbed.engine.prediction` | the chain from `Phi dz0` to an instrument output, each stage carrying the transformation that produced it |
+| `geodesic_testbed.engine.uncertainty` | every declared source of error, its shape, and which one dominates |
+| `geodesic_testbed.engine.campaign` | the coupon programme, declared in advance, and a conformance checker for trials that do not exist yet |
 
 There is one integrator and one transfer map; `geodesic_testbed.jacobi`
 delegates to the engine rather than carrying a second copy.

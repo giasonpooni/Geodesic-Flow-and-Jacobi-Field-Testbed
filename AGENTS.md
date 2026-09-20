@@ -80,6 +80,26 @@
   and a test holds the three together. A record carries no timestamp and no
   hostname: both would make two runs of the same computation differ, and a
   report that cannot be regenerated and compared is not worth shipping.
+- **The starting pose is one term in a budget.** `engine/uncertainty.py` holds
+  the rest -- surface reconstruction, fixture and datum, calibration transform,
+  path registration, sensor noise -- and each carries its *shape*. Most are
+  systematic: one unknown felt the same way at every sample, which is a
+  rank-one covariance and not a per-sample variance, and confusing the two is
+  how a budget comes out wrong by an order of magnitude rather than by a few
+  per cent. The total is a sum of matrices; a sum of variances would destroy
+  the off-diagonal structure that distinguishes a bias from noise. A budget of
+  purely systematic terms is singular and that is correct, not a bug.
+- **A physical programme is declared before the data, not after.**
+  `engine/campaign.py` holds the coupon stages, their dependencies, the
+  perturbation plan and the scales, with status `not-started`. A campaign
+  design chosen after seeing the residuals is not a test. Every stage perturbs
+  **both** axes -- one that perturbs only the heading measures `b` and says
+  nothing about `a` while producing a full set of plots; calibration and
+  validation are split by **coupon**, not by run, because two runs share a
+  coupon's as-built geometry, its fixturing and its calibration; and the
+  comparison uses the **achieved** perturbation, since the gap between
+  commanded and achieved is a starting-pose error of exactly the kind under
+  test. Conformance is bookkeeping and never reports agreement.
 - **No dimensionful thresholds in a criterion.** `|b|` is a length per radian:
   a cutoff on it is specific to one part size and one angle unit. Route
   decisions use quantities that survive rescaling -- the dimensionless

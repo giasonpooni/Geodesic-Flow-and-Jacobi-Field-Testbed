@@ -2,6 +2,8 @@
   "schema": "geodesic-jacobi-surfaces-v3",
   "supersedes": "geodesic-jacobi-surfaces-v2",
   "schema_changes": [
+    "adds results.uncertainty_budget: every declared source of error, its shape, and which one dominates -- the starting pose is one term and rarely the largest",
+    "adds results.prediction_chain: the named transformations from Phi dz0 to an ambient chord, against an independent measurement",
     "adds results.error_budget: a per-quantity step-doubling error estimate, checked against the closed forms where one exists",
     "adds results.jet_step_sensitivity: what the finite-difference jet's relative step costs along a whole path, not at one point",
     "envelopes: adds the path geometry the record now carries -- the Darboux frame as vectors and both normal curvatures -- checked against Euler's theorem on every surface",
@@ -205,6 +207,15 @@
       0.005,
       0.0025
     ],
+    "budget_path_steps": 400,
+    "scan_position_sigma": 0.0002,
+    "scan_normal_sigma": 0.0001,
+    "scan_curvature_sigma": 0.001,
+    "fixture_lateral_sigma": 0.0002,
+    "fixture_heading_sigma": 0.0001,
+    "calibration_offset_sigma": 5e-05,
+    "registration_sigma": 0.002,
+    "sensor_correlation_length": 0.05,
     "transverse_tolerances": [
       0.001,
       0.01
@@ -2268,6 +2279,524 @@
             "intrinsic_correction": "not-applied: no closed form for the finite separation on a varying-curvature surface"
           }
         ]
+      }
+    ],
+    "uncertainty_budget": [
+      {
+        "samples": 401,
+        "contributions": [
+          {
+            "kind": "starting-pose",
+            "name": "starting pose",
+            "structure": "systematic",
+            "basis": "the declared instrument's starting-pose uncertainty",
+            "rank": 1,
+            "max_sigma": 0.00349065850399,
+            "sigma_at_end": 0.00349065850399,
+            "note": "Phi C0 Phi^T, transverse component; one draw carried down the path"
+          },
+          {
+            "kind": "surface-reconstruction",
+            "name": "surface reconstruction",
+            "structure": "systematic",
+            "basis": "assumed",
+            "rank": 1,
+            "max_sigma": 3.33333333333e-06,
+            "sigma_at_end": 3.33333333333e-06,
+            "note": "dj(s) = -int_0^s [b(s)a(t) - a(s)b(t)] dK j(t) dt, for a curvature bias that is the same along the whole path"
+          },
+          {
+            "kind": "fixture-datum",
+            "name": "fixture and datum",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 2,
+            "max_sigma": 0.000282842712475,
+            "sigma_at_end": 0.000282842712475,
+            "note": "a rigid datum offset enters as a starting-pose error and propagates as one"
+          },
+          {
+            "kind": "calibration-transform",
+            "name": "calibration transform",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 1,
+            "max_sigma": 5e-05,
+            "sigma_at_end": 5e-05,
+            "note": "one unknown offset in the measurement frame, constant along the path"
+          },
+          {
+            "kind": "path-registration",
+            "name": "path registration",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 1,
+            "max_sigma": 2e-06,
+            "sigma_at_end": 2e-06,
+            "note": "dj = j'(s) ds for one unknown arc-length offset"
+          },
+          {
+            "kind": "sensor-noise",
+            "name": "sensor noise",
+            "structure": "correlated",
+            "basis": "declared",
+            "rank": 401,
+            "max_sigma": 8.33333333333e-05,
+            "sigma_at_end": 8.33333333333e-05,
+            "note": "exponential kernel, correlation length 0.05"
+          }
+        ],
+        "max_sigma": 0.00350344920714,
+        "max_sigma_at_arclength": 2.0,
+        "sigma_at_end": 0.00350344920714,
+        "dominant_at_worst": "starting pose",
+        "shares_at_worst": {
+          "starting pose": 0.99271155157,
+          "surface reconstruction": 9.05244384785e-07,
+          "fixture and datum": 0.00651775957045,
+          "calibration transform": 0.000203679986577,
+          "path registration": 3.25887978522e-07,
+          "sensor noise": 0.00056577774049
+        },
+        "systematic_fraction_at_worst": 0.99943422226,
+        "positive_definite": true,
+        "total_rank": 401,
+        "note": "plate: declared example, no measured input",
+        "extra": {},
+        "case": "plate",
+        "surface": "plane",
+        "systematic_only_is_singular": true,
+        "starting_pose_share_at_worst": 0.99271155157
+      },
+      {
+        "samples": 401,
+        "contributions": [
+          {
+            "kind": "starting-pose",
+            "name": "starting pose",
+            "structure": "systematic",
+            "basis": "the declared instrument's starting-pose uncertainty",
+            "rank": 1,
+            "max_sigma": 0.00349065850399,
+            "sigma_at_end": 0.00349065850399,
+            "note": "Phi C0 Phi^T, transverse component; one draw carried down the path"
+          },
+          {
+            "kind": "surface-reconstruction",
+            "name": "surface reconstruction",
+            "structure": "systematic",
+            "basis": "assumed",
+            "rank": 1,
+            "max_sigma": 3.33333333333e-06,
+            "sigma_at_end": 3.33333333333e-06,
+            "note": "dj(s) = -int_0^s [b(s)a(t) - a(s)b(t)] dK j(t) dt, for a curvature bias that is the same along the whole path"
+          },
+          {
+            "kind": "fixture-datum",
+            "name": "fixture and datum",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 2,
+            "max_sigma": 0.000282842712475,
+            "sigma_at_end": 0.000282842712475,
+            "note": "a rigid datum offset enters as a starting-pose error and propagates as one"
+          },
+          {
+            "kind": "calibration-transform",
+            "name": "calibration transform",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 1,
+            "max_sigma": 5e-05,
+            "sigma_at_end": 5e-05,
+            "note": "one unknown offset in the measurement frame, constant along the path"
+          },
+          {
+            "kind": "path-registration",
+            "name": "path registration",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 1,
+            "max_sigma": 2e-06,
+            "sigma_at_end": 2e-06,
+            "note": "dj = j'(s) ds for one unknown arc-length offset"
+          },
+          {
+            "kind": "sensor-noise",
+            "name": "sensor noise",
+            "structure": "correlated",
+            "basis": "declared",
+            "rank": 401,
+            "max_sigma": 8.33333333333e-05,
+            "sigma_at_end": 8.33333333333e-05,
+            "note": "exponential kernel, correlation length 0.05"
+          }
+        ],
+        "max_sigma": 0.00350344920714,
+        "max_sigma_at_arclength": 2.0,
+        "sigma_at_end": 0.00350344920714,
+        "dominant_at_worst": "starting pose",
+        "shares_at_worst": {
+          "starting pose": 0.99271155157,
+          "surface reconstruction": 9.05244384785e-07,
+          "fixture and datum": 0.00651775957045,
+          "calibration transform": 0.000203679986577,
+          "path registration": 3.25887978522e-07,
+          "sensor noise": 0.00056577774049
+        },
+        "systematic_fraction_at_worst": 0.99943422226,
+        "positive_definite": true,
+        "total_rank": 401,
+        "note": "rolled-sheet: declared example, no measured input",
+        "extra": {},
+        "case": "rolled-sheet",
+        "surface": "cylinder(R=1)",
+        "systematic_only_is_singular": true,
+        "starting_pose_share_at_worst": 0.99271155157
+      },
+      {
+        "samples": 401,
+        "contributions": [
+          {
+            "kind": "starting-pose",
+            "name": "starting pose",
+            "structure": "systematic",
+            "basis": "the declared instrument's starting-pose uncertainty",
+            "rank": 1,
+            "max_sigma": 0.0017453286986,
+            "sigma_at_end": 0.00132086953266,
+            "note": "Phi C0 Phi^T, transverse component; one draw carried down the path"
+          },
+          {
+            "kind": "surface-reconstruction",
+            "name": "surface reconstruction",
+            "structure": "systematic",
+            "basis": "assumed",
+            "rank": 1,
+            "max_sigma": 2.04922151033e-06,
+            "sigma_at_end": 5.84718995857e-07,
+            "note": "dj(s) = -int_0^s [b(s)a(t) - a(s)b(t)] dK j(t) dt, for a curvature bias that is the same along the whole path"
+          },
+          {
+            "kind": "fixture-datum",
+            "name": "fixture and datum",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 2,
+            "max_sigma": 0.0002,
+            "sigma_at_end": 0.000151054624235,
+            "note": "a rigid datum offset enters as a starting-pose error and propagates as one"
+          },
+          {
+            "kind": "calibration-transform",
+            "name": "calibration transform",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 1,
+            "max_sigma": 5e-05,
+            "sigma_at_end": 5e-05,
+            "note": "one unknown offset in the measurement frame, constant along the path"
+          },
+          {
+            "kind": "path-registration",
+            "name": "path registration",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 1,
+            "max_sigma": 2.82840664426e-06,
+            "sigma_at_end": 2.06317747948e-07,
+            "note": "dj = j'(s) ds for one unknown arc-length offset"
+          },
+          {
+            "kind": "sensor-noise",
+            "name": "sensor noise",
+            "structure": "correlated",
+            "basis": "declared",
+            "rank": 401,
+            "max_sigma": 8.33333333333e-05,
+            "sigma_at_end": 8.33333333333e-05,
+            "note": "exponential kernel, correlation length 0.05"
+          }
+        ],
+        "max_sigma": 0.00175089187927,
+        "max_sigma_at_arclength": 1.57,
+        "sigma_at_end": 0.00133302612529,
+        "dominant_at_worst": "starting pose",
+        "shares_at_worst": {
+          "starting pose": 0.993655413371,
+          "surface reconstruction": 5.38102085286e-07,
+          "fixture and datum": 0.0032619865749,
+          "calibration transform": 0.000815495092322,
+          "path registration": 1.30271406635e-06,
+          "sensor noise": 0.00226526414534
+        },
+        "systematic_fraction_at_worst": 0.997734735855,
+        "positive_definite": true,
+        "total_rank": 401,
+        "note": "spherical-cap: declared example, no measured input",
+        "extra": {},
+        "case": "spherical-cap",
+        "surface": "sphere(R=1)",
+        "systematic_only_is_singular": true,
+        "starting_pose_share_at_worst": 0.993655413371
+      },
+      {
+        "samples": 401,
+        "contributions": [
+          {
+            "kind": "starting-pose",
+            "name": "starting pose",
+            "structure": "systematic",
+            "basis": "the declared instrument's starting-pose uncertainty",
+            "rank": 1,
+            "max_sigma": 0.00371629371864,
+            "sigma_at_end": 0.00371629371864,
+            "note": "Phi C0 Phi^T, transverse component; one draw carried down the path"
+          },
+          {
+            "kind": "surface-reconstruction",
+            "name": "surface reconstruction",
+            "structure": "systematic",
+            "basis": "assumed",
+            "rank": 1,
+            "max_sigma": 2.29662707518e-06,
+            "sigma_at_end": 2.29662707518e-06,
+            "note": "dj(s) = -int_0^s [b(s)a(t) - a(s)b(t)] dK j(t) dt, for a curvature bias that is the same along the whole path"
+          },
+          {
+            "kind": "fixture-datum",
+            "name": "fixture and datum",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 2,
+            "max_sigma": 0.000516421872013,
+            "sigma_at_end": 0.000516421872013,
+            "note": "a rigid datum offset enters as a starting-pose error and propagates as one"
+          },
+          {
+            "kind": "calibration-transform",
+            "name": "calibration transform",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 1,
+            "max_sigma": 5e-05,
+            "sigma_at_end": 5e-05,
+            "note": "one unknown offset in the measurement frame, constant along the path"
+          },
+          {
+            "kind": "path-registration",
+            "name": "path registration",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 1,
+            "max_sigma": 8.96337814065e-06,
+            "sigma_at_end": 8.96337814065e-06,
+            "note": "dj = j'(s) ds for one unknown arc-length offset"
+          },
+          {
+            "kind": "sensor-noise",
+            "name": "sensor noise",
+            "structure": "correlated",
+            "basis": "declared",
+            "rank": 401,
+            "max_sigma": 8.33333333333e-05,
+            "sigma_at_end": 8.33333333333e-05,
+            "note": "exponential kernel, correlation length 0.05"
+          }
+        ],
+        "max_sigma": 0.00375327331994,
+        "max_sigma_at_arclength": 1.5,
+        "sigma_at_end": 0.00375327331994,
+        "dominant_at_worst": "starting pose",
+        "shares_at_worst": {
+          "starting pose": 0.980391820654,
+          "surface reconstruction": 3.74421326557e-07,
+          "fixture and datum": 0.0189316676628,
+          "calibration transform": 0.000177467824444,
+          "path registration": 5.70325846483e-06,
+          "sensor noise": 0.00049296617901
+        },
+        "systematic_fraction_at_worst": 0.999507033821,
+        "positive_definite": true,
+        "total_rank": 401,
+        "note": "pseudosphere: declared example, no measured input",
+        "extra": {},
+        "case": "pseudosphere",
+        "surface": "pseudosphere",
+        "systematic_only_is_singular": true,
+        "starting_pose_share_at_worst": 0.980391820654
+      },
+      {
+        "samples": 401,
+        "contributions": [
+          {
+            "kind": "starting-pose",
+            "name": "starting pose",
+            "structure": "systematic",
+            "basis": "the declared instrument's starting-pose uncertainty",
+            "rank": 1,
+            "max_sigma": 0.00393488371349,
+            "sigma_at_end": 0.00393488371349,
+            "note": "Phi C0 Phi^T, transverse component; one draw carried down the path"
+          },
+          {
+            "kind": "surface-reconstruction",
+            "name": "surface reconstruction",
+            "structure": "systematic",
+            "basis": "assumed",
+            "rank": 1,
+            "max_sigma": 3.84458548574e-06,
+            "sigma_at_end": 3.84458548574e-06,
+            "note": "dj(s) = -int_0^s [b(s)a(t) - a(s)b(t)] dK j(t) dt, for a curvature bias that is the same along the whole path"
+          },
+          {
+            "kind": "fixture-datum",
+            "name": "fixture and datum",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 2,
+            "max_sigma": 0.000409300034633,
+            "sigma_at_end": 0.000409300034633,
+            "note": "a rigid datum offset enters as a starting-pose error and propagates as one"
+          },
+          {
+            "kind": "calibration-transform",
+            "name": "calibration transform",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 1,
+            "max_sigma": 5e-05,
+            "sigma_at_end": 5e-05,
+            "note": "one unknown offset in the measurement frame, constant along the path"
+          },
+          {
+            "kind": "path-registration",
+            "name": "path registration",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 1,
+            "max_sigma": 3.4468424546e-06,
+            "sigma_at_end": 3.4468424546e-06,
+            "note": "dj = j'(s) ds for one unknown arc-length offset"
+          },
+          {
+            "kind": "sensor-noise",
+            "name": "sensor noise",
+            "structure": "correlated",
+            "basis": "declared",
+            "rank": 401,
+            "max_sigma": 8.33333333333e-05,
+            "sigma_at_end": 8.33333333333e-05,
+            "note": "exponential kernel, correlation length 0.05"
+          }
+        ],
+        "max_sigma": 0.00395731063515,
+        "max_sigma_at_arclength": 2.0,
+        "sigma_at_end": 0.00395731063515,
+        "dominant_at_worst": "starting pose",
+        "shares_at_worst": {
+          "starting pose": 0.988697691615,
+          "surface reconstruction": 9.43840827647e-07,
+          "fixture and datum": 0.0106975242182,
+          "calibration transform": 0.000159639266719,
+          "path registration": 7.58651957174e-07,
+          "sensor noise": 0.000443442407553
+        },
+        "systematic_fraction_at_worst": 0.999556557592,
+        "positive_definite": true,
+        "total_rank": 401,
+        "note": "saddle: declared example, no measured input",
+        "extra": {},
+        "case": "saddle",
+        "surface": "hyperbolic-paraboloid(a=1)",
+        "systematic_only_is_singular": true,
+        "starting_pose_share_at_worst": 0.988697691615
+      },
+      {
+        "samples": 401,
+        "contributions": [
+          {
+            "kind": "starting-pose",
+            "name": "starting pose",
+            "structure": "systematic",
+            "basis": "the declared instrument's starting-pose uncertainty",
+            "rank": 1,
+            "max_sigma": 0.00309880569523,
+            "sigma_at_end": 0.00309880569523,
+            "note": "Phi C0 Phi^T, transverse component; one draw carried down the path"
+          },
+          {
+            "kind": "surface-reconstruction",
+            "name": "surface reconstruction",
+            "structure": "systematic",
+            "basis": "assumed",
+            "rank": 1,
+            "max_sigma": 2.9787639611e-06,
+            "sigma_at_end": 2.9787639611e-06,
+            "note": "dj(s) = -int_0^s [b(s)a(t) - a(s)b(t)] dK j(t) dt, for a curvature bias that is the same along the whole path"
+          },
+          {
+            "kind": "fixture-datum",
+            "name": "fixture and datum",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 2,
+            "max_sigma": 0.000209702933131,
+            "sigma_at_end": 0.000209702933131,
+            "note": "a rigid datum offset enters as a starting-pose error and propagates as one"
+          },
+          {
+            "kind": "calibration-transform",
+            "name": "calibration transform",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 1,
+            "max_sigma": 5e-05,
+            "sigma_at_end": 5e-05,
+            "note": "one unknown offset in the measurement frame, constant along the path"
+          },
+          {
+            "kind": "path-registration",
+            "name": "path registration",
+            "structure": "systematic",
+            "basis": "declared",
+            "rank": 1,
+            "max_sigma": 2e-06,
+            "sigma_at_end": 1.00962834709e-06,
+            "note": "dj = j'(s) ds for one unknown arc-length offset"
+          },
+          {
+            "kind": "sensor-noise",
+            "name": "sensor noise",
+            "structure": "correlated",
+            "basis": "declared",
+            "rank": 401,
+            "max_sigma": 8.33333333333e-05,
+            "sigma_at_end": 8.33333333333e-05,
+            "note": "exponential kernel, correlation length 0.05"
+          }
+        ],
+        "max_sigma": 0.00310741474441,
+        "max_sigma_at_arclength": 2.0,
+        "sigma_at_end": 0.00310741474441,
+        "dominant_at_worst": "starting pose",
+        "shares_at_worst": {
+          "starting pose": 0.994466703506,
+          "surface reconstruction": 9.18911607534e-07,
+          "fixture and datum": 0.00455418392312,
+          "calibration transform": 0.000258905671758,
+          "path registration": 1.05566136387e-07,
+          "sensor noise": 0.00071918242155
+        },
+        "systematic_fraction_at_worst": 0.999280817578,
+        "positive_definite": true,
+        "total_rank": 401,
+        "note": "torus: declared example, no measured input",
+        "extra": {},
+        "case": "torus",
+        "surface": "torus(R=2, r=1)",
+        "systematic_only_is_singular": true,
+        "starting_pose_share_at_worst": 0.994466703506
       }
     ],
     "jet_step_sensitivity": [
@@ -13960,6 +14489,150 @@
       "passed": true
     },
     {
+      "id": "budget-is-invertible/plate",
+      "statement": "the declared budget can whiten a residual: at least one term has full rank, which in practice means the sensor's own noise",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-systematic-terms-are-singular/plate",
+      "statement": "and the systematic terms alone cannot, because a perfectly correlated error is perfectly predictable -- the distinction a per-sample variance sum would have erased",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-shares-account-for-everything/plate",
+      "statement": "the breakdown sums to the total, so no contribution is unaccounted",
+      "value": 0.0,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-is-invertible/rolled-sheet",
+      "statement": "the declared budget can whiten a residual: at least one term has full rank, which in practice means the sensor's own noise",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-systematic-terms-are-singular/rolled-sheet",
+      "statement": "and the systematic terms alone cannot, because a perfectly correlated error is perfectly predictable -- the distinction a per-sample variance sum would have erased",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-shares-account-for-everything/rolled-sheet",
+      "statement": "the breakdown sums to the total, so no contribution is unaccounted",
+      "value": 0.0,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-is-invertible/spherical-cap",
+      "statement": "the declared budget can whiten a residual: at least one term has full rank, which in practice means the sensor's own noise",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-systematic-terms-are-singular/spherical-cap",
+      "statement": "and the systematic terms alone cannot, because a perfectly correlated error is perfectly predictable -- the distinction a per-sample variance sum would have erased",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-shares-account-for-everything/spherical-cap",
+      "statement": "the breakdown sums to the total, so no contribution is unaccounted",
+      "value": 0.0,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-is-invertible/pseudosphere",
+      "statement": "the declared budget can whiten a residual: at least one term has full rank, which in practice means the sensor's own noise",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-systematic-terms-are-singular/pseudosphere",
+      "statement": "and the systematic terms alone cannot, because a perfectly correlated error is perfectly predictable -- the distinction a per-sample variance sum would have erased",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-shares-account-for-everything/pseudosphere",
+      "statement": "the breakdown sums to the total, so no contribution is unaccounted",
+      "value": 0.0,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-is-invertible/saddle",
+      "statement": "the declared budget can whiten a residual: at least one term has full rank, which in practice means the sensor's own noise",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-systematic-terms-are-singular/saddle",
+      "statement": "and the systematic terms alone cannot, because a perfectly correlated error is perfectly predictable -- the distinction a per-sample variance sum would have erased",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-shares-account-for-everything/saddle",
+      "statement": "the breakdown sums to the total, so no contribution is unaccounted",
+      "value": 0.0,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-is-invertible/torus",
+      "statement": "the declared budget can whiten a residual: at least one term has full rank, which in practice means the sensor's own noise",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-systematic-terms-are-singular/torus",
+      "statement": "and the systematic terms alone cannot, because a perfectly correlated error is perfectly predictable -- the distinction a per-sample variance sum would have erased",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-shares-account-for-everything/torus",
+      "statement": "the breakdown sums to the total, so no contribution is unaccounted",
+      "value": 0.0,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
       "id": "prediction-chain-closes/plate",
       "statement": "naming the two second-order transformations closes the gap to an independently computed ambient chord, from the size of the effect down to the numerical floor",
       "value": 7.5026790336e-13,
@@ -14553,12 +15226,12 @@
     }
   ],
   "summary": {
-    "n_checks": 141,
+    "n_checks": 159,
     "n_failed": 0,
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "43ed677a2f6e87f418301f212a4540bef26dea157b078f5eff877a2f62b1d365",
+  "content_hash": "e6ad20ce364147ef4d557eba6321e3ea1f7d02119ed83f0e3063910e127d03d8",
   "environment": {
     "package_version": "0.2.0",
     "python": "3.11.15",

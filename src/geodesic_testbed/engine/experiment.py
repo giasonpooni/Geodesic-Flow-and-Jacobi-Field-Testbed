@@ -66,6 +66,7 @@ from .transfer import (
     transfer_from_trajectory,
     transfer_rhs,
 )
+from .uncertainty import curvature_sensitivity
 
 REPORT_SCHEMA = "geodesic-jacobi-report-v3"
 SUPERSEDES = "geodesic-jacobi-report-v2"
@@ -764,6 +765,77 @@ def sweep_path_sensitivity(config: ExperimentConfig) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # sweep 5: the conjugate point on the sphere
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# sweep 2e: what a curvature error costs, through the Jacobi Green's function
+# ---------------------------------------------------------------------------
+def sweep_curvature_sensitivity(config: ExperimentConfig) -> list[dict[str, Any]]:
+    """The uncertainty budget's curvature term, against a re-integration.
+
+    If the surface the path was flowed along has ``K + dK`` and the part has
+    ``K``, the variation equation picks up a source and the prediction moves by
+
+    ``dj(s) = -int_0^s [b(s) a(t) - a(s) b(t)] dK j(t) dt``
+
+    -- an integral over the record's own samples, with no Wronskian in the
+    denominator because ``det Phi = 1`` exactly. That is the whole reason the
+    cost of a mis-fitted surface is computable downstream from a transfer
+    record and nothing else.
+
+    It is checked the only way a sensitivity can be: by actually perturbing the
+    curvature and re-integrating. The residual is the ``dK^2`` term, so it has
+    to fall linearly as ``dK`` shrinks, and that slope is the check -- a
+    formula that was merely close would not have it.
+    """
+    rows: list[dict[str, Any]] = []
+    grid = np.linspace(0.0, config.arc_length, 2001)
+    for form in all_space_forms():
+        base = constant_curvature_transfer(grid, form.K)
+        record = TransferRecord(
+            arclength=grid,
+            gaussian_curvature=np.full_like(grid, form.K),
+            a=base.a, a_rate=base.a_rate, b=base.b, b_rate=base.b_rate,
+            domain="constant-curvature",
+        )
+        sensitivity = curvature_sensitivity(record, 0.0, 1.0)
+        levels = []
+        for delta in (1e-5, 1e-6, 1e-7):
+            perturbed = constant_curvature_transfer(grid, form.K + delta)
+            measured = perturbed.b - base.b
+            predicted = delta * sensitivity
+            scale = max(float(np.max(np.abs(measured))), 1e-300)
+            levels.append(
+                {
+                    "delta_curvature": float(delta),
+                    "max_abs_measured": float(np.max(np.abs(measured))),
+                    "relative_residual": float(np.max(np.abs(predicted - measured))) / scale,
+                }
+            )
+        # The order is read from the two *coarsest* perturbations. The finest
+        # one is there to show where the floor is, and it is on it: at
+        # dK = 1e-7 the difference of two transfer maps has cancelled seven
+        # digits, so its residual is partly roundoff and fitting through it
+        # would measure the subtraction rather than the formula.
+        coarse, fine = levels[0], levels[1]
+        ratio = coarse["relative_residual"] / max(fine["relative_residual"], 1e-300)
+        order = float(
+            np.log(ratio)
+            / np.log(coarse["delta_curvature"] / fine["delta_curvature"])
+        )
+        rows.append(
+            {
+                "curvature": form.K,
+                "curvature_label": form.label,
+                "kernel": "G(s, t) = b(s) a(t) - a(s) b(t), det Phi = 1",
+                "worst_relative_residual": max(
+                    level["relative_residual"] for level in levels
+                ),
+                "residual_order_in_delta": order,
+                "levels": levels,
+            }
+        )
+    return rows
+
+
 def study_conjugate_point(config: ExperimentConfig) -> dict[str, Any]:
     form = SpaceForm(1.0)
     span = config.conjugate_span_multiple * np.pi
@@ -1176,6 +1248,26 @@ def collect_checks(results: dict[str, Any], config: ExperimentConfig) -> list[di
         )
 
     conjugate = results["conjugate_point"]
+    for row in results["curvature_sensitivity"]:
+        checks.append(
+            _check(
+                f"curvature-sensitivity/{row['curvature_label']}",
+                "the Green's-function sensitivity to a curvature bias reproduces an "
+                "actual re-integration at the perturbed curvature",
+                row["worst_relative_residual"],
+                1e-4,
+            )
+        )
+        checks.append(
+            _check(
+                f"curvature-sensitivity-order/{row['curvature_label']}",
+                "and its residual falls linearly in dK, which is what makes it the "
+                "derivative rather than something merely close to it",
+                abs(row["residual_order_in_delta"] - 1.0),
+                0.05,
+            )
+        )
+
     checks.append(
         _check(
             "conjugate-point/jacobi-zero",
@@ -1225,6 +1317,7 @@ def run_experiment(config: ExperimentConfig | None = None) -> dict[str, Any]:
         "focus_refinement": sweep_focus_refinement(config),
         "first_order_validity": sweep_first_order_validity(config),
         "path_sensitivity": sweep_path_sensitivity(config),
+        "curvature_sensitivity": sweep_curvature_sensitivity(config),
         "conjugate_point": study_conjugate_point(config),
     }
     checks = collect_checks(results, config)
@@ -1234,6 +1327,8 @@ def run_experiment(config: ExperimentConfig | None = None) -> dict[str, Any]:
             "supersedes": SUPERSEDES,
             "schema_changes": [
                 "observation_modes: support is now per domain, not one boolean",
+                "adds results.curvature_sensitivity: the uncertainty budget's "
+                "curvature term, checked against a re-integration",
                 f"every float is canonicalised to {CANONICAL_DIGITS} significant "
                 "digits before hashing, so the content hash is reproducible "
                 "across platforms",

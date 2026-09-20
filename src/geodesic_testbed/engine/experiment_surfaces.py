@@ -47,6 +47,7 @@ import numpy as np
 
 from .. import __version__
 from .analysis import fit_power_law, successive_orders
+from .contract import GeometryUncertainty
 from .envelope import (
     PathEnvelope,
     estimate_convergence,
@@ -78,6 +79,15 @@ from .surfaces import (
     torus,
 )
 from .tracking import AcquisitionSpec
+from .uncertainty import (
+    budget,
+    calibration_transform,
+    fixture_datum,
+    path_registration,
+    sensor_noise,
+    starting_pose,
+    surface_reconstruction,
+)
 
 REPORT_SCHEMA = "geodesic-jacobi-surfaces-v3"
 SUPERSEDES = "geodesic-jacobi-surfaces-v2"
@@ -163,6 +173,20 @@ class SurfaceConfig:
     #: Small enough that the second-order corrections dominate, large enough
     #: that the finite-difference reference is not cancellation-limited.
     chain_epsilons: tuple[float, ...] = (5e-3, 2.5e-3)
+
+    #: The declared example campaign the uncertainty budget is assembled from.
+    #: Every one of these is a *declaration*, not a measurement: nothing here
+    #: has been on a bench, and the budget exists to show the shape of the
+    #: arithmetic and which term would dominate, not to characterise hardware.
+    budget_path_steps: int = 400
+    scan_position_sigma: float = 2.0e-4
+    scan_normal_sigma: float = 1.0e-4
+    scan_curvature_sigma: float = 1.0e-3
+    fixture_lateral_sigma: float = 2.0e-4
+    fixture_heading_sigma: float = 1.0e-4
+    calibration_offset_sigma: float = 5.0e-5
+    registration_sigma: float = 2.0e-3
+    sensor_correlation_length: float = 0.05
 
     transverse_tolerances: tuple[float, ...] = (1e-3, 1e-2)
     heading_scan_count: int = 24
@@ -474,6 +498,90 @@ def measure_self_convergence(config: SurfaceConfig, cases) -> list[dict[str, Any
 # ---------------------------------------------------------------------------
 # 4. the cost of not supplying analytic derivatives
 # ---------------------------------------------------------------------------
+def measure_uncertainty_budget(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
+    """The whole budget on each path, and which term actually dominates.
+
+    Every number here comes from the declared instrument and the declared
+    tolerance box -- the same ones the route decision uses -- plus a declared
+    registration and fixture. Nothing is fitted and nothing is a limit: the
+    output is a breakdown, and what an acceptable total is belongs to a
+    protocol.
+
+    Two things it establishes that no single figure can. The **systematic
+    fraction**: how much of the worst-sample variance is one unknown repeated,
+    which is exactly the part that averaging more samples along the path does
+    not touch. And **rank**: a budget of purely systematic terms is singular,
+    because a perfectly correlated error is perfectly predictable, so a
+    campaign that forgot to declare its sensor's noise finds out here rather
+    than in a Cholesky failure three layers down.
+    """
+    lateral = config.route_tolerance_lateral
+    heading = config.route_tolerance_heading
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        envelope = integrate_path(
+            case.surface, u0=case.u0, v0=case.v0, heading=case.heading,
+            length=case.length, n_steps=config.budget_path_steps,
+        )
+        record = envelope.as_transfer_record(observation_mode="ambient-euclidean-chord")
+        scanned = record.with_geometry_uncertainty(
+            GeometryUncertainty(
+                position=config.scan_position_sigma,
+                normal=config.scan_normal_sigma,
+                curvature=config.scan_curvature_sigma,
+                basis="assumed",
+                note="a declared example scan, not a measured one",
+            )
+        )
+        assembled = budget(
+            scanned,
+            starting_pose(
+                scanned,
+                np.diag(
+                    [
+                        config.route_lateral_sigma**2,
+                        float(np.deg2rad(config.route_heading_sigma_degrees)) ** 2,
+                    ]
+                ),
+                basis="the declared instrument's starting-pose uncertainty",
+            ),
+            surface_reconstruction(scanned, lateral, heading),
+            fixture_datum(
+                scanned,
+                lateral_sigma=config.fixture_lateral_sigma,
+                heading_sigma=config.fixture_heading_sigma,
+                basis="declared",
+            ),
+            calibration_transform(
+                scanned, sigma=config.calibration_offset_sigma, basis="declared"
+            ),
+            path_registration(
+                scanned, lateral, heading,
+                sigma=config.registration_sigma, basis="declared",
+            ),
+            sensor_noise(
+                scanned,
+                sigma=config.route_measurement_sigma,
+                correlation_length=config.sensor_correlation_length,
+                basis="declared",
+            ),
+            note=f"{case.key}: declared example, no measured input",
+        )
+        systematic_only = budget(
+            scanned,
+            *[c for c in assembled.contributions if c.structure == "systematic"],
+        )
+        payload = assembled.to_dict()
+        payload |= {
+            "case": case.key,
+            "surface": case.surface.name,
+            "systematic_only_is_singular": not systematic_only.is_positive_definite(),
+            "starting_pose_share_at_worst": payload["shares_at_worst"]["starting pose"],
+        }
+        rows.append(payload)
+    return rows
+
+
 def measure_prediction_chain(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
     """Does naming the transformations actually close the gap to a measurement?
 
@@ -1524,6 +1632,35 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
                 )
             )
 
+    for row in results["uncertainty_budget"]:
+        checks.append(
+            _check(
+                f"budget-is-invertible/{row['case']}",
+                "the declared budget can whiten a residual: at least one term has "
+                "full rank, which in practice means the sensor's own noise",
+                0.0 if row["positive_definite"] else 1.0,
+                0.0,
+            )
+        )
+        checks.append(
+            _check(
+                f"budget-systematic-terms-are-singular/{row['case']}",
+                "and the systematic terms alone cannot, because a perfectly "
+                "correlated error is perfectly predictable -- the distinction a "
+                "per-sample variance sum would have erased",
+                0.0 if row["systematic_only_is_singular"] else 1.0,
+                0.0,
+            )
+        )
+        checks.append(
+            _check(
+                f"budget-shares-account-for-everything/{row['case']}",
+                "the breakdown sums to the total, so no contribution is unaccounted",
+                abs(sum(row["shares_at_worst"].values()) - 1.0),
+                1e-12,
+            )
+        )
+
     for row in results["prediction_chain"]:
         if row["curvature_is_constant"]:
             checks.append(
@@ -1862,6 +1999,7 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
         "finite_difference_cost": measure_finite_difference_cost(config, cases),
         "error_budget": measure_error_budget(config, cases),
         "prediction_chain": measure_prediction_chain(config, cases),
+        "uncertainty_budget": measure_uncertainty_budget(config, cases),
         "jet_step_sensitivity": measure_jet_step_sensitivity(config, cases),
         "envelopes": build_envelopes(config, cases),
         "chart_rescaling_invariance": measure_chart_rescaling_invariance(cases),
@@ -1874,6 +2012,11 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
             "schema": REPORT_SCHEMA,
             "supersedes": SUPERSEDES,
             "schema_changes": [
+                "adds results.uncertainty_budget: every declared source of error, "
+                "its shape, and which one dominates -- the starting pose is one "
+                "term and rarely the largest",
+                "adds results.prediction_chain: the named transformations from "
+                "Phi dz0 to an ambient chord, against an independent measurement",
                 "adds results.error_budget: a per-quantity step-doubling error "
                 "estimate, checked against the closed forms where one exists",
                 "adds results.jet_step_sensitivity: what the finite-difference "

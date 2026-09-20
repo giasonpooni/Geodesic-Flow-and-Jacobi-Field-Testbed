@@ -15,6 +15,16 @@ from .applications import (
     assess_manufacturing,
 )
 from .boundary import read_record, write_record
+from .engine.campaign import (
+    CAMPAIGN_STATUS,
+    ConformanceReport,
+    CouponProgram,
+    CouponStage,
+    PerturbationPlan,
+    conformance,
+    default_program,
+    intrinsic_flatness_control,
+)
 from .engine.contract import (
     BOUNDARY_CONTRACT,
     DEFAULT_FRAME,
@@ -75,6 +85,18 @@ from .engine.routing import (
 from .engine.surfaces import Chart
 from .engine.tracking import AcquisitionSpec, TrackingOutcome, evaluate_tracking
 from .engine.transfer import FocusEvent, TransferMap
+from .engine.uncertainty import (
+    Contribution,
+    UncertaintyBudget,
+    budget,
+    calibration_transform,
+    curvature_sensitivity,
+    fixture_datum,
+    path_registration,
+    sensor_noise,
+    starting_pose,
+    surface_reconstruction,
+)
 from .jacobi import (
     JacobiTrace,
     constant_curvature_trace,
@@ -93,8 +115,26 @@ __all__ = [
     "STAGES",
     "AcquisitionSpec",
     "CalibrationBinding",
+    "CAMPAIGN_STATUS",
+    "ConformanceReport",
+    "Contribution",
+    "CouponProgram",
+    "CouponStage",
+    "PerturbationPlan",
     "Prediction",
+    "conformance",
+    "default_program",
+    "intrinsic_flatness_control",
     "ResidualStatistics",
+    "UncertaintyBudget",
+    "budget",
+    "calibration_transform",
+    "curvature_sensitivity",
+    "fixture_datum",
+    "path_registration",
+    "sensor_noise",
+    "starting_pose",
+    "surface_reconstruction",
     "chord_from_intrinsic",
     "chord_from_tangent",
     "first_order_prediction",

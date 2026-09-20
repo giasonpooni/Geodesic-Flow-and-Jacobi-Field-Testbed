@@ -128,7 +128,9 @@ CONTRACT: tuple[str, ...] = (
 INSTRUMENT_FACING: tuple[str, ...] = (
     "geodesic_testbed.engine.observation_model",
     "geodesic_testbed.engine.prediction",
+    "geodesic_testbed.engine.uncertainty",
     "geodesic_testbed.engine.measurement",
+    "geodesic_testbed.engine.campaign",
     "geodesic_testbed.engine.tracking",
     "geodesic_testbed.engine.routing",
 )
