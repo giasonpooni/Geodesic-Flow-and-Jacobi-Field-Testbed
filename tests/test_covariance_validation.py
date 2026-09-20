@@ -13,6 +13,7 @@ from geodesic_testbed.engine.observation_model import (
 from geodesic_testbed.engine.transfer import (
     TransferMap,
     _validated_covariance,
+    _validated_covariance_stack,
     constant_curvature_transfer,
 )
 
@@ -140,6 +141,78 @@ def test_extended_precision_variance_cannot_be_erased_by_float64_conversion():
     matrix = np.array([[np.longdouble("1e-400"), 0], [0, 1]], dtype=np.longdouble)
     with pytest.raises(ValueError):
         _validated_covariance(matrix)
+
+
+@pytest.mark.parametrize("epsilon", [1e-14, 1e-13])
+def test_filter_refuses_output_when_tolerated_input_asymmetry_is_amplified(epsilon):
+    matrix = np.array([[1, 1 + epsilon], [1 - epsilon, 1]])
+    original = matrix.copy()
+    _validated_covariance(matrix)  # The input itself is within the declared tolerance.
+    with pytest.raises(ValueError, match="(zero variance|symmetric)"):
+        filtered_noise_covariance([[1, -1], [0, 1]], matrix)
+    assert np.array_equal(matrix, original)
+
+
+def test_transfer_refuses_any_invalid_covariance_in_a_sampled_output_stack():
+    transfer = TransferMap(
+        arc_length=np.array([0.0, 1.0]), a=np.array([1.0, 1.0]),
+        a_rate=np.array([0.0, 0.0]), b=np.array([0.0, -1.0]),
+        b_rate=np.array([1.0, 1.0]),
+    )
+    with pytest.raises(ValueError, match="zero variance"):
+        transfer.propagate_covariance([[1, 1 + 1e-14], [1 - 1e-14, 1]])
+
+
+def test_exact_singular_cancellation_and_mixed_scale_output_stay_eligible():
+    expected = np.array([[0, 0], [0, 1]])
+    actual = filtered_noise_covariance([[1, -1], [0, 1]], [[1, 1], [1, 1]])
+    assert np.array_equal(actual, expected)
+    mixed = np.array([[1e-300, 1], [1, 1e300]])
+    assert np.array_equal(filtered_noise_covariance(np.eye(2), mixed), mixed)
+    stack = np.stack([expected, np.zeros((2, 2)), mixed])
+    assert np.array_equal(_validated_covariance_stack(stack, "synthetic stack"), stack)
+
+
+def test_nonzero_declared_variance_cannot_disappear_through_float_cancellation():
+    matrix = [[4.0, 19.4], [19.4, 94.08999999999999]]
+    _validated_covariance(matrix)
+    with pytest.raises(ValueError, match="nonzero declared variance collapsed to zero"):
+        filtered_noise_covariance([[9.7, -2.0]], matrix)
+
+
+def test_false_zero_diagnostic_covers_broadcast_batches_and_exact_zero_operators():
+    from geodesic_testbed.engine.transfer import _covariance_product
+
+    covariance = np.array([[4.0, 19.4], [19.4, 94.08999999999999]])
+    operators = np.array([[[0.0, 0.0]], [[9.7, -2.0]]])
+    with pytest.raises(ValueError, match="nonzero declared variance collapsed to zero"):
+        _covariance_product(operators, covariance, "synthetic stack")
+    result = _covariance_product(np.zeros((2, 3, 2)), covariance, "zero operator stack")
+    assert np.array_equal(result, np.zeros((2, 3, 3)))
+
+
+@pytest.mark.parametrize("stack", [
+    np.empty((0, 2, 2)), np.zeros((2, 0, 0)), np.zeros((2, 2, 3)),
+])
+def test_computed_covariance_stack_requires_nonempty_square_matrices(stack):
+    with pytest.raises(ValueError, match="non-empty square"):
+        _validated_covariance_stack(stack, "computed covariance")
+
+
+def test_observation_covariance_validates_the_final_sum(monkeypatch):
+    import geodesic_testbed.engine.observation_model as observation_module
+
+    record = constant_curvature_trace(np.array([0.0, 1.0]), 0.0).as_transfer_record()
+    model = _model(np.diag([0.0, 1.0]))
+    # Isolate the final-addition boundary from the separately checked product.
+    # This injected finite result must not be returned merely because adding
+    # valid measurement noise did not overflow.
+    monkeypatch.setattr(
+        observation_module, "_covariance_product",
+        lambda *args: np.array([[[0.0, 1e-14], [-1e-14, 0.0]]] * 2),
+    )
+    with pytest.raises(ValueError, match="zero variance"):
+        model.covariance(record, np.eye(2))
 
 
 def test_negative_computed_variance_is_not_clipped_after_projection():

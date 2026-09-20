@@ -51,6 +51,16 @@ triangle must pass. No averaging, eigenvalue clipping, jitter, or uncertainty
 floor repairs the supplied matrix. Consequently a tiny invalid covariance is
 not accepted merely because its entries fall below an absolute threshold.
 
+Every returned covariance is checked again in its output coordinates, including
+each sample in propagated stacks and the final observation covariance after
+noise is added. Input eligibility alone is insufficient: a transformation can
+amplify tolerated asymmetry into an invalid output. Such an output is refused,
+not repaired; exactly representable singular cancellations remain valid.
+For computed zero variances, an exact quadratic-form diagnostic over the
+declared floating-point values distinguishes a genuine singular zero from
+nonzero uncertainty erased by cancellation. It only refuses false zeros;
+it never substitutes a computed variance or alters the numerical solver.
+
 Valid singular and mixed-unit covariances remain supported, including
 `[[1e-14, 1e-7], [1e-7, 1]]`. Boolean/string coercion, unrepresentable variances,
 and nonfinite propagation results are refused. Propagation refuses negative

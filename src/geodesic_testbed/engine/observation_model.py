@@ -64,7 +64,12 @@ import numpy as np
 
 from .observation import mode as observation_mode
 from .record import TransferRecord, to_transfer_record
-from .transfer import _covariance_product, _finite_numeric_array, _validated_covariance
+from .transfer import (
+    _covariance_product,
+    _finite_numeric_array,
+    _validated_covariance,
+    _validated_covariance_stack,
+)
 
 Array = np.ndarray
 
@@ -371,7 +376,7 @@ class ObservationModel:
             raise ValueError("observed covariance exceeds finite floating-point range") from exc
         if not np.all(np.isfinite(result)):
             raise ValueError("observed covariance must be finite")
-        return result
+        return _validated_covariance_stack(result, "observed covariance")
 
     def resolvability(self, source: Any, initial_covariance) -> Array:
         """``rho(s)``: predicted signal over measurement noise, per output.

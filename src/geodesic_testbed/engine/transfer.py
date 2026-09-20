@@ -47,6 +47,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from fractions import Fraction
 from numbers import Real
 from typing import Any
 
@@ -337,7 +338,41 @@ def _covariance_product(operator: Array, covariance: Array, name: str) -> Array:
         raise ValueError(f"{name} must be finite")
     if np.any(np.diagonal(result, axis1=-2, axis2=-1) < 0.0):
         raise ValueError(f"{name} has a negative computed variance; no clipping is permitted")
-    return result
+    _reject_lost_variance(operator, covariance, result, name)
+    return _validated_covariance_stack(result, name)
+
+
+def _reject_lost_variance(
+    operator: Array, covariance: Array, result: Array, name: str
+) -> None:
+    """Distinguish exact singular zeros from cancellation to false certainty.
+
+    Only a computed zero diagonal triggers this diagnostic. Evaluate its
+    quadratic form exactly over the supplied floating-point values and refuse
+    if floating arithmetic erased a nonzero value. Never replace the returned
+    covariance with an exact-arithmetic answer or an invented noise floor.
+    """
+    zeros = np.diagonal(result, axis1=-2, axis2=-1) == 0.0
+    if not np.any(zeros) or not np.any(covariance):
+        return
+    batch_shape = result.shape[:-2]
+    operators = np.broadcast_to(operator, (*batch_shape, *operator.shape[-2:]))
+    covariances = np.broadcast_to(covariance, (*batch_shape, *covariance.shape[-2:]))
+    for location in np.argwhere(zeros):
+        batch_index, row = tuple(location[:-1]), int(location[-1])
+        weights = operators[batch_index][row]
+        active = np.flatnonzero(weights != 0.0)
+        if not active.size:
+            continue
+        matrix = covariances[batch_index]
+        exact_weights = {index: Fraction.from_float(float(weights[index])) for index in active}
+        quadratic = sum(
+            (exact_weights[left] * Fraction.from_float(float(matrix[left, right]))
+             * exact_weights[right] for left in active for right in active),
+            Fraction(0),
+        )
+        if quadratic != 0:
+            raise ValueError(f"{name}: a nonzero declared variance collapsed to zero")
 
 
 def _validated_covariance(covariance, name: str = "covariance", size: int | None = 2) -> Array:
@@ -355,35 +390,57 @@ def _validated_covariance(covariance, name: str = "covariance", size: int | None
         raise ValueError(f"{name} must be a non-empty square matrix")
     if size is not None and covariance.shape != (size, size):
         raise ValueError(f"{name} must be {size}x{size}")
-    diagonal = np.diag(covariance)
+    return _validate_covariance_values(covariance, name)
+
+
+def _validated_covariance_stack(covariance, name: str) -> Array:
+    """Validate every matrix in a computed covariance stack without repair.
+
+    Input eligibility is not enough: a congruence can amplify input roundoff
+    or tolerated asymmetry. The returned values must satisfy the same gate
+    in their own output coordinates, including after measurement noise is added.
+    """
+    covariance = _finite_numeric_array(covariance, name)
+    if (covariance.ndim < 2 or covariance.shape[-2] != covariance.shape[-1]
+            or not covariance.size):
+        raise ValueError(f"{name} must contain non-empty square covariance matrices")
+    return _validate_covariance_values(covariance, name)
+
+
+def _validate_covariance_values(covariance: Array, name: str) -> Array:
+    """Shared value check for a square matrix or a batch of square matrices."""
+    diagonal = np.diagonal(covariance, axis1=-2, axis2=-1)
     if np.any(diagonal < 0.0):
         raise ValueError(f"{name} must be positive semidefinite: negative variance")
-    for index in np.flatnonzero(diagonal == 0.0):
-        if np.any(covariance[index, :] != 0.0) or np.any(covariance[:, index] != 0.0):
-            raise ValueError(f"{name}: zero variance requires an exactly zero row and column")
-    active = np.flatnonzero(diagonal > 0.0)
-    if active.size == 0:
+    null = diagonal == 0.0
+    if np.any((covariance != 0.0) & (null[..., :, None] | null[..., None, :])):
+        raise ValueError(f"{name}: zero variance requires an exactly zero row and column")
+    if np.all(null):
         return covariance
-    roots = np.sqrt(diagonal[active])
+    # Null axes are already proven to be exactly zero. A unit denominator
+    # leaves them zero during normalization; it does not add variance or jitter.
+    roots = np.sqrt(np.where(null, 1.0, diagonal))
     # Divide by the larger root first: neither products of variances nor an
     # intermediate division by a tiny root can overflow for valid correlations.
-    larger = np.maximum(roots[:, None], roots[None, :])
-    smaller = np.minimum(roots[:, None], roots[None, :])
+    larger = np.maximum(roots[..., :, None], roots[..., None, :])
+    smaller = np.minimum(roots[..., :, None], roots[..., None, :])
     try:
         with np.errstate(over="raise", invalid="raise", divide="raise"):
-            correlation = covariance[np.ix_(active, active)] / larger / smaller
+            correlation = covariance / larger / smaller
     except FloatingPointError as exc:
         raise ValueError(f"{name} has nonfinite normalized correlation") from exc
     if not np.all(np.isfinite(correlation)):
         raise ValueError(f"{name} has nonfinite normalized correlation")
     if np.any(np.abs(correlation) > 1.0 + COVARIANCE_PSD_ATOL):
         raise ValueError(f"{name} must be positive semidefinite in correlation coordinates")
-    if not np.allclose(correlation, correlation.T, rtol=0.0, atol=COVARIANCE_SYMMETRY_ATOL):
+    if not np.allclose(correlation, np.swapaxes(correlation, -1, -2),
+                       rtol=0.0, atol=COVARIANCE_SYMMETRY_ATOL):
         raise ValueError(f"{name} must be symmetric in correlation coordinates")
     try:
         for triangle in ("L", "U"):
             eigenvalues = np.linalg.eigvalsh(correlation, UPLO=triangle)
-            if not np.all(np.isfinite(eigenvalues)) or eigenvalues[0] < -COVARIANCE_PSD_ATOL:
+            if (not np.all(np.isfinite(eigenvalues))
+                    or np.any(eigenvalues < -COVARIANCE_PSD_ATOL)):
                 raise ValueError(f"{name} must be positive semidefinite in correlation coordinates")
     except np.linalg.LinAlgError as exc:
         raise ValueError(f"{name} covariance validation did not converge") from exc
