@@ -248,6 +248,76 @@ artefact that actually declared the transverse normal curvature the chord
 correction needs. The first is a statement about the repository; the second is
 a statement about one file, and they fail differently.
 
+## Where the linear map stops holding
+
+`Phi dz0` is the first term of a series, and the second term is the same order
+as the effect most campaigns here are trying to resolve. So "over what range of
+starting errors is this the answer" is a number the record carries, not a
+caveat in a docstring. `ValidityEnvelope` is that number and the four things
+that make it readable:
+
+| field | why it is not optional |
+| --- | --- |
+| `directions` | a probe that perturbs only the heading measures `b` and says nothing about `a`, and the two focus in different places |
+| `reference`, `reference_digest` | what the linear map was compared *against*. On a parametric surface it is the geodesic flow itself, central-differenced — that never touches the Jacobi equation, so it is an independent computation of the same quantity |
+| `relative_tolerance`, `tolerance_basis` | a tolerance chosen after seeing the residuals is not a tolerance |
+| `convergence` | an envelope whose own numerics are unresolved is a bound on the solver, not on the linearisation |
+
+`pointwise_error` and `route_error` are kept apart: a path can be linear at
+every arc length and still accumulate over the route, and a campaign planning
+to one while measuring the other is comparing two different numbers.
+
+**The bound is fitted, then clipped.** The relative error goes as `C eps^2`, so
+`C` is fitted over the probes still in that regime and the bound is
+`sqrt(tolerance / C)` — reading off the largest rung that happened to pass
+would quantise the answer to the ladder and round it upwards, admitting a
+perturbation that was never tested. It is then clipped to the end of the
+ladder, per direction, and `probe_limited_directions` says which. On a plane
+the lateral column is exact, so the fitted coefficient is roundoff and the
+extrapolated bound comes out in the hundreds of radians; what was established
+there is that it held out to the largest perturbation tested.
+
+**The cylinder is the result worth stating.** A rolled sheet has the plate's
+transfer map to 1e-13 and an envelope 15.7% tighter, because the probe measures
+an ambient chord and a cylinder has a transverse normal curvature the plate
+does not. Where `K` is constant the measured bound reproduces
+`sqrt(24 tol / max(a^2 + kappa_n^2 b^2))` to 0.72% or better; where it varies
+that formula simply does not apply — it is 43% out on the saddle — so the
+declared check there is a different one, which needs no closed form: re-probe
+at exactly the bound the fit chose and confirm it costs the declared tolerance.
+That holds to 1.3% on every surface.
+
+**An imported artefact leaves it `not-established`.** Measuring the envelope
+means flowing neighbouring paths, and the surface they would be flowed on
+stayed upstream. A producer that measured it on its own side passes one in;
+nobody here invents it. An envelope that was never established admits nothing,
+including the nominal path — the alternative reading turns "we never checked"
+into "it always holds".
+
+## Two forms of the observability Gramian
+
+`W = int Phi^T H^T R^-1 H Phi ds` treats `R` as a noise *density* and needs the
+samples independent. `W = A^T R^-1 A` treats `R` as the covariance of the
+measurements actually taken, and is the only form that admits a correlated one.
+A filter correlates arc lengths, so that is not an exotic case: a filtered
+campaign ranking routes by the integral form counts information it does not
+have, because the samples it averaged were already averages of each other. In
+the report a correlated `R` carries 6.8% of the information an independent one
+of the same variance does.
+
+On a uniform grid with a stationary `R` the two agree to first order in the
+spacing, and the declared check is that the discrepancy *halves when the
+sampling doubles* — 1.991 and 1.996 over the ladder — because a fixed tolerance
+would only describe one grid. The conversion is stated rather than left
+implicit: it is exactly the factor that decides whether two campaigns at
+different sampling rates are comparable.
+
+A window on the stacked form inverts the *submatrix of `R`*, not a submatrix of
+`R^-1`. Those differ whenever the noise is correlated, and only the first is
+the information those measurements carry on their own — the second is what they
+carry given the ones outside the window, which a planner cannot act on before
+they have been taken.
+
 ## What does not cross, in either direction
 
 Narrow means everything below stays on exactly one side.

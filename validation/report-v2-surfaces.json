@@ -2932,6 +2932,7 @@
                 "worst_observed": 159.556938914,
                 "best_observed": 91976.4503361,
                 "anisotropy": 576.449078066,
+                "condition_number": 576.449078066,
                 "worst_direction": [
                   -0.988320163075,
                   0.152391782123
@@ -2965,6 +2966,7 @@
                 "worst_observed": 312.647964598,
                 "best_observed": 3814.27158048,
                 "anisotropy": 12.1998925705,
+                "condition_number": 12.1998925705,
                 "worst_direction": [
                   -0.999224734755,
                   -0.0393691434273
@@ -2998,6 +3000,7 @@
                 "worst_observed": 465.646958524,
                 "best_observed": 1203.91591283,
                 "anisotropy": 2.5854692934,
+                "condition_number": 2.5854692934,
                 "worst_direction": [
                   -0.999252769266,
                   0.0386510428665
@@ -3031,6 +3034,7 @@
                 "worst_observed": 414.236010558,
                 "best_observed": 2878.01419837,
                 "anisotropy": 6.94776437832,
+                "condition_number": 6.94776437832,
                 "worst_direction": [
                   -0.978910995487,
                   -0.204287206927
@@ -3064,6 +3068,7 @@
                 "worst_observed": 235.87565815,
                 "best_observed": 57418.4270944,
                 "anisotropy": 243.42667465,
+                "condition_number": 243.42667465,
                 "worst_direction": [
                   -0.999097729428,
                   -0.0424703078961
@@ -3097,6 +3102,7 @@
                 "worst_observed": 414.236010558,
                 "best_observed": 2878.01419837,
                 "anisotropy": 6.94776437832,
+                "condition_number": 6.94776437832,
                 "worst_direction": [
                   -0.978910995487,
                   -0.204287206927
@@ -3130,6 +3136,7 @@
                 "worst_observed": 465.646958524,
                 "best_observed": 1203.91591283,
                 "anisotropy": 2.5854692934,
+                "condition_number": 2.5854692934,
                 "worst_direction": [
                   -0.999252769266,
                   0.0386510428665
@@ -3163,6 +3170,7 @@
                 "worst_observed": 312.647964598,
                 "best_observed": 3814.27158048,
                 "anisotropy": 12.1998925705,
+                "condition_number": 12.1998925705,
                 "worst_direction": [
                   -0.999224734755,
                   -0.0393691434273
@@ -3303,6 +3311,7 @@
                 "worst_observed": 201.251499422,
                 "best_observed": 18545.6946463,
                 "anisotropy": 92.1518334006,
+                "condition_number": 92.1518334006,
                 "worst_direction": [
                   -0.994963054471,
                   0.100242307625
@@ -3336,6 +3345,7 @@
                 "worst_observed": 213.379515312,
                 "best_observed": 15447.6750701,
                 "anisotropy": 72.3953048985,
+                "condition_number": 72.3953048985,
                 "worst_direction": [
                   -0.997189300999,
                   0.0749232805834
@@ -3369,6 +3379,7 @@
                 "worst_observed": 225.56675579,
                 "best_observed": 13189.7357074,
                 "anisotropy": 58.4737571866,
+                "condition_number": 58.4737571866,
                 "worst_direction": [
                   -0.998742946492,
                   0.050125111788
@@ -3402,6 +3413,7 @@
                 "worst_observed": 237.696217227,
                 "best_observed": 11510.0273079,
                 "anisotropy": 48.4232666475,
+                "condition_number": 48.4232666475,
                 "worst_direction": [
                   -0.999662490161,
                   0.0259789484992
@@ -3435,6 +3447,7 @@
                 "worst_observed": 249.663301287,
                 "best_observed": 10241.405858,
                 "anisotropy": 41.0208701286,
+                "condition_number": 41.0208701286,
                 "worst_direction": [
                   -0.999996657758,
                   0.00258543469991
@@ -3468,6 +3481,7 @@
                 "worst_observed": 261.377376277,
                 "best_observed": 9273.8139118,
                 "anisotropy": 35.4805532288,
+                "condition_number": 35.4805532288,
                 "worst_direction": [
                   -0.999800357616,
                   -0.019981113856
@@ -3501,6 +3515,7 @@
                 "worst_observed": 272.762284081,
                 "best_observed": 8532.95517942,
                 "anisotropy": 31.2834863082,
+                "condition_number": 31.2834863082,
                 "worst_direction": [
                   -0.9991315146,
                   -0.0416679317149
@@ -3534,6 +3549,7 @@
                 "worst_observed": 283.7559949,
                 "best_observed": 7967.72174468,
                 "anisotropy": 28.0794833867,
+                "condition_number": 28.0794833867,
                 "worst_direction": [
                   -0.998048786101,
                   -0.0624389346704
@@ -4031,10 +4047,34 @@
           },
           "validity": {
             "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
+            "established": false,
+            "observation_mode": "intrinsic-surface-distance",
             "relative_tolerance": null,
+            "tolerance_basis": "not-declared",
             "max_lateral": null,
             "max_heading": null,
-            "established": false
+            "directions": [],
+            "probe_magnitudes": [],
+            "pointwise_error": null,
+            "route_error": null,
+            "probe_limited": false,
+            "probe_limited_directions": [],
+            "reference": "none",
+            "reference_digest": "",
+            "convergence": {
+              "basis": "not-established: no step-doubling comparison was run on the validity probe",
+              "order": null,
+              "refinement": null,
+              "position": null,
+              "transfer": null,
+              "curvature": null,
+              "focus": null,
+              "covariance": null,
+              "note": "no step-doubling comparison was run on the validity probe",
+              "established": false,
+              "worst": null
+            },
+            "note": ""
           },
           "observation_mode": "ambient-euclidean-chord",
           "domain": "parametric-surface",
@@ -5290,10 +5330,34 @@
           },
           "validity": {
             "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
+            "established": false,
+            "observation_mode": "intrinsic-surface-distance",
             "relative_tolerance": null,
+            "tolerance_basis": "not-declared",
             "max_lateral": null,
             "max_heading": null,
-            "established": false
+            "directions": [],
+            "probe_magnitudes": [],
+            "pointwise_error": null,
+            "route_error": null,
+            "probe_limited": false,
+            "probe_limited_directions": [],
+            "reference": "none",
+            "reference_digest": "",
+            "convergence": {
+              "basis": "not-established: no step-doubling comparison was run on the validity probe",
+              "order": null,
+              "refinement": null,
+              "position": null,
+              "transfer": null,
+              "curvature": null,
+              "focus": null,
+              "covariance": null,
+              "note": "no step-doubling comparison was run on the validity probe",
+              "established": false,
+              "worst": null
+            },
+            "note": ""
           },
           "observation_mode": "ambient-euclidean-chord",
           "domain": "parametric-surface",
@@ -6566,10 +6630,34 @@
           },
           "validity": {
             "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
+            "established": false,
+            "observation_mode": "intrinsic-surface-distance",
             "relative_tolerance": null,
+            "tolerance_basis": "not-declared",
             "max_lateral": null,
             "max_heading": null,
-            "established": false
+            "directions": [],
+            "probe_magnitudes": [],
+            "pointwise_error": null,
+            "route_error": null,
+            "probe_limited": false,
+            "probe_limited_directions": [],
+            "reference": "none",
+            "reference_digest": "",
+            "convergence": {
+              "basis": "not-established: no step-doubling comparison was run on the validity probe",
+              "order": null,
+              "refinement": null,
+              "position": null,
+              "transfer": null,
+              "curvature": null,
+              "focus": null,
+              "covariance": null,
+              "note": "no step-doubling comparison was run on the validity probe",
+              "established": false,
+              "worst": null
+            },
+            "note": ""
           },
           "observation_mode": "ambient-euclidean-chord",
           "domain": "parametric-surface",
@@ -7825,10 +7913,34 @@
           },
           "validity": {
             "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
+            "established": false,
+            "observation_mode": "intrinsic-surface-distance",
             "relative_tolerance": null,
+            "tolerance_basis": "not-declared",
             "max_lateral": null,
             "max_heading": null,
-            "established": false
+            "directions": [],
+            "probe_magnitudes": [],
+            "pointwise_error": null,
+            "route_error": null,
+            "probe_limited": false,
+            "probe_limited_directions": [],
+            "reference": "none",
+            "reference_digest": "",
+            "convergence": {
+              "basis": "not-established: no step-doubling comparison was run on the validity probe",
+              "order": null,
+              "refinement": null,
+              "position": null,
+              "transfer": null,
+              "curvature": null,
+              "focus": null,
+              "covariance": null,
+              "note": "no step-doubling comparison was run on the validity probe",
+              "established": false,
+              "worst": null
+            },
+            "note": ""
           },
           "observation_mode": "ambient-euclidean-chord",
           "domain": "parametric-surface",
@@ -9084,10 +9196,34 @@
           },
           "validity": {
             "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
+            "established": false,
+            "observation_mode": "intrinsic-surface-distance",
             "relative_tolerance": null,
+            "tolerance_basis": "not-declared",
             "max_lateral": null,
             "max_heading": null,
-            "established": false
+            "directions": [],
+            "probe_magnitudes": [],
+            "pointwise_error": null,
+            "route_error": null,
+            "probe_limited": false,
+            "probe_limited_directions": [],
+            "reference": "none",
+            "reference_digest": "",
+            "convergence": {
+              "basis": "not-established: no step-doubling comparison was run on the validity probe",
+              "order": null,
+              "refinement": null,
+              "position": null,
+              "transfer": null,
+              "curvature": null,
+              "focus": null,
+              "covariance": null,
+              "note": "no step-doubling comparison was run on the validity probe",
+              "established": false,
+              "worst": null
+            },
+            "note": ""
           },
           "observation_mode": "ambient-euclidean-chord",
           "domain": "parametric-surface",
@@ -10343,10 +10479,34 @@
           },
           "validity": {
             "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
+            "established": false,
+            "observation_mode": "intrinsic-surface-distance",
             "relative_tolerance": null,
+            "tolerance_basis": "not-declared",
             "max_lateral": null,
             "max_heading": null,
-            "established": false
+            "directions": [],
+            "probe_magnitudes": [],
+            "pointwise_error": null,
+            "route_error": null,
+            "probe_limited": false,
+            "probe_limited_directions": [],
+            "reference": "none",
+            "reference_digest": "",
+            "convergence": {
+              "basis": "not-established: no step-doubling comparison was run on the validity probe",
+              "order": null,
+              "refinement": null,
+              "position": null,
+              "transfer": null,
+              "curvature": null,
+              "focus": null,
+              "covariance": null,
+              "note": "no step-doubling comparison was run on the validity probe",
+              "established": false,
+              "worst": null
+            },
+            "note": ""
           },
           "observation_mode": "ambient-euclidean-chord",
           "domain": "parametric-surface",
@@ -11583,6 +11743,239 @@
       "unit_conversion_relative_error": 1.2102271552e-15,
       "failed_artefact_refused": true,
       "note": "the adapter reads the artefact's arclength and curvature and nothing else, which is why a rigid transform is exactly rather than nearly invariant"
+    },
+    "validity_envelopes": [
+      {
+        "case": "plate",
+        "constant_curvature": true,
+        "error_at_bound": 0.00100024558151,
+        "bound_consistency": 0.000245581508979,
+        "relative_tolerance": 0.001,
+        "max_heading": 0.15496161069,
+        "max_lateral": 0.512,
+        "probe_limited": true,
+        "probe_limited_directions": [
+          "lateral"
+        ],
+        "heading_bound_is_measured": true,
+        "pointwise_error": 0.01088693107,
+        "route_error": 0.01088693107,
+        "directions": [
+          "lateral",
+          "heading"
+        ],
+        "probe_magnitudes": [
+          0.004,
+          0.008,
+          0.016,
+          0.032,
+          0.064,
+          0.128,
+          0.256,
+          0.512
+        ],
+        "reference": "geodesic-flow-central-difference",
+        "established": true,
+        "closed_form_chord_bound": 0.154919333848,
+        "chord_bound_relative_error": 0.000272895837507,
+        "intrinsic_bound": 0.154919333848,
+        "chord_term_tightening": 1.0
+      },
+      {
+        "case": "rolled-sheet",
+        "constant_curvature": true,
+        "error_at_bound": 0.00100143643035,
+        "bound_consistency": 0.00143643035233,
+        "relative_tolerance": 0.001,
+        "max_heading": 0.130778841432,
+        "max_lateral": 0.486003361944,
+        "probe_limited": false,
+        "probe_limited_directions": [],
+        "heading_bound_is_measured": true,
+        "pointwise_error": 0.0151470722128,
+        "route_error": 0.0151470722128,
+        "directions": [
+          "lateral",
+          "heading"
+        ],
+        "probe_magnitudes": [
+          0.004,
+          0.008,
+          0.016,
+          0.032,
+          0.064,
+          0.128,
+          0.256,
+          0.512
+        ],
+        "reference": "geodesic-flow-central-difference",
+        "established": true,
+        "closed_form_chord_bound": 0.130623772847,
+        "chord_bound_relative_error": 0.00118713907875,
+        "intrinsic_bound": 0.154919333848,
+        "chord_term_tightening": 0.843172828092
+      },
+      {
+        "case": "spherical-cap",
+        "constant_curvature": true,
+        "error_at_bound": 0.000997914017285,
+        "bound_consistency": 0.00208598271513,
+        "relative_tolerance": 0.001,
+        "max_heading": 0.154780193498,
+        "max_lateral": 0.15483357111,
+        "probe_limited": false,
+        "probe_limited_directions": [],
+        "heading_bound_is_measured": true,
+        "pointwise_error": 0.0108869543385,
+        "route_error": 0.0108869310577,
+        "directions": [
+          "lateral",
+          "heading"
+        ],
+        "probe_magnitudes": [
+          0.004,
+          0.008,
+          0.016,
+          0.032,
+          0.064,
+          0.128,
+          0.256,
+          0.512
+        ],
+        "reference": "geodesic-flow-central-difference",
+        "established": true,
+        "closed_form_chord_bound": 0.154919333848,
+        "chord_bound_relative_error": 0.000898147101272,
+        "intrinsic_bound": 0.154919333848,
+        "chord_term_tightening": 1.0
+      },
+      {
+        "case": "pseudosphere",
+        "constant_curvature": true,
+        "error_at_bound": 0.00101257853617,
+        "bound_consistency": 0.0125785361721,
+        "relative_tolerance": 0.001,
+        "max_heading": 0.0663051309579,
+        "max_lateral": 0.0732215163347,
+        "probe_limited": false,
+        "probe_limited_directions": [],
+        "heading_bound_is_measured": true,
+        "pointwise_error": 0.0557659068931,
+        "route_error": 0.0557659068931,
+        "directions": [
+          "lateral",
+          "heading"
+        ],
+        "probe_magnitudes": [
+          0.004,
+          0.008,
+          0.016,
+          0.032,
+          0.064,
+          0.128,
+          0.256,
+          0.512
+        ],
+        "reference": "geodesic-flow-central-difference",
+        "established": true,
+        "closed_form_chord_bound": 0.0658356523497,
+        "chord_bound_relative_error": 0.00713106943445,
+        "intrinsic_bound": 0.154919333848,
+        "chord_term_tightening": 0.424967308562
+      },
+      {
+        "case": "saddle",
+        "constant_curvature": false,
+        "error_at_bound": 0.000999930647421,
+        "bound_consistency": 6.93525785994e-05,
+        "relative_tolerance": 0.001,
+        "max_heading": 0.128521254663,
+        "max_lateral": 0.150844310151,
+        "probe_limited": false,
+        "probe_limited_directions": [],
+        "heading_bound_is_measured": true,
+        "pointwise_error": 0.0158795011732,
+        "route_error": 0.0158795011732,
+        "directions": [
+          "lateral",
+          "heading"
+        ],
+        "probe_magnitudes": [
+          0.004,
+          0.008,
+          0.016,
+          0.032,
+          0.064,
+          0.128,
+          0.256,
+          0.512
+        ],
+        "reference": "geodesic-flow-central-difference",
+        "established": true,
+        "closed_form_chord_bound": 0.0899036920199,
+        "chord_bound_relative_error": 0.429543679197,
+        "intrinsic_bound": 0.154919333848,
+        "chord_term_tightening": 0.580325836593
+      },
+      {
+        "case": "torus",
+        "constant_curvature": false,
+        "error_at_bound": 0.00101244063723,
+        "bound_consistency": 0.0124406372297,
+        "relative_tolerance": 0.001,
+        "max_heading": 0.0972400599916,
+        "max_lateral": 0.287539654038,
+        "probe_limited": false,
+        "probe_limited_directions": [],
+        "heading_bound_is_measured": true,
+        "pointwise_error": 0.0256212366793,
+        "route_error": 0.0256212366793,
+        "directions": [
+          "lateral",
+          "heading"
+        ],
+        "probe_magnitudes": [
+          0.004,
+          0.008,
+          0.016,
+          0.032,
+          0.064,
+          0.128,
+          0.256,
+          0.512
+        ],
+        "reference": "geodesic-flow-central-difference",
+        "established": true,
+        "closed_form_chord_bound": 0.103198622426,
+        "chord_bound_relative_error": 0.0577387788154,
+        "intrinsic_bound": 0.154919333848,
+        "chord_term_tightening": 0.666144243345
+      }
+    ],
+    "observability_forms": {
+      "case": "spherical-cap",
+      "step_counts": [
+        200,
+        400,
+        800
+      ],
+      "stacked_versus_integral_gaps": [
+        0.00629627192201,
+        0.00316172434453,
+        0.00158427956165
+      ],
+      "gap_halving_ratios": [
+        1.99140444767,
+        1.99568587582
+      ],
+      "worst_halving_error": 0.00859555232713,
+      "finest_gap": 0.00158427956165,
+      "condition_number": 60.697574432,
+      "white_information": 108938.391799,
+      "correlated_information": 7358.3896642,
+      "correlated_over_white": 0.0675463401168,
+      "interval_additivity_error": 0.0,
+      "note": "the integral form treats R as a noise density and the stacked form as the covariance of the measurements taken; only the second admits a correlated R, which is what a filter produces"
     },
     "chart_rescaling_invariance": {
       "surface": "torus(R=2, r=1)",
@@ -16179,6 +16572,174 @@
       "passed": true
     },
     {
+      "id": "validity-envelope-established/plate",
+      "statement": "the range over which the linear map holds is measured against the geodesic flow, central-differenced, rather than asserted",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-bound-is-self-consistent/plate",
+      "statement": "and re-probing at exactly the bound the fit chose costs the declared tolerance -- which needs no closed form, so it is the check that reaches the varying-curvature surfaces",
+      "value": 0.000245581508979,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-matches-the-chord-form/plate",
+      "statement": "and where K is constant it reproduces sqrt(24 tol / max(a^2 + kappa_n^2 b^2)), the second-order coefficient of an ambient chord -- which is the quantity the probe measures, and not the intrinsic one",
+      "value": 0.000272895837507,
+      "threshold": 0.02,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-established/rolled-sheet",
+      "statement": "the range over which the linear map holds is measured against the geodesic flow, central-differenced, rather than asserted",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-bound-is-self-consistent/rolled-sheet",
+      "statement": "and re-probing at exactly the bound the fit chose costs the declared tolerance -- which needs no closed form, so it is the check that reaches the varying-curvature surfaces",
+      "value": 0.00143643035233,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-matches-the-chord-form/rolled-sheet",
+      "statement": "and where K is constant it reproduces sqrt(24 tol / max(a^2 + kappa_n^2 b^2)), the second-order coefficient of an ambient chord -- which is the quantity the probe measures, and not the intrinsic one",
+      "value": 0.00118713907875,
+      "threshold": 0.02,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-established/spherical-cap",
+      "statement": "the range over which the linear map holds is measured against the geodesic flow, central-differenced, rather than asserted",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-bound-is-self-consistent/spherical-cap",
+      "statement": "and re-probing at exactly the bound the fit chose costs the declared tolerance -- which needs no closed form, so it is the check that reaches the varying-curvature surfaces",
+      "value": 0.00208598271513,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-matches-the-chord-form/spherical-cap",
+      "statement": "and where K is constant it reproduces sqrt(24 tol / max(a^2 + kappa_n^2 b^2)), the second-order coefficient of an ambient chord -- which is the quantity the probe measures, and not the intrinsic one",
+      "value": 0.000898147101272,
+      "threshold": 0.02,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-established/pseudosphere",
+      "statement": "the range over which the linear map holds is measured against the geodesic flow, central-differenced, rather than asserted",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-bound-is-self-consistent/pseudosphere",
+      "statement": "and re-probing at exactly the bound the fit chose costs the declared tolerance -- which needs no closed form, so it is the check that reaches the varying-curvature surfaces",
+      "value": 0.0125785361721,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-matches-the-chord-form/pseudosphere",
+      "statement": "and where K is constant it reproduces sqrt(24 tol / max(a^2 + kappa_n^2 b^2)), the second-order coefficient of an ambient chord -- which is the quantity the probe measures, and not the intrinsic one",
+      "value": 0.00713106943445,
+      "threshold": 0.02,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-established/saddle",
+      "statement": "the range over which the linear map holds is measured against the geodesic flow, central-differenced, rather than asserted",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-bound-is-self-consistent/saddle",
+      "statement": "and re-probing at exactly the bound the fit chose costs the declared tolerance -- which needs no closed form, so it is the check that reaches the varying-curvature surfaces",
+      "value": 6.93525785994e-05,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-established/torus",
+      "statement": "the range over which the linear map holds is measured against the geodesic flow, central-differenced, rather than asserted",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-bound-is-self-consistent/torus",
+      "statement": "and re-probing at exactly the bound the fit chose costs the declared tolerance -- which needs no closed form, so it is the check that reaches the varying-curvature surfaces",
+      "value": 0.0124406372297,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-chord-term-is-visible",
+      "statement": "the rolled sheet has the plate's transfer map to 1e-13 and a tighter validity envelope, because the measurement is a chord and a cylinder has a transverse normal curvature the plate does not",
+      "value": 0.843172828092,
+      "threshold": 0.95,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "validity-envelope-is-intrinsic-where-the-chord-adds-nothing",
+      "statement": "and on the plate and the spherical cap it is not: a^2 + kappa_n^2 b^2 is one on both, from zero normal curvature and from an umbilic point respectively",
+      "value": 0.0,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "gramian-stacked-agrees-with-the-integral-form",
+      "statement": "A^T R^-1 A times the sample spacing approaches the integral Gramian, with the discrepancy halving as the sampling doubles -- the two are different objects and this is the conversion between them",
+      "value": 0.00859555232713,
+      "threshold": 0.1,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "gramian-correlated-noise-carries-less",
+      "statement": "a correlated R carries strictly less information than an independent one of the same variance; the integral form cannot express the difference and would count information that was never collected",
+      "value": 0.0675463401168,
+      "threshold": 0.5,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "gramian-intervals-add-up",
+      "statement": "information accumulated over two abutting intervals is the information over their union, with the endpoints interpolated rather than snapped to the grid",
+      "value": 0.0,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
       "id": "surface-chart-orthogonality-rescaling-invariant",
       "statement": "reparameterising a coordinate does not change how orthogonal the chart is, so the conditioning number measures the chart and not the parameterisation",
       "value": 1.32649446982e-12,
@@ -16276,12 +16837,12 @@
     }
   ],
   "summary": {
-    "n_checks": 181,
+    "n_checks": 202,
     "n_failed": 0,
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "ee87e4b2b12de161d83fe17d9015f2542d0b40c224b06c87f79139ade5747ed6",
+  "content_hash": "531bc95dbff195855b1682231d9b6bd6927e953f478e7be2bb5d14fe5b860cfa",
   "environment": {
     "package_version": "0.2.1",
     "python": "3.11.15",

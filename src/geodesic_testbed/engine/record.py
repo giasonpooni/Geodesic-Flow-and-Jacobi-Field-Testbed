@@ -93,7 +93,9 @@ __all__ = [
     "CalibrationBinding",
     "ChartValidity",
     "ConvergenceEstimate",
-    "FirstOrderValidity",
+    "PERTURBATION_DIRECTIONS",
+    "VALIDITY_REFERENCES",
+    "ValidityEnvelope",
     "GeometryUncertainty",
     "PathGeometry",
     "Provenance",
@@ -133,30 +135,211 @@ class Resolution:
         return asdict(self) | {"convergence": self.convergence.to_dict()}
 
 
-@dataclass(frozen=True)
-class FirstOrderValidity:
-    """The perturbation range over which the linear map is declared to hold.
+#: How a validity envelope was arrived at. The prefix ``not-established``
+#: marks the honest answer rather than a missing one.
+VALIDITY_REFERENCES: tuple[str, ...] = (
+    "closed-form",
+    "geodesic-flow-central-difference",
+    "declared-by-caller",
+    "none",
+)
 
-    ``basis`` says how the range was arrived at, and is the field that makes
-    the others readable: a bound measured against an exact finite separation
-    means something different from one a caller asserted.
+#: The two columns of ``Phi``, which is what a perturbation direction is.
+PERTURBATION_DIRECTIONS: tuple[str, ...] = ("lateral", "heading")
+
+
+@dataclass(frozen=True)
+class ValidityEnvelope:
+    """How far from the nominal path the linear map is declared to hold.
+
+    ``Phi dz0`` is the first term of a series, and the second term is the same
+    order as the effect most campaigns here are trying to resolve. So the
+    question "over what range of starting errors is this map the answer" is
+    not a caveat, it is a number -- and a number with no statement of how it
+    was obtained is not usable: a bound measured against an independently
+    flowed finite separation means something entirely different from one a
+    caller asserted.
+
+    Four things make the range readable and each is carried:
+
+    *which perturbation* -- ``directions`` says whether the heading column, the
+    lateral column or both were exercised. A bound established by perturbing
+    only the heading says nothing about ``a``, and the two focus in different
+    places;
+
+    *against what* -- ``reference`` and ``reference_digest`` name the nonlinear
+    computation the linear map was compared with. The geodesic flow itself is
+    the reference on a parametric surface: it never touches the Jacobi
+    equation, so it is a genuinely independent measurement of the same
+    quantity;
+
+    *to what error, chosen how* -- ``relative_tolerance`` with
+    ``tolerance_basis``. A tolerance picked after seeing the residuals is not
+    a tolerance;
+
+    *how well it was computed* -- ``convergence``. An envelope whose own
+    numerics are not resolved is a bound on the solver, not on the
+    linearisation.
+
+    ``pointwise_error`` and ``route_error`` are kept apart. The first is the
+    worst relative departure at any single arc length; the second is over the
+    whole route. A path can be linear everywhere and still accumulate, and a
+    campaign that plans to a route-level figure while measuring pointwise is
+    comparing two different numbers.
     """
 
     basis: str
+    observation_mode: str = DEFAULT_MODE
     relative_tolerance: float | None = None
+    tolerance_basis: str = "not-declared"
     max_lateral: float | None = None
     max_heading: float | None = None
+    directions: tuple[str, ...] = ()
+    probe_magnitudes: tuple[float, ...] = ()
+    pointwise_error: float | None = None
+    route_error: float | None = None
+    #: The directions whose bound is the end of the probe ladder rather than
+    #: where the linearisation fails. Per direction and not a single flag,
+    #: because on an intrinsically flat surface the lateral column is exact --
+    #: the fitted quadratic coefficient is roundoff and the extrapolated bound
+    #: is meaningless -- while the heading column is measured normally. What
+    #: was established for the first is that it held out to the largest
+    #: perturbation tested, and a boolean over the whole envelope would have
+    #: to say that about both.
+    probe_limited_directions: tuple[str, ...] = ()
+    reference: str = "none"
+    reference_digest: str = ""
+    convergence: ConvergenceEstimate = field(
+        default_factory=lambda: ConvergenceEstimate.not_established(
+            "no step-doubling comparison was run on the validity probe"
+        )
+    )
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        if self.reference not in VALIDITY_REFERENCES:
+            raise ValueError(f"reference must be one of {VALIDITY_REFERENCES}")
+        for direction in self.directions:
+            if direction not in PERTURBATION_DIRECTIONS:
+                raise ValueError(f"directions must be drawn from {PERTURBATION_DIRECTIONS}")
+        for direction in self.probe_limited_directions:
+            if direction not in self.directions:
+                raise ValueError(
+                    f"{direction!r} is marked probe-limited but was never exercised"
+                )
+        for name in ("relative_tolerance", "max_lateral", "max_heading",
+                     "pointwise_error", "route_error"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            number = float(value)
+            if not np.isfinite(number) or number < 0.0:
+                raise ValueError(f"{name} must be finite and nonnegative")
+            object.__setattr__(self, name, number)
+        if self.established:
+            if not self.directions:
+                raise ValueError(
+                    "an established envelope must say which perturbation directions "
+                    "were exercised; one that perturbs only the heading measures b "
+                    "and says nothing about a"
+                )
+            if self.relative_tolerance is None:
+                raise ValueError(
+                    "an established envelope must carry the error tolerance it was "
+                    "established against; a range with no error is not a range"
+                )
+            if self.tolerance_basis in ("", "not-declared"):
+                raise ValueError(
+                    "an established envelope must say how its tolerance was chosen; "
+                    "a tolerance picked after seeing the residuals is not a tolerance"
+                )
+        object.__setattr__(self, "directions", tuple(self.directions))
+        object.__setattr__(
+            self, "probe_limited_directions", tuple(self.probe_limited_directions)
+        )
+        object.__setattr__(
+            self, "probe_magnitudes", tuple(float(value) for value in self.probe_magnitudes)
+        )
+
+    @property
+    def probe_limited(self) -> bool:
+        """Whether any direction's bound is the ladder's end rather than a limit."""
+        return bool(self.probe_limited_directions)
+
+    def bound_is_measured(self, direction: str) -> bool:
+        """Whether this direction's bound is where the linearisation actually fails."""
+        return direction in self.directions and direction not in self.probe_limited_directions
 
     @classmethod
-    def not_established(cls, why: str) -> FirstOrderValidity:
+    def not_established(cls, why: str) -> ValidityEnvelope:
         return cls(basis=f"not-established: {why}")
 
     @property
     def established(self) -> bool:
         return not self.basis.startswith("not-established")
 
+    def admits(self, lateral: float, heading: float) -> bool:
+        """Whether a starting-pose error is inside the declared envelope.
+
+        An undeclared bound does not admit anything. That is deliberate: the
+        alternative reading -- an absent bound as no limit -- turns "we never
+        checked" into "it always holds", which is the one substitution this
+        field exists to prevent.
+        """
+        if not self.established:
+            return False
+        for name, value, bound in (
+            ("lateral", abs(float(lateral)), self.max_lateral),
+            ("heading", abs(float(heading)), self.max_heading),
+        ):
+            if value == 0.0:
+                continue
+            if name not in self.directions or bound is None or value > bound:
+                return False
+        return True
+
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self) | {"established": self.established}
+        return {
+            "basis": self.basis,
+            "established": self.established,
+            "observation_mode": self.observation_mode,
+            "relative_tolerance": self.relative_tolerance,
+            "tolerance_basis": self.tolerance_basis,
+            "max_lateral": self.max_lateral,
+            "max_heading": self.max_heading,
+            "directions": list(self.directions),
+            "probe_magnitudes": list(self.probe_magnitudes),
+            "pointwise_error": self.pointwise_error,
+            "route_error": self.route_error,
+            "probe_limited": self.probe_limited,
+            "probe_limited_directions": list(self.probe_limited_directions),
+            "reference": self.reference,
+            "reference_digest": self.reference_digest,
+            "convergence": self.convergence.to_dict(),
+            "note": self.note,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> ValidityEnvelope:
+        if not payload:
+            return cls.not_established("no declaration supplied")
+        return cls(
+            basis=str(payload.get("basis", "not-established: no declaration supplied")),
+            observation_mode=str(payload.get("observation_mode", DEFAULT_MODE)),
+            relative_tolerance=payload.get("relative_tolerance"),
+            tolerance_basis=str(payload.get("tolerance_basis", "not-declared")),
+            max_lateral=payload.get("max_lateral"),
+            max_heading=payload.get("max_heading"),
+            directions=tuple(payload.get("directions", ())),
+            probe_magnitudes=tuple(payload.get("probe_magnitudes", ())),
+            pointwise_error=payload.get("pointwise_error"),
+            route_error=payload.get("route_error"),
+            probe_limited_directions=tuple(payload.get("probe_limited_directions", ())),
+            reference=str(payload.get("reference", "none")),
+            reference_digest=str(payload.get("reference_digest", "")),
+            convergence=ConvergenceEstimate.from_dict(payload.get("convergence")),
+            note=str(payload.get("note", "")),
+        )
 
 
 @runtime_checkable
@@ -182,8 +365,8 @@ class TransferRecord:
     resolution: Resolution = field(
         default_factory=lambda: Resolution("unspecified", 0, float("nan"), False)
     )
-    validity: FirstOrderValidity = field(
-        default_factory=lambda: FirstOrderValidity.not_established("no declaration supplied")
+    validity: ValidityEnvelope = field(
+        default_factory=lambda: ValidityEnvelope.not_established("no declaration supplied")
     )
     observation_mode: str = DEFAULT_MODE
     domain: str = "constant-curvature"
@@ -504,12 +687,7 @@ class TransferRecord:
                 uniform=bool(resolution.get("uniform", False)),
                 convergence=ConvergenceEstimate.from_dict(resolution.get("convergence")),
             ),
-            validity=FirstOrderValidity(
-                basis=str(validity.get("basis", "not-established: no declaration supplied")),
-                relative_tolerance=validity.get("relative_tolerance"),
-                max_lateral=validity.get("max_lateral"),
-                max_heading=validity.get("max_heading"),
-            ),
+            validity=ValidityEnvelope.from_dict(validity),
             observation_mode=str(payload.get("observation_mode", DEFAULT_MODE)),
             domain=str(payload.get("domain", "constant-curvature")),
             covariance=StartingCovariance.from_dict(payload.get("covariance")),

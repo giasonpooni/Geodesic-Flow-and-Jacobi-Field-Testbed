@@ -5,7 +5,7 @@ a closed form. A real workpiece has none. What replaces it?
 
 Produced by `python examples/run_experiment.py --stage surfaces` and recorded
 in [`validation/report-v2-surfaces.json`](../validation/report-v2-surfaces.json)
-under schema `geodesic-jacobi-surfaces-v3`: **181 declared checks, 0 failed.**
+under schema `geodesic-jacobi-surfaces-v3`: **202 declared checks, 0 failed.**
 
 ![Curvature-aware path sensitivity on surfaces where the curvature varies](../figures/surfaces-testbed-v1.png)
 

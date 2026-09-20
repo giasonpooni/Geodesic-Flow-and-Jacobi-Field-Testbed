@@ -35,6 +35,12 @@ from .engine.contract import (
     StartingCovariance,
     UpstreamArtefact,
 )
+from .engine.envelope import VALIDITY_PROBES, measure_validity_envelope
+from .engine.imported_path import (
+    artefact_from_envelope,
+    transfer_map_from_artefact,
+    transfer_record_from_artefact,
+)
 from .engine.measurement import (
     MEASUREMENT_SCHEMA,
     MeasurementRecord,
@@ -51,17 +57,36 @@ from .engine.observation_model import (
     filtered_noise_covariance,
     operator_digest,
 )
+from .engine.output_covariance import (
+    BLOCKS,
+    LatentTruth,
+    NoiseModel,
+    OutputCovariance,
+    SharedParameters,
+    assemble,
+    chi_square_cdf,
+    chi_square_quantile,
+    registration_parameter,
+    stacked_operator,
+)
+from .engine.path_artefact import (
+    PATH_GEOMETRY_SCHEMA,
+    PathGeometryArtefact,
+    SamplingPolicy,
+)
 from .engine.planning import (
     ChartBoundary,
     Objective,
     Observability,
     ObstacleDiscs,
+    StackedObservability,
     combined_clearance,
     heading_fan,
     observability_gramian,
     offset_courses,
     pareto_front,
     route_label,
+    stacked_observability,
     weighted_cost,
 )
 from .engine.prediction import (
@@ -80,11 +105,11 @@ from .engine.prediction import (
 from .engine.record import (
     RECORD_SCHEMA,
     SUPPORTED_RECORD_SCHEMAS,
-    FirstOrderValidity,
     Resolution,
     SupportsTransferRecord,
     TransferRecord,
     Units,
+    ValidityEnvelope,
     to_transfer_record,
 )
 from .engine.routing import (
@@ -177,7 +202,7 @@ __all__ = [
     "Chart",
     "ConstraintMargin",
     "CoverageSpec",
-    "FirstOrderValidity",
+    "ValidityEnvelope",
     "FocusEvent",
     "MeasurementRecord",
     "ObservationModel",
@@ -212,6 +237,26 @@ __all__ = [
     "constant_curvature_trace",
     "finite_angular_separation",
     "integrate_jacobi",
+    "BLOCKS",
+    "LatentTruth",
+    "NoiseModel",
+    "OutputCovariance",
+    "PATH_GEOMETRY_SCHEMA",
+    "PathGeometryArtefact",
+    "SamplingPolicy",
+    "SharedParameters",
+    "StackedObservability",
+    "VALIDITY_PROBES",
+    "artefact_from_envelope",
+    "assemble",
+    "chi_square_cdf",
+    "chi_square_quantile",
+    "measure_validity_envelope",
+    "registration_parameter",
+    "stacked_observability",
+    "stacked_operator",
+    "transfer_map_from_artefact",
+    "transfer_record_from_artefact",
 ]
 
 __version__ = RUNTIME_VERSION

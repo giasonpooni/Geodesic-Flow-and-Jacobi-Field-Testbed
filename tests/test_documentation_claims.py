@@ -68,6 +68,43 @@ QUOTED_BOUNDS = (
     ("README.md", "580", 580.0, ">=", ("imported-path-interpolation-matters",)),
     ("README.md", "4.4e-13", 4.4e-13, "<=", ("imported-path-anchor",)),
     ("README.md", "2.5e-14", 2.5e-14, "<=", ("imported-path-determinant",)),
+    # The validity envelope: a ceiling on how far the measured bound is from the
+    # closed form where one exists, and on the self-consistency residual where
+    # one does not.
+    (
+        "docs/BOUNDARY.md",
+        "0.72%",
+        0.0072,
+        "<=",
+        ("validity-envelope-matches-the-chord-form",),
+    ),
+    ("README.md", "0.72%", 0.0072, "<=", ("validity-envelope-matches-the-chord-form",)),
+    (
+        "docs/BOUNDARY.md",
+        "1.3%",
+        0.013,
+        "<=",
+        ("validity-envelope-bound-is-self-consistent",),
+    ),
+    ("README.md", "1.3%", 0.013, "<=", ("validity-envelope-bound-is-self-consistent",)),
+    # The cylinder's envelope is tighter than the plate's; the prose says
+    # 15.7%, so the ratio must be at or below 0.8432.
+    (
+        "docs/BOUNDARY.md",
+        "15.7% tighter",
+        0.8432,
+        "<=",
+        ("validity-envelope-chord-term-is-visible",),
+    ),
+    # A correlated R carries 6.8% of an independent one's information.
+    (
+        "docs/BOUNDARY.md",
+        "6.8% of the information",
+        0.068,
+        "<=",
+        ("gramian-correlated-noise-carries-less",),
+    ),
+    ("README.md", "6.8%", 0.068, "<=", ("gramian-correlated-noise-carries-less",)),
 )
 
 

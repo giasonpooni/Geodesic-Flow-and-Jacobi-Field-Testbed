@@ -33,10 +33,10 @@ import numpy as np
 from .contract import validated_covariance
 from .integrators import get_integrator, integrate, integrate_guarded
 from .record import (
+    PERTURBATION_DIRECTIONS,
     CalibrationBinding,
     ChartValidity,
     ConvergenceEstimate,
-    FirstOrderValidity,
     GeometryUncertainty,
     PathGeometry,
     Provenance,
@@ -45,6 +45,7 @@ from .record import (
     TransferRecord,
     Units,
     UpstreamArtefact,
+    ValidityEnvelope,
     digest,
 )
 from .surfaces import ParametricSurface, darboux_frame
@@ -285,7 +286,7 @@ class PathEnvelope:
         *,
         units: Units | None = None,
         observation_mode: str = "ambient-euclidean-chord",
-        validity: FirstOrderValidity | None = None,
+        validity: ValidityEnvelope | None = None,
         covariance: StartingCovariance | None = None,
         calibration: CalibrationBinding | None = None,
         upstream: tuple[UpstreamArtefact, ...] = (),
@@ -359,7 +360,7 @@ class PathEnvelope:
                 ),
             ),
             validity=validity
-            or FirstOrderValidity.not_established(
+            or ValidityEnvelope.not_established(
                 "no closed form for the eps^2 coefficient on a varying-curvature surface"
             ),
             observation_mode=observation_mode,
@@ -921,3 +922,200 @@ def estimate_convergence(
         covariance=covariance,
         note=note,
     )
+
+
+#: The ladder of *perturbation magnitudes* the validity probe walks -- the
+#: separation between the two starting poses, not the half-separation the
+#: central difference takes. That distinction is a factor of four in the
+#: fitted coefficient and a factor of two in the bound, and getting it wrong
+#: would make the measured envelope disagree with the closed form by exactly
+#: that. Geometric, so the ``eps^2`` law can be fitted rather than assumed, and
+#: spanning the range a real perturbation lives in: a quarter of a degree to
+#: fifteen degrees of heading.
+VALIDITY_PROBES: tuple[float, ...] = (
+    0.004,
+    0.008,
+    0.016,
+    0.032,
+    0.064,
+    0.128,
+    0.256,
+    0.512,
+)
+
+
+def measure_validity_envelope(
+    surface: ParametricSurface,
+    *,
+    u0: float,
+    v0: float,
+    heading: float,
+    length: float,
+    n_steps: int,
+    relative_tolerance: float,
+    tolerance_basis: str,
+    probes: tuple[float, ...] = VALIDITY_PROBES,
+    directions: tuple[str, ...] = PERTURBATION_DIRECTIONS,
+    method: str = "rk4",
+    source_digest: str = "",
+    observation_mode: str = "ambient-euclidean-chord",
+) -> ValidityEnvelope:
+    """The largest perturbation the linear map holds to, measured not asserted.
+
+    The reference is the geodesic flow itself, central-differenced. It never
+    touches the Jacobi equation, so it is an independent computation of the
+    same quantity rather than a rearrangement of the one being checked.
+
+    Both columns are exercised, because they are different questions: a fan of
+    headings probes ``b`` and a set of laterally displaced starts probes ``a``,
+    and the two focus in different places. An envelope established from the
+    heading alone would be a bound on one column presented as a bound on the
+    map.
+
+    The admitted magnitude is *fitted* rather than read off the ladder. The
+    relative error goes as ``C eps^2``, so ``C`` is fitted over the probes that
+    are still in that regime and the bound is ``sqrt(tolerance / C)``.
+    Reporting the largest rung that happened to pass would quantise the answer
+    to the ladder and would round the wrong way -- upwards, admitting a
+    perturbation that was never tested.
+
+    It is then clipped to the end of the ladder, and ``probe_limited`` says so.
+    On an intrinsically flat surface the lateral column is exact, the fitted
+    coefficient is roundoff, and the extrapolated bound comes out in the
+    hundreds of radians. What was established there is that the linearisation
+    held out to the largest perturbation tested; extrapolating four orders
+    beyond the data is not a measurement.
+
+    The measured quantity is an ambient chord on both sides, which is why the
+    mode is carried: comparing a chord with an in-surface separation differs at
+    exactly the order this is measuring.
+    """
+    for direction in directions:
+        if direction not in PERTURBATION_DIRECTIONS:
+            raise ValueError(f"directions must be drawn from {PERTURBATION_DIRECTIONS}")
+    if not directions:
+        raise ValueError("a validity envelope must exercise at least one column")
+    tolerance = float(relative_tolerance)
+    if not np.isfinite(tolerance) or tolerance <= 0.0:
+        raise ValueError("relative_tolerance must be finite and positive")
+    if not tolerance_basis or tolerance_basis == "not-declared":
+        raise ValueError(
+            "a validity envelope must say how its tolerance was chosen before it is "
+            "measured, not after"
+        )
+    probes = tuple(float(value) for value in probes)
+    if len(probes) < 3:
+        raise ValueError("fitting the eps^2 coefficient needs at least three probes")
+
+    envelope = integrate_paths(
+        surface,
+        u0=u0,
+        v0=v0,
+        headings=[heading],
+        length=length,
+        n_steps=n_steps,
+        method=method,
+        on_chart_exit="truncate",
+    )[0]
+    transfer = envelope.transfer_map
+    predicted = {"heading": np.abs(transfer.b), "lateral": np.abs(transfer.a)}
+    measure = {
+        "heading": finite_difference_jacobi,
+        "lateral": finite_difference_lateral,
+    }
+
+    bounds: dict[str, float] = {}
+    limited: dict[str, bool] = {}
+    pointwise = 0.0
+    route = 0.0
+    for direction in directions:
+        grid, measured = measure[direction](
+            surface,
+            u0=u0,
+            v0=v0,
+            heading=heading,
+            # The declared magnitudes are separations; a central difference
+            # straddles the nominal, so each side is half of one.
+            epsilon=0.5 * np.asarray(probes),
+            length=length,
+            n_steps=n_steps,
+            method=method,
+        )
+        reference = predicted[direction][: grid.size]
+        scale = np.maximum(np.abs(reference), np.max(np.abs(reference)) * 1e-12)
+        relative = np.abs(measured[: grid.size] - reference[:, None]) / scale[:, None]
+        worst = np.max(relative, axis=0)
+        at_end = relative[-1]
+
+        fitted = _fitted_admissible(probes, worst, tolerance)
+        bounds[direction] = min(fitted, max(probes))
+        limited[direction] = fitted > max(probes)
+        pointwise = max(pointwise, float(np.max(worst)))
+        route = max(route, float(np.max(at_end)))
+
+    return ValidityEnvelope(
+        basis=(
+            "measured: the linear map against the geodesic flow, central-differenced, "
+            f"with the eps^2 coefficient fitted over {len(probes)} probes"
+        ),
+        observation_mode=observation_mode,
+        relative_tolerance=tolerance,
+        tolerance_basis=tolerance_basis,
+        max_lateral=bounds.get("lateral"),
+        max_heading=bounds.get("heading"),
+        directions=tuple(directions),
+        probe_magnitudes=probes,
+        pointwise_error=pointwise,
+        route_error=route,
+        probe_limited_directions=tuple(
+            direction for direction, clipped in limited.items() if clipped
+        ),
+        reference="geodesic-flow-central-difference",
+        reference_digest=source_digest,
+        convergence=estimate_convergence(envelope),
+        note=(
+            f"{surface.name}; the bound is where the fitted quadratic term reaches the "
+            "declared tolerance, not the largest probe that happened to pass"
+            + (
+                ". It is clipped to the end of the ladder here: the linearisation held "
+                "to the tolerance across every probe, so what was established is that "
+                "it holds that far, not how much further"
+                if any(limited.values())
+                else ""
+            )
+        ),
+    )
+
+
+def _fitted_admissible(probes: tuple[float, ...], errors, tolerance: float) -> float:
+    """``sqrt(tolerance / C)`` with ``C`` fitted on the probes still in the ``eps^2`` regime.
+
+    Probes whose error has already left the quadratic law -- either into the
+    higher-order terms at the top of the ladder or into the differencing floor
+    at the bottom -- would bias ``C``, so the fit uses the probes whose local
+    slope in log-log is within a quarter of two. If too few survive, the
+    smallest probe carries the fit on its own, which is the conservative
+    reading: it gives the largest ``C`` the data supports.
+    """
+    magnitudes = np.asarray(probes, dtype=float)
+    values = np.asarray(errors, dtype=float)
+    usable = values > 0.0
+    if not np.any(usable):
+        return float(magnitudes[-1])
+    logs = np.log(values[usable])
+    steps = np.log(magnitudes[usable])
+    slopes = np.gradient(logs, steps)
+    quadratic = usable.copy()
+    quadratic[usable] = np.abs(slopes - 2.0) < 0.5
+    if np.count_nonzero(quadratic) < 2:
+        index = int(np.argmax(usable))
+        coefficient = values[index] / magnitudes[index] ** 2
+    else:
+        coefficient = float(
+            np.exp(
+                np.mean(np.log(values[quadratic]) - 2.0 * np.log(magnitudes[quadratic]))
+            )
+        )
+    if coefficient <= 0.0:  # pragma: no cover - guard
+        return float(magnitudes[-1])
+    return float(np.sqrt(float(tolerance) / coefficient))

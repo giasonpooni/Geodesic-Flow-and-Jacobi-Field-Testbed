@@ -38,7 +38,7 @@ drift is therefore a free measure of how well it is integrating.
 
 ## Verification
 
-**324 declared checks across two stages, 0 failed.** Every number below has a
+**345 declared checks across two stages, 0 failed.** Every number below has a
 threshold attached in `engine/experiment.py` or `engine/experiment_surfaces.py`,
 and the committed reports are regenerated and compared in CI.
 
@@ -86,6 +86,8 @@ form left, four things replace it:
 | **the uncertainty budget's curvature term** — `dj(s) = -∫ G(s,t) dK j(t) dt` through the Jacobi Green's function | reproduces an actual re-integration at the perturbed curvature, with the residual falling linearly in `dK` (order 1.000) — so it is the derivative, not something close to it |
 | **the inbound boundary** — a path handed over as a `path-geometry-v1` file, written to JSON and read back | still reproduces `s`, `s`, `sin s`, `sinh s` through the adapter to 4.4e-13 or better, and the record it produces holds `det Phi = 1` to 2.5e-14 |
 | **the declared curvature interpolation** — which curve fills `K` between the producer's samples | a numerical choice with an order: monotone cubic 3.8, piecewise-linear 1.9997, differing by a factor of 580 at the coarsest sampling in the ladder |
+| **the validity envelope** — where the linear map stops holding, probed against the geodesic flow itself | reproduces `sqrt(24 tol / max(a² + κₙ² b²))` to 0.72% or better wherever `K` is constant, and re-probing at the bound the fit chose costs the declared tolerance to 1.3% on every surface including the two with no closed form |
+| **the two forms of the observability Gramian** | `AᵀR⁻¹A` times the sample spacing approaches `∫ΦᵀHᵀR⁻¹HΦ ds`, the gap halving as the sampling doubles (ratios 1.991, 1.996); a correlated `R` carries 6.8% of the information an independent one of the same variance does |
 
 Three results worth stating plainly:
 
@@ -109,6 +111,11 @@ Three results worth stating plainly:
   alone** — 0.0, not 1e-16. The adapter reads arclength and curvature and never
   a position, so an adapter that had started differencing positions to recover
   a tangent would fail this check rather than pass it slightly worse.
+- **A rolled sheet has the plate's transfer map and not the plate's validity
+  envelope.** Identical intrinsic curvature, identical `Phi` to 1e-13, and an
+  envelope 15.7% tighter — because the measurement is an ambient chord and a
+  cylinder has a transverse normal curvature the plate does not. The
+  observation mode is usually stated as a warning; here it is a number.
 
 ### From the transfer map to something a sensor could have reported
 

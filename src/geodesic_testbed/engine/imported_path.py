@@ -44,7 +44,7 @@ from .path_artefact import (
     PathGeometryArtefact,
     SamplingPolicy,
 )
-from .record import Resolution, TransferRecord
+from .record import Resolution, TransferRecord, ValidityEnvelope
 from .transfer import TransferMap, transfer_from_trajectory, transfer_rhs
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -89,9 +89,16 @@ def transfer_record_from_artefact(
     observation_mode: str = "first-order-tangent-separation",
     covariance: StartingCovariance | None = None,
     convergence: ConvergenceEstimate | None = None,
+    validity: ValidityEnvelope | None = None,
     note: str = "",
 ) -> TransferRecord:
     """The record a consumer gets from an imported path.
+
+    The validity envelope is ``not-established`` and stays that way unless a
+    caller supplies one, because establishing it means flowing neighbouring
+    paths and the surface they would be flowed on stayed upstream. A producer
+    that measured the envelope on its own side passes it in; nobody here can
+    invent it.
 
     The domain is fixed at ``imported-path-artefact``. It is not a parametric
     surface -- there is no chart and no map to differentiate -- and it is not a
@@ -158,6 +165,15 @@ def transfer_record_from_artefact(
         units=artefact.units,
         source_digest=artefact.path_digest,
         resolution=resolution,
+        validity=validity
+        if validity is not None
+        else ValidityEnvelope.not_established(
+            "an imported artefact carries one path. Establishing where the linear "
+            "map stops holding means flowing neighbouring paths and central"
+            "-differencing them, and the surface those would be flowed on stayed "
+            "upstream -- so the range is unknown here, which is a true statement "
+            "and not a missing feature"
+        ),
         observation_mode=observation_mode,
         domain=ARTEFACT_DOMAIN,
         covariance=covariance if covariance is not None else StartingCovariance.not_declared(),

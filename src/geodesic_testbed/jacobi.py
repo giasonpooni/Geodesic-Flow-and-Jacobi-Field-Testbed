@@ -24,13 +24,13 @@ from numpy.typing import ArrayLike, NDArray
 from .engine.integrators import integrate_on_grid
 from .engine.record import (
     CalibrationBinding,
-    FirstOrderValidity,
     Provenance,
     Resolution,
     StartingCovariance,
     TransferRecord,
     Units,
     UpstreamArtefact,
+    ValidityEnvelope,
     digest,
 )
 from .engine.spaceforms import asin_k, sin_k
@@ -137,13 +137,22 @@ class JacobiTrace:
             limit = (
                 float(np.sqrt(24.0 * relative_tolerance) / worst) if worst > 0.0 else None
             )
-            validity = FirstOrderValidity(
+            validity = ValidityEnvelope(
                 basis="closed-form: relative error is cn_K(s)^2 eps^2 / 24",
                 relative_tolerance=float(relative_tolerance),
+                tolerance_basis="declared by the caller of as_transfer_record",
                 max_heading=limit,
+                directions=("heading",),
+                pointwise_error=float(relative_tolerance),
+                reference="closed-form",
+                note=(
+                    "the heading column only. The lateral column has its own "
+                    "coefficient and is not bounded by this, which is why the "
+                    "direction is named rather than assumed"
+                ),
             )
         else:
-            validity = FirstOrderValidity.not_established(
+            validity = ValidityEnvelope.not_established(
                 "curvature varies along the path; no closed-form eps^2 coefficient"
             )
         return TransferRecord(

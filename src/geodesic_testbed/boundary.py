@@ -103,12 +103,14 @@ from .engine.path_artefact import (
     SamplingPolicy,
 )
 from .engine.record import (
+    PERTURBATION_DIRECTIONS,
     RECORD_SCHEMA,
     SUPPORTED_RECORD_SCHEMAS,
-    FirstOrderValidity,
+    VALIDITY_REFERENCES,
     Resolution,
     SupportsTransferRecord,
     TransferRecord,
+    ValidityEnvelope,
     digest,
     to_transfer_record,
 )
@@ -258,7 +260,7 @@ __all__ = [
     "SUBSTRATE",
     "SUPPORTED_RECORD_SCHEMAS",
     "CalibrationBinding",
-    "FirstOrderValidity",
+    "ValidityEnvelope",
     "Frame",
     "Provenance",
     "Resolution",
@@ -285,5 +287,7 @@ __all__ = [
     "transfer_map_from_artefact",
     "transfer_record_from_artefact",
     "write_artefact",
+    "PERTURBATION_DIRECTIONS",
+    "VALIDITY_REFERENCES",
     "write_record",
 ]

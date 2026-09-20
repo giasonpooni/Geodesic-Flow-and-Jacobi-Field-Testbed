@@ -70,6 +70,7 @@ from .planning import (
     observability_gramian,
     offset_courses,
     pareto_front,
+    stacked_observability,
 )
 from .prediction import (
     chord_from_intrinsic,
@@ -1596,6 +1597,185 @@ def _rotation_matrix(axis: np.ndarray, angle: float) -> np.ndarray:
     return np.eye(3) + np.sin(angle) * cross + (1.0 - np.cos(angle)) * (cross @ cross)
 
 
+def measure_validity_envelopes(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
+    """Where the linear map stops holding, measured against the flow itself.
+
+    The anchor is the pair of surfaces where the ambient chord and the
+    in-surface separation have the same second-order coefficient: the plate,
+    where the normal curvature is zero and ``cn_K = 1``, and the spherical cap,
+    where every direction is principal with ``kappa_n = 1`` so
+    ``cos^2 + sin^2`` is one. Both coefficients are ``1/24`` and both bounds
+    must come out at ``sqrt(24 tol)``.
+
+    The rolled sheet is the interesting one. It has the plate's transfer map to
+    1e-13 and *not* the plate's envelope, because the measurement is a chord
+    and a cylinder has a transverse normal curvature. That gap is the
+    observation mode expressed as a number rather than as a warning.
+    """
+    from .envelope import (
+        VALIDITY_PROBES,
+        finite_difference_jacobi,
+        measure_validity_envelope,
+    )
+
+    tolerance = 1e-3
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        envelope = measure_validity_envelope(
+            case.surface,
+            u0=case.u0,
+            v0=case.v0,
+            heading=case.heading,
+            length=case.length,
+            n_steps=config.finite_difference_steps,
+            relative_tolerance=tolerance,
+            tolerance_basis="declared before the probe, at the pilot's metrology floor",
+            source_digest=f"surface:{case.surface.name}",
+        )
+        path = integrate_paths(
+            case.surface,
+            u0=case.u0,
+            v0=case.v0,
+            headings=[case.heading],
+            length=case.length,
+            n_steps=config.finite_difference_steps,
+        )[0]
+        geometry = path.path_geometry()
+        transfer = path.transfer_map
+        chord_coefficient = (
+            transfer.a**2 + geometry.normal_curvature_transverse**2 * transfer.b**2
+        )
+        predicted = float(np.sqrt(24.0 * tolerance / float(np.max(chord_coefficient))))
+        constant = bool(float(np.ptp(path.curvature)) < 1e-12)
+
+        # What the linearisation actually costs *at the bound the fit chose*.
+        # This needs no closed form, so it is the check that reaches the
+        # varying-curvature surfaces -- where the constant-curvature chord
+        # coefficient is simply not the right formula, and says so by being
+        # 43% out on the saddle.
+        bound = float(envelope.max_heading)
+        grid, measured = finite_difference_jacobi(
+            case.surface,
+            u0=case.u0,
+            v0=case.v0,
+            heading=case.heading,
+            epsilon=0.5 * bound,
+            length=case.length,
+            n_steps=config.finite_difference_steps,
+        )
+        reference = np.abs(transfer.b)[: grid.size]
+        scale = np.maximum(np.abs(reference), float(np.max(np.abs(reference))) * 1e-12)
+        error_at_bound = float(np.max(np.abs(measured[: grid.size] - reference) / scale))
+
+        rows.append(
+            {
+                "case": case.key,
+                "constant_curvature": constant,
+                "error_at_bound": error_at_bound,
+                "bound_consistency": abs(error_at_bound / tolerance - 1.0),
+                "relative_tolerance": tolerance,
+                "max_heading": envelope.max_heading,
+                "max_lateral": envelope.max_lateral,
+                "probe_limited": envelope.probe_limited,
+                "probe_limited_directions": list(envelope.probe_limited_directions),
+                "heading_bound_is_measured": envelope.bound_is_measured("heading"),
+                "pointwise_error": envelope.pointwise_error,
+                "route_error": envelope.route_error,
+                "directions": list(envelope.directions),
+                "probe_magnitudes": list(VALIDITY_PROBES),
+                "reference": envelope.reference,
+                "established": envelope.established,
+                "closed_form_chord_bound": predicted,
+                "chord_bound_relative_error": abs(envelope.max_heading - predicted) / predicted,
+                "intrinsic_bound": float(np.sqrt(24.0 * tolerance)),
+                "chord_term_tightening": predicted / float(np.sqrt(24.0 * tolerance)),
+            }
+        )
+    return rows
+
+
+def measure_observability_forms(config: SurfaceConfig, cases) -> dict[str, Any]:
+    """The integral Gramian and the stacked one, and what separates them.
+
+    ``int Phi^T H^T R^-1 H Phi ds`` needs the samples independent; ``A^T R^-1 A``
+    does not, and a filter makes them dependent. On a uniform grid with a
+    stationary ``R`` the two agree to first order in the spacing, and the
+    discrepancy halving as the sampling doubles is the declared check -- a
+    fixed tolerance would only describe one grid.
+
+    The correlated case is the one the integral form cannot express. Ranking
+    routes by it on filtered data counts information that was never collected.
+    """
+    from .output_covariance import NoiseModel
+
+    case = next(item for item in cases if item.key == "spherical-cap")
+    model = ObservationModel.transverse_only(5e-5, mode="ambient-euclidean-chord")
+    noise = NoiseModel.from_observation_model(model, basis="bench characterisation")
+    box = {"max_lateral": 2e-4, "max_heading": float(np.deg2rad(0.1))}
+
+    def record_at(n_steps: int):
+        envelope = integrate_paths(
+            case.surface,
+            u0=case.u0,
+            v0=case.v0,
+            headings=[case.heading],
+            length=case.length,
+            n_steps=n_steps,
+        )[0]
+        return envelope.as_transfer_record(
+            units=Units(length="metre", angle="radian"),
+            observation_mode="ambient-euclidean-chord",
+        )
+
+    counts = (200, 400, 800)
+    gaps = []
+    for n_steps in counts:
+        record = record_at(n_steps)
+        spacing = float(record.arclength[1] - record.arclength[0])
+        integral = observability_gramian(record, model, **box)
+        stacked = stacked_observability(record, model, noise, **box)
+        gaps.append(
+            abs(float(integral.total[0, 0] / (spacing * stacked.total[0, 0])) - 1.0)
+        )
+    halving = [coarse / fine for coarse, fine in zip(gaps, gaps[1:], strict=False)]
+
+    record = record_at(200)
+    samples = record.arclength.size
+    lag = np.exp(-np.abs(np.subtract.outer(np.arange(samples), np.arange(samples))) / 8.0)
+    correlated = NoiseModel(
+        blocks=5e-5**2 * lag,
+        structure="correlated",
+        outputs=("transverse",),
+        basis="a declared filter group delay",
+    )
+    white = stacked_observability(record, model, noise, **box)
+    smoothed = stacked_observability(record, model, correlated, **box)
+
+    integral = observability_gramian(record, model, **box)
+    halves = integral.over(
+        float(record.arclength[0]), 0.5 * float(record.arclength[-1])
+    ) + integral.over(0.5 * float(record.arclength[-1]), float(record.arclength[-1]))
+
+    return {
+        "case": case.key,
+        "step_counts": list(counts),
+        "stacked_versus_integral_gaps": [float(value) for value in gaps],
+        "gap_halving_ratios": [float(value) for value in halving],
+        "worst_halving_error": float(max(abs(value - 2.0) for value in halving)),
+        "finest_gap": float(gaps[-1]),
+        "condition_number": integral.condition_number,
+        "white_information": float(np.trace(white.total)),
+        "correlated_information": float(np.trace(smoothed.total)),
+        "correlated_over_white": float(np.trace(smoothed.total) / np.trace(white.total)),
+        "interval_additivity_error": float(np.max(np.abs(halves - integral.total))),
+        "note": (
+            "the integral form treats R as a noise density and the stacked form as "
+            "the covariance of the measurements taken; only the second admits a "
+            "correlated R, which is what a filter produces"
+        ),
+    }
+
+
 def measure_chart_rescaling_invariance(cases) -> dict[str, Any]:
     """The defect that retired ``sqrt(EG - F^2) / max(E, G)``.
 
@@ -2541,6 +2721,109 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
         )
     )
 
+    for row in results["validity_envelopes"]:
+        checks.append(
+            _check(
+                f"validity-envelope-established/{row['case']}",
+                "the range over which the linear map holds is measured against the "
+                "geodesic flow, central-differenced, rather than asserted",
+                0.0 if row["established"] else 1.0,
+                0.0,
+                comparison="<=",
+            )
+        )
+        if not row["heading_bound_is_measured"]:
+            checks.append(
+                _check(
+                    f"validity-envelope-holds-at-its-bound/{row['case']}",
+                    "the linearisation holds to the declared tolerance at the largest "
+                    "perturbation tested; the bound is the end of the ladder, and the "
+                    "record says so rather than extrapolating past the data",
+                    row["error_at_bound"],
+                    row["relative_tolerance"],
+                )
+            )
+        else:
+            checks.append(
+                _check(
+                    f"validity-envelope-bound-is-self-consistent/{row['case']}",
+                    "and re-probing at exactly the bound the fit chose costs the "
+                    "declared tolerance -- which needs no closed form, so it is the "
+                    "check that reaches the varying-curvature surfaces",
+                    row["bound_consistency"],
+                    0.15,
+                )
+            )
+        if row["constant_curvature"]:
+            checks.append(
+                _check(
+                    f"validity-envelope-matches-the-chord-form/{row['case']}",
+                    "and where K is constant it reproduces "
+                    "sqrt(24 tol / max(a^2 + kappa_n^2 b^2)), the second-order "
+                    "coefficient of an ambient chord -- which is the quantity the "
+                    "probe measures, and not the intrinsic one",
+                    row["chord_bound_relative_error"],
+                    0.02,
+                )
+            )
+    tightening = {
+        row["case"]: row["chord_term_tightening"] for row in results["validity_envelopes"]
+    }
+    checks.append(
+        _check(
+            "validity-envelope-chord-term-is-visible",
+            "the rolled sheet has the plate's transfer map to 1e-13 and a tighter "
+            "validity envelope, because the measurement is a chord and a cylinder "
+            "has a transverse normal curvature the plate does not",
+            tightening["rolled-sheet"],
+            0.95,
+            comparison="<=",
+        )
+    )
+    checks.append(
+        _check(
+            "validity-envelope-is-intrinsic-where-the-chord-adds-nothing",
+            "and on the plate and the spherical cap it is not: a^2 + kappa_n^2 b^2 "
+            "is one on both, from zero normal curvature and from an umbilic point "
+            "respectively",
+            max(abs(tightening[key] - 1.0) for key in ("plate", "spherical-cap")),
+            1e-9,
+        )
+    )
+
+    forms = results["observability_forms"]
+    checks.append(
+        _check(
+            "gramian-stacked-agrees-with-the-integral-form",
+            "A^T R^-1 A times the sample spacing approaches the integral Gramian, "
+            "with the discrepancy halving as the sampling doubles -- the two are "
+            "different objects and this is the conversion between them",
+            forms["worst_halving_error"],
+            0.1,
+        )
+    )
+    checks.append(
+        _check(
+            "gramian-correlated-noise-carries-less",
+            "a correlated R carries strictly less information than an independent "
+            "one of the same variance; the integral form cannot express the "
+            "difference and would count information that was never collected",
+            forms["correlated_over_white"],
+            0.5,
+            comparison="<=",
+        )
+    )
+    checks.append(
+        _check(
+            "gramian-intervals-add-up",
+            "information accumulated over two abutting intervals is the information "
+            "over their union, with the endpoints interpolated rather than snapped "
+            "to the grid",
+            forms["interval_additivity_error"],
+            1e-12,
+        )
+    )
+
     rescaling = results["chart_rescaling_invariance"]
     checks.append(
         _check(
@@ -2626,6 +2909,8 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
         "jet_step_sensitivity": measure_jet_step_sensitivity(config, cases),
         "envelopes": build_envelopes(config, cases),
         "imported_path_boundary": measure_imported_path_boundary(config, cases),
+        "validity_envelopes": measure_validity_envelopes(config, cases),
+        "observability_forms": measure_observability_forms(config, cases),
         "chart_rescaling_invariance": measure_chart_rescaling_invariance(cases),
         "focus_versus_resolvability": measure_focus_versus_resolvability(config, cases),
         "heading_scan": scan_for_robust_heading(config, cases),

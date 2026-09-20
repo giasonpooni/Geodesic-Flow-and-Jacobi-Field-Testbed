@@ -97,6 +97,42 @@ class Observability:
         return vectors[:, int(np.argmin(values))]
 
     @property
+    def condition_number(self) -> float:
+        """``lambda_max / lambda_min`` of the scaled Gramian.
+
+        How much better the path sees its best-observed starting-pose
+        direction than its worst. A route can accumulate a great deal of
+        information and still be nearly blind in one direction, and that is
+        the number that says so -- a trace or a determinant would not.
+        """
+        values = self.eigenvalues
+        smallest = float(values[0])
+        if smallest <= 0.0:
+            return float("inf")
+        return float(values[-1]) / smallest
+
+    def over(self, start: float, end: float) -> Array:
+        """Information accumulated between two arc lengths.
+
+        The endpoints are interpolated rather than snapped to the nearest
+        sample, for the same reason every other event here is: an interval
+        quantised to the grid is known only to the sample spacing, and a
+        caller comparing two candidate acquisition windows would be comparing
+        their rounding as much as their information.
+        """
+        grid = np.asarray(self.arclength, dtype=float)
+        lower, upper = float(start), float(end)
+        if upper <= lower:
+            raise ValueError("an interval needs end > start")
+        if lower < grid[0] - 1e-12 or upper > grid[-1] + 1e-12:
+            raise ValueError(
+                f"[{lower}, {upper}] is not inside the path [{grid[0]}, {grid[-1]}]"
+            )
+        return _interpolated(grid, self.cumulative, upper) - _interpolated(
+            grid, self.cumulative, lower
+        )
+
+    @property
     def per_unit_length(self) -> Array:
         """Information density. This is the scale-invariant one.
 
@@ -118,6 +154,7 @@ class Observability:
             "worst_observed": float(values[0]),
             "best_observed": float(values[-1]),
             "anisotropy": float(values[-1] / values[0]) if values[0] > 0.0 else None,
+            "condition_number": self.condition_number,
             "worst_direction": self.worst_direction.tolist(),
             "worst_observed_per_unit_length": float(values[0] / self.path_length),
             "note": self.note,
@@ -148,23 +185,7 @@ def observability_gramian(
             "the model reports, so a Gramian mixing the two is weighting one "
             "quantity's sensitivity by another's noise"
         )
-    box = max_lateral is not None or max_heading is not None
-    if box == (prior_covariance is not None):
-        raise ValueError(
-            "declare exactly one scaling: a tolerance box (max_lateral and "
-            "max_heading) or a prior covariance. The Gramian's entries do not "
-            "share units, so an unscaled one cannot be ranked by"
-        )
-    if box:
-        if max_lateral is None or max_heading is None:
-            raise ValueError("a tolerance box needs both max_lateral and max_heading")
-        if float(max_lateral) <= 0.0 or float(max_heading) <= 0.0:
-            raise ValueError("both tolerance scales must be positive")
-        scale = np.diag([float(max_lateral), float(max_heading)])
-        basis = "tolerance-box"
-    else:
-        scale = np.linalg.cholesky(validated_covariance(prior_covariance, "C0"))
-        basis = "prior-covariance"
+    scale, basis = _declared_scaling(max_lateral, max_heading, prior_covariance)
 
     phi = record.transfer_map().matrices()
     information = np.linalg.inv(observation.noise_covariance)
@@ -603,3 +624,163 @@ __all__ = [
     "route_label",
     "weighted_cost",
 ]
+
+
+def _interpolated(grid: Array, values: Array, at: float) -> Array:
+    """Linear interpolation of a stack of matrices at one arc length."""
+    position = float(np.clip(at, grid[0], grid[-1]))
+    index = int(np.clip(np.searchsorted(grid, position, side="right") - 1, 0, grid.size - 2))
+    span = grid[index + 1] - grid[index]
+    weight = 0.0 if span <= 0.0 else (position - grid[index]) / span
+    return values[index] + weight * (values[index + 1] - values[index])
+
+
+@dataclass(frozen=True)
+class StackedObservability:
+    """``W = A^T R^-1 A`` over the stacked observation vector.
+
+    The other form of the same question, and genuinely a different object.
+    ``int Phi^T H^T R^-1 H Phi ds`` treats ``R`` as a noise *density* and needs
+    the samples to be independent; this treats ``R`` as the covariance of the
+    measurements actually taken, and is the only form that admits a correlated
+    one. A filter correlates arc lengths, so that is not an exotic case -- and
+    a filtered campaign that ranked routes by the integral form would be
+    counting information it did not have, because the samples it averaged were
+    already averages of each other.
+
+    On a uniform grid with a stationary ``R`` the two agree up to the sample
+    spacing: ``W_integral ~ h W_stacked``. The conversion is declared here
+    rather than left implicit, because it is exactly the factor that decides
+    whether two campaigns at different sampling rates are comparable.
+    """
+
+    arclength: Array
+    total: Array
+    scale: Array
+    scale_basis: str
+    noise_structure: str
+    samples: int
+    note: str = ""
+
+    @property
+    def eigenvalues(self) -> Array:
+        return np.linalg.eigvalsh(self.total)
+
+    @property
+    def worst_direction(self) -> Array:
+        values, vectors = np.linalg.eigh(self.total)
+        return vectors[:, int(np.argmin(values))]
+
+    @property
+    def condition_number(self) -> float:
+        values = self.eigenvalues
+        smallest = float(values[0])
+        return float("inf") if smallest <= 0.0 else float(values[-1]) / smallest
+
+    def to_dict(self) -> dict[str, Any]:
+        values = self.eigenvalues
+        return {
+            "form": "stacked",
+            "scale_basis": self.scale_basis,
+            "noise_structure": self.noise_structure,
+            "samples": int(self.samples),
+            "eigenvalues": values.tolist(),
+            "worst_observed": float(values[0]),
+            "best_observed": float(values[-1]),
+            "condition_number": self.condition_number,
+            "worst_direction": self.worst_direction.tolist(),
+            "note": self.note,
+        }
+
+
+def stacked_observability(
+    source: Any,
+    observation: ObservationModel,
+    noise,
+    *,
+    max_lateral: float | None = None,
+    max_heading: float | None = None,
+    prior_covariance=None,
+    window: tuple[float, float] | None = None,
+) -> StackedObservability:
+    """``A^T R^-1 A`` with the full ``R``, made dimensionless the same way.
+
+    ``window`` restricts the calculation to the samples inside an arc-length
+    interval, and does so by inverting the *submatrix* of ``R`` rather than
+    taking a submatrix of ``R^-1``. Those are different matrices whenever the
+    noise is correlated, and only the first is the information the measurements
+    in that window carry on their own -- the second is what they carry given
+    the ones outside it, which is not a quantity a route planner can act on
+    before those have been taken.
+    """
+    from .output_covariance import NoiseModel, stacked_operator
+
+    if not isinstance(noise, NoiseModel):
+        raise TypeError(
+            "pass a NoiseModel: the structure of R -- stationary, per sample or "
+            "correlated -- is what decides whether this form or the integral one "
+            "is the right question, so it is not inferred from an array's shape"
+        )
+    record: TransferRecord = to_transfer_record(source)
+    if observation.mode != record.observation_mode:
+        raise ValueError(
+            f"the record is in {record.observation_mode!r} but this observation "
+            f"model reports {observation.mode!r}"
+        )
+    scale, basis = _declared_scaling(max_lateral, max_heading, prior_covariance)
+
+    grid = record.arclength
+    operator = stacked_operator(record, observation)
+    covariance = noise.stacked(grid.size)
+    width = len(observation.outputs)
+
+    if window is not None:
+        lower, upper = (float(value) for value in window)
+        if upper <= lower:
+            raise ValueError("a window needs end > start")
+        inside = np.flatnonzero((grid >= lower) & (grid <= upper))
+        if inside.size < 1:
+            raise ValueError(f"no sample lies in [{lower}, {upper}]")
+        rows = np.concatenate([inside * width + offset for offset in range(width)])
+        rows.sort()
+        operator = operator[rows]
+        covariance = covariance[np.ix_(rows, rows)]
+        samples = int(inside.size)
+    else:
+        samples = int(grid.size)
+
+    information = np.linalg.inv(covariance)
+    total = scale.T @ (operator.T @ information @ operator) @ scale
+    return StackedObservability(
+        arclength=grid,
+        total=0.5 * (total + total.T),
+        scale=scale,
+        scale_basis=basis,
+        noise_structure=noise.structure,
+        samples=samples,
+        note=(
+            "A^T R^-1 A over the measurements actually taken; on a uniform grid "
+            "with a stationary R this is the integral Gramian divided by the "
+            "sample spacing"
+        ),
+    )
+
+
+def _declared_scaling(
+    max_lateral: float | None, max_heading: float | None, prior_covariance
+) -> tuple[Array, str]:
+    """The one scaling the caller declared, or an error naming both options."""
+    box = max_lateral is not None or max_heading is not None
+    if box == (prior_covariance is not None):
+        raise ValueError(
+            "declare exactly one scaling: a tolerance box (max_lateral and "
+            "max_heading) or a prior covariance. The Gramian's entries do not "
+            "share units, so an unscaled one cannot be ranked by"
+        )
+    if box:
+        if max_lateral is None or max_heading is None:
+            raise ValueError("a tolerance box needs both max_lateral and max_heading")
+        if float(max_lateral) <= 0.0 or float(max_heading) <= 0.0:
+            raise ValueError("both tolerance scales must be positive")
+        return np.diag([float(max_lateral), float(max_heading)]), "tolerance-box"
+    return np.linalg.cholesky(validated_covariance(prior_covariance, "C0")), "prior-covariance"

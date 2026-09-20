@@ -13,7 +13,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from geodesic_testbed.engine.envelope import integrate_path
+from geodesic_testbed.engine.envelope import integrate_path, integrate_paths
 from geodesic_testbed.engine.observation_model import ObservationModel
 from geodesic_testbed.engine.planning import (
     ChartBoundary,
@@ -25,6 +25,7 @@ from geodesic_testbed.engine.planning import (
     offset_courses,
     pareto_front,
     route_label,
+    stacked_observability,
     weighted_cost,
 )
 from geodesic_testbed.engine.surfaces import plane, pseudosphere, sphere, torus
@@ -385,4 +386,212 @@ def test_a_negative_weight_turns_an_objective_into_its_opposite() -> None:
         weighted_cost(
             values, OBJECTIVES,
             {"amplification": -0.5, "observed": 1.0, "length": 0.5},
+        )
+
+
+# -- the two forms of the Gramian ------------------------------------------
+
+
+def _gramian_record(n_steps: int = 200):
+    from geodesic_testbed.engine.contract import Units
+
+    envelope = integrate_paths(
+        sphere(1.0), u0=np.pi / 2, v0=0.0, headings=[0.5], length=1.4, n_steps=n_steps
+    )[0]
+    return envelope.as_transfer_record(
+        units=Units(length="metre", angle="radian"),
+        observation_mode="ambient-euclidean-chord",
+    )
+
+
+def test_the_condition_number_says_what_the_total_information_does_not() -> None:
+    """A path can accumulate a great deal and still be nearly blind one way."""
+    from geodesic_testbed.engine.observation_model import ObservationModel
+
+    record = _gramian_record()
+    model = ObservationModel.transverse_only(5e-5, mode="ambient-euclidean-chord")
+    gramian = observability_gramian(
+        record, model, max_lateral=2e-4, max_heading=np.deg2rad(0.1)
+    )
+    values = gramian.eigenvalues
+    assert gramian.condition_number == pytest.approx(values[-1] / values[0])
+    assert gramian.condition_number > 1.0
+    assert gramian.to_dict()["condition_number"] == gramian.condition_number
+
+
+def test_information_over_an_interval_is_interpolated_rather_than_snapped() -> None:
+    """Two windows differing by less than a sample spacing must differ.
+
+    An interval quantised to the grid is known only to the sample spacing, and
+    a planner comparing two candidate acquisition windows would be comparing
+    their rounding as much as their information.
+    """
+    from geodesic_testbed.engine.observation_model import ObservationModel
+
+    record = _gramian_record(n_steps=100)
+    model = ObservationModel.transverse_only(5e-5, mode="ambient-euclidean-chord")
+    gramian = observability_gramian(
+        record, model, max_lateral=2e-4, max_heading=np.deg2rad(0.1)
+    )
+    spacing = float(record.arclength[1] - record.arclength[0])
+
+    whole = gramian.over(float(record.arclength[0]), float(record.arclength[-1]))
+    assert np.allclose(whole, gramian.total, rtol=1e-12, atol=0.0)
+
+    near = gramian.over(0.2, 0.7)
+    nudged = gramian.over(0.2, 0.7 + 0.3 * spacing)
+    assert not np.allclose(near, nudged, rtol=1e-9, atol=0.0)
+
+    first = gramian.over(0.0, 0.7)
+    second = gramian.over(0.7, float(record.arclength[-1]))
+    assert np.allclose(first + second, gramian.total, rtol=1e-10, atol=0.0)
+
+    with pytest.raises(ValueError, match="end > start"):
+        gramian.over(0.7, 0.2)
+    with pytest.raises(ValueError, match="not inside the path"):
+        gramian.over(0.0, 99.0)
+
+
+def test_the_stacked_gramian_is_the_integral_one_divided_by_the_spacing() -> None:
+    """Two different objects with a declared conversion between them.
+
+    The integral form treats ``R`` as a noise density; the stacked form treats
+    it as the covariance of the measurements actually taken. On a uniform grid
+    with a stationary ``R`` they differ by the sample spacing, and a campaign
+    comparing two sampling rates without that factor is comparing nothing.
+
+    The agreement is first order in the spacing, not exact: a sum over the
+    samples is a rectangle rule, and it differs from the integral by the end
+    correction. So the claim is that the discrepancy *halves when the sampling
+    doubles*, which is a statement about the relationship, where a fixed
+    tolerance would only be a statement about one grid.
+    """
+    from geodesic_testbed.engine.observation_model import ObservationModel
+    from geodesic_testbed.engine.output_covariance import NoiseModel
+
+    model = ObservationModel.transverse_only(5e-5, mode="ambient-euclidean-chord")
+    noise = NoiseModel.from_observation_model(model, basis="bench characterisation")
+    ratios = []
+    for n_steps in (200, 400, 800):
+        record = _gramian_record(n_steps=n_steps)
+        spacing = float(record.arclength[1] - record.arclength[0])
+        integral = observability_gramian(
+            record, model, max_lateral=2e-4, max_heading=np.deg2rad(0.1)
+        )
+        stacked = stacked_observability(
+            record, model, noise, max_lateral=2e-4, max_heading=np.deg2rad(0.1)
+        )
+        ratios.append(float(integral.total[0, 0] / (spacing * stacked.total[0, 0])))
+    gaps = [abs(ratio - 1.0) for ratio in ratios]
+    assert gaps[-1] < 2e-3, f"the two forms disagree by {gaps[-1]:.3e} at 800 samples"
+    for coarse, fine in zip(gaps, gaps[1:], strict=False):
+        assert coarse / fine == pytest.approx(2.0, rel=0.05), (
+            f"the discrepancy should halve with the spacing; {coarse:.3e} -> {fine:.3e}"
+        )
+
+
+def test_a_correlated_noise_carries_less_information_than_an_independent_one() -> None:
+    """The case the integral form cannot express, and gets wrong by assuming away.
+
+    A filter makes neighbouring samples averages of each other. Ranking routes
+    by the integral Gramian on filtered data counts information that was never
+    collected; the stacked form with the full ``R`` does not.
+    """
+    from geodesic_testbed.engine.observation_model import ObservationModel
+    from geodesic_testbed.engine.output_covariance import NoiseModel
+
+    record = _gramian_record(n_steps=120)
+    model = ObservationModel.transverse_only(5e-5, mode="ambient-euclidean-chord")
+    n = record.arclength.size
+    variance = 5e-5**2
+
+    independent = NoiseModel.stationary(
+        np.array([[variance]]), ("transverse",), basis="bench characterisation"
+    )
+    lag = np.exp(-np.abs(np.subtract.outer(np.arange(n), np.arange(n))) / 8.0)
+    correlated = NoiseModel(
+        blocks=variance * lag,
+        structure="correlated",
+        outputs=("transverse",),
+        basis="a declared filter group delay",
+    )
+
+    box = {"max_lateral": 2e-4, "max_heading": np.deg2rad(0.1)}
+    white = stacked_observability(record, model, independent, **box)
+    smoothed = stacked_observability(record, model, correlated, **box)
+
+    assert np.trace(smoothed.total) < 0.5 * np.trace(white.total), (
+        "correlated noise has to carry visibly less information, or the full R "
+        "is not reaching the calculation"
+    )
+    assert smoothed.noise_structure == "correlated"
+    assert white.noise_structure == "stationary"
+
+
+def test_a_window_inverts_the_submatrix_of_R_and_not_a_submatrix_of_its_inverse() -> None:
+    """Different matrices whenever the noise is correlated, and only one is usable.
+
+    The information the measurements in a window carry *on their own* is what
+    a planner can act on before the others have been taken. A submatrix of
+    ``R^-1`` is what they carry *given* the rest, which is a different and
+    unobtainable quantity.
+    """
+    from geodesic_testbed.engine.observation_model import ObservationModel
+    from geodesic_testbed.engine.output_covariance import NoiseModel, stacked_operator
+
+    record = _gramian_record(n_steps=120)
+    model = ObservationModel.transverse_only(5e-5, mode="ambient-euclidean-chord")
+    n = record.arclength.size
+    lag = np.exp(-np.abs(np.subtract.outer(np.arange(n), np.arange(n))) / 8.0)
+    correlated = NoiseModel(
+        blocks=5e-5**2 * lag,
+        structure="correlated",
+        outputs=("transverse",),
+        basis="a declared filter group delay",
+    )
+    box = {"max_lateral": 2e-4, "max_heading": np.deg2rad(0.1)}
+    window = (0.3, 0.9)
+    windowed = stacked_observability(record, model, correlated, window=window, **box)
+
+    grid = record.arclength
+    inside = np.flatnonzero((grid >= window[0]) & (grid <= window[1]))
+    assert windowed.samples == inside.size
+    scale = np.diag([2e-4, np.deg2rad(0.1)])
+    operator = stacked_operator(record, model)[inside]
+    sub = correlated.stacked(n)[np.ix_(inside, inside)]
+    expected = scale.T @ (operator.T @ np.linalg.inv(sub) @ operator) @ scale
+    assert np.allclose(windowed.total, expected, rtol=1e-9, atol=0.0)
+
+    wrong = scale.T @ (
+        operator.T @ np.linalg.inv(correlated.stacked(n))[np.ix_(inside, inside)] @ operator
+    ) @ scale
+    assert not np.allclose(windowed.total, wrong, rtol=1e-3, atol=0.0), (
+        "the two readings have to differ, or the distinction is not being made"
+    )
+
+
+def test_the_stacked_gramian_refuses_a_bare_array_for_R() -> None:
+    from geodesic_testbed.engine.observation_model import ObservationModel
+
+    record = _gramian_record(n_steps=60)
+    model = ObservationModel.transverse_only(5e-5, mode="ambient-euclidean-chord")
+    with pytest.raises(TypeError, match="pass a NoiseModel"):
+        stacked_observability(
+            record, model, np.array([[1e-9]]), max_lateral=2e-4, max_heading=0.01
+        )
+
+
+def test_the_stacked_gramian_needs_exactly_one_declared_scaling() -> None:
+    from geodesic_testbed.engine.observation_model import ObservationModel
+    from geodesic_testbed.engine.output_covariance import NoiseModel
+
+    record = _gramian_record(n_steps=60)
+    model = ObservationModel.transverse_only(5e-5, mode="ambient-euclidean-chord")
+    noise = NoiseModel.from_observation_model(model, basis="bench characterisation")
+    with pytest.raises(ValueError, match="exactly one scaling"):
+        stacked_observability(record, model, noise)
+    with pytest.raises(ValueError, match="exactly one scaling"):
+        stacked_observability(
+            record, model, noise, max_lateral=1e-4, max_heading=1e-3,
+            prior_covariance=np.diag([1e-8, 1e-6]),
         )
