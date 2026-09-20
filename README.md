@@ -268,4 +268,10 @@ CUDA stack. The corpus cite is
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+This review proposal changes the default license for project-owned source and
+public documentation to [MPL-2.0](LICENSE), subject to licensing counsel review
+before publication. Existing MIT versions remain available under their original
+terms; their notice is preserved in [LICENSES/MIT-legacy.txt](LICENSES/MIT-legacy.txt).
+See [LICENSE-POLICY.md](LICENSE-POLICY.md) for the exact baseline, scope and exclusions.
+
+The proposed transition is for future 0.3.0. Existing 0.2.x remains MIT; no 0.3.0 release or tag has been created.

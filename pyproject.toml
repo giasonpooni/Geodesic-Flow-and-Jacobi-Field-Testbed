@@ -1,11 +1,11 @@
 [project]
 name = "curved-surface-geodesic-sensitivity"
-version = "0.2.0"
+version = "0.3.0"
 description = "Curvature-aware path sensitivity: geodesic flow, Jacobi transfer maps, and first-order tolerance contracts for curved-surface manufacturing and robotic inspection."
 readme = "README.md"
 requires-python = ">=3.11"
-license = "MIT"
-license-files = ["LICENSE"]
+license = "MPL-2.0"
+license-files = ["LICENSE", "LICENSE-POLICY.md", "LICENSES/*.txt"]
 authors = [{ name = "giasonpooni" }]
 keywords = [
   "differential-geometry",
