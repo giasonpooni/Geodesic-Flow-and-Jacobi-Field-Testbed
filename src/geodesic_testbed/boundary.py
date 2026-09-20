@@ -127,6 +127,7 @@ CONTRACT: tuple[str, ...] = (
 #: in :data:`SUBSTRATE` consumes them.
 INSTRUMENT_FACING: tuple[str, ...] = (
     "geodesic_testbed.engine.observation_model",
+    "geodesic_testbed.engine.prediction",
     "geodesic_testbed.engine.measurement",
     "geodesic_testbed.engine.tracking",
     "geodesic_testbed.engine.routing",

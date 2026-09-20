@@ -123,6 +123,57 @@ convention, and the convention is recorded as `coverage_factor` so a downstream
 resolvability figure reads as "at 3 sigma" instead of as an unqualified claim
 about the hardware.
 
+## The record is complete, and here is the proof
+
+A contract is complete when the thing on the other side can be built from it
+alone. `engine/prediction.py` is that thing: it takes a record and walks it all
+the way to something a sensor could have reported, and it imports no solver.
+
+```text
+geometric transfer map        Phi(s) dz0        -- a tangent vector
+        |   first-order -> finite separation
+        v
+intrinsic surface distance    d(s)              -- a distance in the surface
+        |   in-surface arc -> ambient chord
+        v
+ambient euclidean chord       c(s)              -- what 3-D points give
+        |   H(s), then the filter F
+        v
+instrument output             y(s), Cov(y)      -- what the sensor reports
+        |
+        v
+comparison statistic          whitened residual, chi-square
+```
+
+Each stage is a `Prediction` that carries **the transformation that produced
+it**, not just a name for what it now is. A prediction that reached
+`ambient-euclidean-chord` by applying the chord correction and one that got
+there by being relabelled carry the same mode and different `chain`s, and only
+one of them is evidence. The chain runs forward only; stepping back is refused,
+because a chord relabelled an intrinsic distance is the single confusion the
+module exists to prevent.
+
+Every step is second order in the perturbation — the same order as the
+first-order model's own failure. The surfaces experiment measures what that is
+worth: against an independently computed finite-difference chord, applying the
+two transformations drops the disagreement from the size of the effect to the
+numerical floor, three to seven orders of magnitude, on every surface where
+both are available. Where the curvature varies, only the chord correction is
+computable; `chord_from_tangent` applies it and **declares that the other was
+not applied**, in `chain`, in `note` and in `extra["intrinsic_correction"]`,
+because a consumer comparing at second order has to know which second-order
+terms are in the number it was handed.
+
+The comparison is not a scalar. `residual_statistics` returns the full residual
+covariance, the whitened residual `L^-1 r` and the chi-square, because two
+residuals of the same size are different evidence when one lies in a direction
+the instrument resolves well. A filter correlates arc lengths, so a filtered
+comparison gets one covariance over every scalar residual at once rather than a
+per-sample stack — keeping only the diagonal blocks would let a comparison
+treat as independent exactly the samples the filter made dependent. What counts
+as too far is still not decided here; that belongs to the instrument's
+protocol.
+
 ## What does not cross, in either direction
 
 Narrow means everything below stays on exactly one side.

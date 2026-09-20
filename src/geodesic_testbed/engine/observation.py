@@ -95,6 +95,26 @@ MODES: dict[str, ObservationMode] = {
     mode.identifier: mode
     for mode in (
         ObservationMode(
+            identifier="first-order-tangent-separation",
+            version=1,
+            quantity="the linear image Phi dz0 of a starting-pose error",
+            support={
+                "constant-curvature": "exact",
+                "declared-curvature-profile": "exact",
+                "parametric-surface": "numerical",
+                "physical-instrument": "unavailable",
+            },
+            note=(
+                "What the transfer map produces, and the only thing it produces. "
+                "It is not a distance: it is a vector in the tangent space at the "
+                "nominal point, and the distance it approximates differs from it "
+                "at second order in the perturbation -- which is the order every "
+                "campaign here is trying to resolve. Kept as its own mode so that "
+                "the step from it to an intrinsic distance is a transformation "
+                "somebody applied rather than a relabelling nobody noticed."
+            ),
+        ),
+        ObservationMode(
             identifier="intrinsic-surface-distance",
             version=1,
             quantity="Riemannian distance between two points, measured in the surface",

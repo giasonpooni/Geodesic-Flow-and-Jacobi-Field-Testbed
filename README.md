@@ -38,7 +38,7 @@ drift is therefore a free measure of how well it is integrating.
 
 ## Verification
 
-**266 declared checks across two stages, 0 failed.** Every number below has a
+**278 declared checks across two stages, 0 failed.** Every number below has a
 threshold attached in `engine/experiment.py` or `engine/experiment_surfaces.py`,
 and the committed reports are regenerated and compared in CI.
 
@@ -82,6 +82,7 @@ form left, four things replace it:
 | **error budget** — halve the step and Richardson-extrapolate, per quantity | the estimate reproduces the *actual* error to 0.02% wherever a closed form leaves one to resolve, and the budget itself falls as `h^4` (observed order 3.99 – 4.00) |
 | **the frame the record publishes** — Euler's theorem, `kappa_n(along) + kappa_n(across) = 2H` | machine precision on every surface, with no closed form needed |
 | **the jet's step, along a whole path** | the transfer error spans four orders of magnitude over relative steps from 1e-2 to 1e-6; no step in the sweep invents or erases a focus |
+| **the prediction chain** — naming the two second-order transformations between `Phi dz0` and an ambient chord | the disagreement with an independently flowed finite-difference chord falls from the size of the effect to 3e-10 or better, a factor of 3.8e3 to 1.4e6, on every surface where both corrections exist |
 
 Three results worth stating plainly:
 
@@ -101,6 +102,37 @@ Three results worth stating plainly:
 - **The two columns focus at different places.** On a spherical cap `b`
   vanishes at `s = pi` and `a` at `s = pi/2`. A heading error and a lateral
   offset are not interchangeable.
+
+### From the transfer map to something a sensor could have reported
+
+`Phi(s) dz0` is a tangent vector. A scanner reports a chord between
+reconstructed 3-D points. Between them sit two transformations, each second
+order in the perturbation — the same order as the first-order model's own
+failure — so skipping either does not give a worse answer, it gives one that
+disagrees with the measurement by the size of the effect and reads as a model
+failure.
+
+```text
+geometric transfer map  ->  intrinsic surface distance  ->  ambient chord  ->  instrument output  ->  whitened residual
+```
+
+Each stage carries **the transformation that produced it**, not just a label
+for what it now is, and the chain runs forward only: a chord cannot be stepped
+back into an intrinsic distance. Applying the two corrections drops the
+disagreement with an independently flowed finite-difference chord from ~4e-6 to
+below 3e-10 on every surface of constant curvature — the plate, the rolled
+sheet, the spherical cap and the pseudosphere. Where the curvature varies only
+the chord correction is computable, and the prediction *says so*, in its chain
+and in `extra["intrinsic_correction"]`, rather than appearing complete.
+
+The comparison at the end is not a maximum absolute error. That throws away the
+covariance, and the covariance is where the information is: two residuals of
+the same size are different evidence when one lies in a direction the
+instrument resolves well. `residual_statistics` returns the full residual
+covariance, the whitened residual and the chi-square — and a filtered
+comparison gets one covariance over every scalar residual at once, because a
+filter correlates arc lengths and keeping only the diagonal blocks would treat
+as independent exactly the samples it made dependent.
 
 ### The decision, and what is allowed to make it
 
@@ -169,7 +201,7 @@ observability `W = ∫ Phi^T H^T R^-1 H Phi ds` is not computed at all.
 
 ```bash
 uv sync --locked --extra dev          # or: pip install -e ".[dev]"
-uv run pytest -q                      # 349 tests, no network, about four minutes
+uv run pytest -q                      # 373 tests, no network, about five minutes
 uv run python examples/run_experiment.py --out out        # both stages: reports + figures
 uv run python examples/write_reference_report.py          # application reference report
 ```

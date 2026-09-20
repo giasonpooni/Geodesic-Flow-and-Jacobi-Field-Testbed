@@ -52,32 +52,52 @@ _SOLUTION_NAMES = {0.0: "s", 1.0: "sin(s)", -1.0: "sinh(s)"}
 
 
 def sin_k(s, K: float) -> np.ndarray:
-    """Generalised sine: solution of ``j'' + K j = 0`` with ``j(0)=0, j'(0)=1``."""
+    """Generalised sine: solution of ``j'' + K j = 0`` with ``j(0)=0, j'(0)=1``.
+
+    ``sn_K(s) = sin(sqrt(K) s) / sqrt(K)`` for positive ``K``, ``s`` for zero,
+    ``sinh(sqrt(-K) s) / sqrt(-K)`` for negative. The magnitude of ``K`` is
+    carried, so a sphere of radius 2 (``K = 1/4``) gets ``2 sin(s/2)`` and not
+    ``sin(s)``.
+
+    On the three model curvatures ``0, +1, -1`` the root is 1 and these reduce
+    to ``s, sin s, sinh s``, which is what the experiments use -- so carrying
+    the magnitude costs those nothing and buys the closed form for every other
+    constant curvature, including the ones that arrive as ``-1 + 2e-16`` from a
+    numerically computed surface.
+    """
     s = np.asarray(s, dtype=float)
+    root = np.sqrt(abs(K))
     if K > 0.0:
-        return np.sin(s)
+        return np.sin(root * s) / root
     if K < 0.0:
-        return np.sinh(s)
+        return np.sinh(root * s) / root
     return s * 1.0
 
 
 def cos_k(s, K: float) -> np.ndarray:
-    """Generalised cosine: solution of ``j'' + K j = 0`` with ``j(0)=1, j'(0)=0``."""
+    """Generalised cosine: solution of ``j'' + K j = 0`` with ``j(0)=1, j'(0)=0``.
+
+    ``cn_K(s) = cos(sqrt(K) s)``, ``1``, or ``cosh(sqrt(-K) s)``. It is
+    ``sn_K'``, which is why it carries no factor of the root where ``sn_K``
+    does.
+    """
     s = np.asarray(s, dtype=float)
+    root = np.sqrt(abs(K))
     if K > 0.0:
-        return np.cos(s)
+        return np.cos(root * s)
     if K < 0.0:
-        return np.cosh(s)
+        return np.cosh(root * s)
     return np.ones_like(s)
 
 
 def asin_k(z, K: float) -> np.ndarray:
     """Inverse of :func:`sin_k`."""
     z = np.asarray(z, dtype=float)
+    root = np.sqrt(abs(K))
     if K > 0.0:
-        return np.arcsin(np.clip(z, -1.0, 1.0))
+        return np.arcsin(np.clip(root * z, -1.0, 1.0)) / root
     if K < 0.0:
-        return np.arcsinh(z)
+        return np.arcsinh(root * z) / root
     return z * 1.0
 
 
@@ -86,7 +106,7 @@ def conjugate_distance(K: float) -> float | None:
 
     It is the first positive zero of ``sn_K``; only the sphere has one.
     """
-    return float(np.pi) if K > 0.0 else None
+    return float(np.pi / np.sqrt(K)) if K > 0.0 else None
 
 
 @dataclass(frozen=True)

@@ -59,6 +59,13 @@ from .envelope import (
 from .experiment import _check, _jsonable, content_hash
 from .observation import catalogue as observation_catalogue
 from .observation_model import ObservationModel
+from .prediction import (
+    chord_from_intrinsic,
+    chord_from_tangent,
+    first_order_prediction,
+    has_closed_form_separation,
+    intrinsic_from_tangent,
+)
 from .routing import CoverageSpec, RouteConstraints, rank_routes
 from .surfaces import (
     Chart,
@@ -152,6 +159,10 @@ class SurfaceConfig:
     budget_roundoff_floor: float = 1e-12
     jet_sensitivity_steps: int = 400
     jet_relative_steps: tuple[float, ...] = (1e-2, 1e-3, 1e-4, 1e-5, 1e-6)
+    chain_steps: int = 800
+    #: Small enough that the second-order corrections dominate, large enough
+    #: that the finite-difference reference is not cancellation-limited.
+    chain_epsilons: tuple[float, ...] = (5e-3, 2.5e-3)
 
     transverse_tolerances: tuple[float, ...] = (1e-3, 1e-2)
     heading_scan_count: int = 24
@@ -463,6 +474,90 @@ def measure_self_convergence(config: SurfaceConfig, cases) -> list[dict[str, Any
 # ---------------------------------------------------------------------------
 # 4. the cost of not supplying analytic derivatives
 # ---------------------------------------------------------------------------
+def measure_prediction_chain(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
+    """Does naming the transformations actually close the gap to a measurement?
+
+    The finite-difference route is an *ambient chord*: it flows two geodesics
+    at plus and minus ``eps`` and measures the straight-line distance between
+    reconstructed 3-D points. The transfer map is a *first-order tangent
+    vector*. Between them sit two second-order corrections, and this sweep asks
+    whether applying them -- as named transformations on a prediction object,
+    rather than as a relabelling -- reproduces the measurement.
+
+    Where the curvature is constant, both corrections are available and the
+    full chain closes: the disagreement falls from the size of the effect to
+    the numerical floor. Where it varies, only the chord correction is
+    computable, ``chord_from_tangent`` applies it and declares that the other
+    is missing, and the residual that remains is exactly the term it declared.
+
+    The comparison is scaled by the largest separation on the path rather than
+    taken pointwise, because the spherical cap crosses its conjugate point: the
+    separation passes through zero there, and a relative error against zero is
+    not a measure of anything.
+    """
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        envelope = integrate_path(
+            case.surface, u0=case.u0, v0=case.v0, heading=case.heading,
+            length=case.length, n_steps=config.chain_steps,
+        )
+        record = envelope.as_transfer_record(observation_mode="ambient-euclidean-chord")
+        closed_form = has_closed_form_separation(record)
+        levels = []
+        for epsilon in config.chain_epsilons:
+            _, measured = finite_difference_jacobi(
+                case.surface, u0=case.u0, v0=case.v0, heading=case.heading,
+                epsilon=float(epsilon), length=case.length, n_steps=config.chain_steps,
+            )
+            # The finite-difference pair is separated by 2 eps, and it reports a
+            # magnitude: it has no sign to lose, which the transfer map does.
+            chord = measured * 2.0 * float(epsilon)
+            tangent = first_order_prediction(record, 0.0, 2.0 * float(epsilon))
+            chain = (
+                chord_from_intrinsic(intrinsic_from_tangent(tangent, record), record)
+                if closed_form
+                else chord_from_tangent(tangent, record)
+            )
+            scale = max(float(np.max(np.abs(tangent.values))), 1e-300)
+            levels.append(
+                {
+                    "epsilon": float(epsilon),
+                    "first_order_disagreement": float(
+                        np.max(np.abs(chord - np.abs(tangent.values)))
+                    )
+                    / scale,
+                    "chain_disagreement": float(
+                        np.max(np.abs(chord - np.abs(chain.values)))
+                    )
+                    / scale,
+                    "stages": list(chain.chain),
+                    "intrinsic_correction": chain.extra["intrinsic_correction"],
+                }
+            )
+        worst_chain = max(level["chain_disagreement"] for level in levels)
+        best_ratio = min(
+            level["first_order_disagreement"] / max(level["chain_disagreement"], 1e-300)
+            for level in levels
+        )
+        rows.append(
+            {
+                "case": case.key,
+                "surface": case.surface.name,
+                "curvature_is_constant": bool(closed_form),
+                "chain": list(levels[0]["stages"]),
+                "intrinsic_correction": levels[0]["intrinsic_correction"],
+                "worst_chain_disagreement": worst_chain,
+                "smallest_improvement_factor": best_ratio,
+                "chain_is_never_worse": all(
+                    level["chain_disagreement"] <= level["first_order_disagreement"]
+                    for level in levels
+                ),
+                "levels": levels,
+            }
+        )
+    return rows
+
+
 def measure_error_budget(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
     """A path-level error budget: what the step costs, per quantity, per case.
 
@@ -1429,6 +1524,49 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
                 )
             )
 
+    for row in results["prediction_chain"]:
+        if row["curvature_is_constant"]:
+            checks.append(
+                _check(
+                    f"prediction-chain-closes/{row['case']}",
+                    "naming the two second-order transformations closes the gap to "
+                    "an independently computed ambient chord, from the size of the "
+                    "effect down to the numerical floor",
+                    row["worst_chain_disagreement"],
+                    1e-9,
+                )
+            )
+            checks.append(
+                _check(
+                    f"prediction-chain-is-worth-it/{row['case']}",
+                    "and by three orders of magnitude or more, which is why the "
+                    "transformations are objects and not labels",
+                    row["smallest_improvement_factor"],
+                    1000.0,
+                    comparison=">=",
+                )
+            )
+        else:
+            checks.append(
+                _check(
+                    f"prediction-chain-declares-the-missing-term/{row['case']}",
+                    "where the curvature varies only the chord correction is "
+                    "computable, and the prediction says the other was not applied "
+                    "rather than appearing complete",
+                    0.0 if row["intrinsic_correction"].startswith("not-applied") else 1.0,
+                    0.0,
+                )
+            )
+            checks.append(
+                _check(
+                    f"prediction-chain-never-worse/{row['case']}",
+                    "and the part that is applied never moves the prediction away "
+                    "from the measurement",
+                    0.0 if row["chain_is_never_worse"] else 1.0,
+                    0.0,
+                )
+            )
+
     for row in results["jet_step_sensitivity"]:
         checks.append(
             _check(
@@ -1723,6 +1861,7 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
         "self_convergence": measure_self_convergence(config, cases),
         "finite_difference_cost": measure_finite_difference_cost(config, cases),
         "error_budget": measure_error_budget(config, cases),
+        "prediction_chain": measure_prediction_chain(config, cases),
         "jet_step_sensitivity": measure_jet_step_sensitivity(config, cases),
         "envelopes": build_envelopes(config, cases),
         "chart_rescaling_invariance": measure_chart_rescaling_invariance(cases),

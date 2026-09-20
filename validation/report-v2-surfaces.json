@@ -23,6 +23,18 @@
   "depends_on": "geodesic-jacobi-report-v3",
   "observation_modes": [
     {
+      "identifier": "first-order-tangent-separation",
+      "version": 1,
+      "quantity": "the linear image Phi dz0 of a starting-pose error",
+      "support": {
+        "constant-curvature": "exact",
+        "declared-curvature-profile": "exact",
+        "parametric-surface": "numerical",
+        "physical-instrument": "unavailable"
+      },
+      "note": "What the transfer map produces, and the only thing it produces. It is not a distance: it is a vector in the tangent space at the nominal point, and the distance it approximates differs from it at second order in the perturbation -- which is the order every campaign here is trying to resolve. Kept as its own mode so that the step from it to an intrinsic distance is a transformation somebody applied rather than a relabelling nobody noticed."
+    },
+    {
       "identifier": "intrinsic-surface-distance",
       "version": 1,
       "quantity": "Riemannian distance between two points, measured in the surface",
@@ -187,6 +199,11 @@
       0.0001,
       1e-05,
       1e-06
+    ],
+    "chain_steps": 800,
+    "chain_epsilons": [
+      0.005,
+      0.0025
     ],
     "transverse_tolerances": [
       0.001,
@@ -2025,6 +2042,230 @@
             "true_transfer_error": null,
             "resolved": false,
             "estimate_over_truth": null
+          }
+        ]
+      }
+    ],
+    "prediction_chain": [
+      {
+        "case": "plate",
+        "surface": "plane",
+        "curvature_is_constant": true,
+        "chain": [
+          "Phi(s) dz0 with dz0 = (0.0, 0.01)",
+          "sn_K(d/2) = sn_K(s) sin(eps/2): exact separation for constant K",
+          "c = (2/kappa_n) sin(kappa_n d / 2): the chord of the connecting arc"
+        ],
+        "intrinsic_correction": "applied",
+        "worst_chain_disagreement": 7.5026790336e-13,
+        "smallest_improvement_factor": 1388393.41896,
+        "chain_is_never_worse": true,
+        "levels": [
+          {
+            "epsilon": 0.005,
+            "first_order_disagreement": 4.16666091387e-06,
+            "chain_disagreement": 5.28743715478e-13,
+            "stages": [
+              "Phi(s) dz0 with dz0 = (0.0, 0.01)",
+              "sn_K(d/2) = sn_K(s) sin(eps/2): exact separation for constant K",
+              "c = (2/kappa_n) sin(kappa_n d / 2): the chord of the connecting arc"
+            ],
+            "intrinsic_correction": "applied"
+          },
+          {
+            "epsilon": 0.0025,
+            "first_order_disagreement": 1.04166701948e-06,
+            "chain_disagreement": 7.5026790336e-13,
+            "stages": [
+              "Phi(s) dz0 with dz0 = (0.0, 0.005)",
+              "sn_K(d/2) = sn_K(s) sin(eps/2): exact separation for constant K",
+              "c = (2/kappa_n) sin(kappa_n d / 2): the chord of the connecting arc"
+            ],
+            "intrinsic_correction": "applied"
+          }
+        ]
+      },
+      {
+        "case": "rolled-sheet",
+        "surface": "cylinder(R=1)",
+        "curvature_is_constant": true,
+        "chain": [
+          "Phi(s) dz0 with dz0 = (0.0, 0.01)",
+          "sn_K(d/2) = sn_K(s) sin(eps/2): exact separation for constant K",
+          "c = (2/kappa_n) sin(kappa_n d / 2): the chord of the connecting arc"
+        ],
+        "intrinsic_correction": "applied",
+        "worst_chain_disagreement": 5.43419476085e-12,
+        "smallest_improvement_factor": 1078494.49046,
+        "chain_is_never_worse": true,
+        "levels": [
+          {
+            "epsilon": 0.005,
+            "first_order_disagreement": 5.86074910963e-06,
+            "chain_disagreement": 5.43419476085e-12,
+            "stages": [
+              "Phi(s) dz0 with dz0 = (0.0, 0.01)",
+              "sn_K(d/2) = sn_K(s) sin(eps/2): exact separation for constant K",
+              "c = (2/kappa_n) sin(kappa_n d / 2): the chord of the connecting arc"
+            ],
+            "intrinsic_correction": "applied"
+          },
+          {
+            "epsilon": 0.0025,
+            "first_order_disagreement": 1.46519411933e-06,
+            "chain_disagreement": 7.29364485474e-13,
+            "stages": [
+              "Phi(s) dz0 with dz0 = (0.0, 0.005)",
+              "sn_K(d/2) = sn_K(s) sin(eps/2): exact separation for constant K",
+              "c = (2/kappa_n) sin(kappa_n d / 2): the chord of the connecting arc"
+            ],
+            "intrinsic_correction": "applied"
+          }
+        ]
+      },
+      {
+        "case": "spherical-cap",
+        "surface": "sphere(R=1)",
+        "curvature_is_constant": true,
+        "chain": [
+          "Phi(s) dz0 with dz0 = (0.0, 0.01)",
+          "sn_K(d/2) = sn_K(s) sin(eps/2): exact separation for constant K",
+          "c = (2/kappa_n) sin(kappa_n d / 2): the chord of the connecting arc"
+        ],
+        "intrinsic_correction": "applied",
+        "worst_chain_disagreement": 2.76618572769e-10,
+        "smallest_improvement_factor": 3766.71350567,
+        "chain_is_never_worse": true,
+        "levels": [
+          {
+            "epsilon": 0.005,
+            "first_order_disagreement": 4.16693745311e-06,
+            "chain_disagreement": 2.76035878969e-10,
+            "stages": [
+              "Phi(s) dz0 with dz0 = (0.0, 0.01)",
+              "sn_K(d/2) = sn_K(s) sin(eps/2): exact separation for constant K",
+              "c = (2/kappa_n) sin(kappa_n d / 2): the chord of the connecting arc"
+            ],
+            "intrinsic_correction": "applied"
+          },
+          {
+            "epsilon": 0.0025,
+            "first_order_disagreement": 1.04194291397e-06,
+            "chain_disagreement": 2.76618572769e-10,
+            "stages": [
+              "Phi(s) dz0 with dz0 = (0.0, 0.005)",
+              "sn_K(d/2) = sn_K(s) sin(eps/2): exact separation for constant K",
+              "c = (2/kappa_n) sin(kappa_n d / 2): the chord of the connecting arc"
+            ],
+            "intrinsic_correction": "applied"
+          }
+        ]
+      },
+      {
+        "case": "pseudosphere",
+        "surface": "pseudosphere",
+        "curvature_is_constant": true,
+        "chain": [
+          "Phi(s) dz0 with dz0 = (0.0, 0.01)",
+          "sn_K(d/2) = sn_K(s) sin(eps/2): exact separation for constant K",
+          "c = (2/kappa_n) sin(kappa_n d / 2): the chord of the connecting arc"
+        ],
+        "intrinsic_correction": "applied",
+        "worst_chain_disagreement": 3.47317264716e-10,
+        "smallest_improvement_factor": 66425.428925,
+        "chain_is_never_worse": true,
+        "levels": [
+          {
+            "epsilon": 0.005,
+            "first_order_disagreement": 2.30706982818e-05,
+            "chain_disagreement": 3.47317264716e-10,
+            "stages": [
+              "Phi(s) dz0 with dz0 = (0.0, 0.01)",
+              "sn_K(d/2) = sn_K(s) sin(eps/2): exact separation for constant K",
+              "c = (2/kappa_n) sin(kappa_n d / 2): the chord of the connecting arc"
+            ],
+            "intrinsic_correction": "applied"
+          },
+          {
+            "epsilon": 0.0025,
+            "first_order_disagreement": 5.76784374612e-06,
+            "chain_disagreement": 2.19172160722e-11,
+            "stages": [
+              "Phi(s) dz0 with dz0 = (0.0, 0.005)",
+              "sn_K(d/2) = sn_K(s) sin(eps/2): exact separation for constant K",
+              "c = (2/kappa_n) sin(kappa_n d / 2): the chord of the connecting arc"
+            ],
+            "intrinsic_correction": "applied"
+          }
+        ]
+      },
+      {
+        "case": "saddle",
+        "surface": "hyperbolic-paraboloid(a=1)",
+        "curvature_is_constant": false,
+        "chain": [
+          "Phi(s) dz0 with dz0 = (0.0, 0.01)",
+          "c = (2/kappa_n) sin(kappa_n j / 2) applied to the first-order separation"
+        ],
+        "intrinsic_correction": "not-applied: no closed form for the finite separation on a varying-curvature surface",
+        "worst_chain_disagreement": 5.83728205139e-06,
+        "smallest_improvement_factor": 1.03702433494,
+        "chain_is_never_worse": true,
+        "levels": [
+          {
+            "epsilon": 0.005,
+            "first_order_disagreement": 6.0534035372e-06,
+            "chain_disagreement": 5.83728205139e-06,
+            "stages": [
+              "Phi(s) dz0 with dz0 = (0.0, 0.01)",
+              "c = (2/kappa_n) sin(kappa_n j / 2) applied to the first-order separation"
+            ],
+            "intrinsic_correction": "not-applied: no closed form for the finite separation on a varying-curvature surface"
+          },
+          {
+            "epsilon": 0.0025,
+            "first_order_disagreement": 1.51335064027e-06,
+            "chain_disagreement": 1.45932026628e-06,
+            "stages": [
+              "Phi(s) dz0 with dz0 = (0.0, 0.005)",
+              "c = (2/kappa_n) sin(kappa_n j / 2) applied to the first-order separation"
+            ],
+            "intrinsic_correction": "not-applied: no closed form for the finite separation on a varying-curvature surface"
+          }
+        ]
+      },
+      {
+        "case": "torus",
+        "surface": "torus(R=2, r=1)",
+        "curvature_is_constant": false,
+        "chain": [
+          "Phi(s) dz0 with dz0 = (0.0, 0.01)",
+          "c = (2/kappa_n) sin(kappa_n j / 2) applied to the first-order separation"
+        ],
+        "intrinsic_correction": "not-applied: no closed form for the finite separation on a varying-curvature surface",
+        "worst_chain_disagreement": 2.65103167546e-06,
+        "smallest_improvement_factor": 4.05232008609,
+        "chain_is_never_worse": true,
+        "levels": [
+          {
+            "epsilon": 0.005,
+            "first_order_disagreement": 1.07436542838e-05,
+            "chain_disagreement": 2.65103167546e-06,
+            "stages": [
+              "Phi(s) dz0 with dz0 = (0.0, 0.01)",
+              "c = (2/kappa_n) sin(kappa_n j / 2) applied to the first-order separation"
+            ],
+            "intrinsic_correction": "not-applied: no closed form for the finite separation on a varying-curvature surface"
+          },
+          {
+            "epsilon": 0.0025,
+            "first_order_disagreement": 2.685986064e-06,
+            "chain_disagreement": 6.62826728131e-07,
+            "stages": [
+              "Phi(s) dz0 with dz0 = (0.0, 0.005)",
+              "c = (2/kappa_n) sin(kappa_n j / 2) applied to the first-order separation"
+            ],
+            "intrinsic_correction": "not-applied: no closed form for the finite separation on a varying-curvature surface"
           }
         ]
       }
@@ -13719,6 +13960,102 @@
       "passed": true
     },
     {
+      "id": "prediction-chain-closes/plate",
+      "statement": "naming the two second-order transformations closes the gap to an independently computed ambient chord, from the size of the effect down to the numerical floor",
+      "value": 7.5026790336e-13,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "prediction-chain-is-worth-it/plate",
+      "statement": "and by three orders of magnitude or more, which is why the transformations are objects and not labels",
+      "value": 1388393.41896,
+      "threshold": 1000.0,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "prediction-chain-closes/rolled-sheet",
+      "statement": "naming the two second-order transformations closes the gap to an independently computed ambient chord, from the size of the effect down to the numerical floor",
+      "value": 5.43419476085e-12,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "prediction-chain-is-worth-it/rolled-sheet",
+      "statement": "and by three orders of magnitude or more, which is why the transformations are objects and not labels",
+      "value": 1078494.49046,
+      "threshold": 1000.0,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "prediction-chain-closes/spherical-cap",
+      "statement": "naming the two second-order transformations closes the gap to an independently computed ambient chord, from the size of the effect down to the numerical floor",
+      "value": 2.76618572769e-10,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "prediction-chain-is-worth-it/spherical-cap",
+      "statement": "and by three orders of magnitude or more, which is why the transformations are objects and not labels",
+      "value": 3766.71350567,
+      "threshold": 1000.0,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "prediction-chain-closes/pseudosphere",
+      "statement": "naming the two second-order transformations closes the gap to an independently computed ambient chord, from the size of the effect down to the numerical floor",
+      "value": 3.47317264716e-10,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "prediction-chain-is-worth-it/pseudosphere",
+      "statement": "and by three orders of magnitude or more, which is why the transformations are objects and not labels",
+      "value": 66425.428925,
+      "threshold": 1000.0,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "prediction-chain-declares-the-missing-term/saddle",
+      "statement": "where the curvature varies only the chord correction is computable, and the prediction says the other was not applied rather than appearing complete",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "prediction-chain-never-worse/saddle",
+      "statement": "and the part that is applied never moves the prediction away from the measurement",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "prediction-chain-declares-the-missing-term/torus",
+      "statement": "where the curvature varies only the chord correction is computable, and the prediction says the other was not applied rather than appearing complete",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "prediction-chain-never-worse/torus",
+      "statement": "and the part that is applied never moves the prediction away from the measurement",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
       "id": "jet-step-foci-are-stable/plate",
       "statement": "every differencing step in the sweep finds the same number of foci: the jet's step may cost accuracy, and it may not invent or erase a conjugate point",
       "value": 0.0,
@@ -14216,12 +14553,12 @@
     }
   ],
   "summary": {
-    "n_checks": 129,
+    "n_checks": 141,
     "n_failed": 0,
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "ac49f53d2e166825d7b0a690d07dcf7dc76647cf6130786cd97c9948f4ee5c0a",
+  "content_hash": "43ed677a2f6e87f418301f212a4540bef26dea157b078f5eff877a2f62b1d365",
   "environment": {
     "package_version": "0.2.0",
     "python": "3.11.15",

@@ -17,6 +17,18 @@
   ],
   "observation_modes": [
     {
+      "identifier": "first-order-tangent-separation",
+      "version": 1,
+      "quantity": "the linear image Phi dz0 of a starting-pose error",
+      "support": {
+        "constant-curvature": "exact",
+        "declared-curvature-profile": "exact",
+        "parametric-surface": "numerical",
+        "physical-instrument": "unavailable"
+      },
+      "note": "What the transfer map produces, and the only thing it produces. It is not a distance: it is a vector in the tangent space at the nominal point, and the distance it approximates differs from it at second order in the perturbation -- which is the order every campaign here is trying to resolve. Kept as its own mode so that the step from it to an intrinsic distance is a transformation somebody applied rather than a relabelling nobody noticed."
+    },
+    {
       "identifier": "intrinsic-surface-distance",
       "version": 1,
       "quantity": "Riemannian distance between two points, measured in the surface",
@@ -9573,7 +9585,7 @@
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "3fad1a40bab230cc7a6cf6bf2a76c11ffd26392b3f6756f2beba767fc9e53cfd",
+  "content_hash": "92d60e18fd7d613bfad56007580b5dd2e515f5f7721a94a6d1422ffd4688f8dd",
   "environment": {
     "package_version": "0.2.0",
     "python": "3.11.15",

@@ -104,6 +104,25 @@
   tolerance gives low `rho` with no focus present, and a sharp instrument
   stays resolvable beside a real conjugate point. Report both, never rename
   one as the other, and let only the instrument's answer decide a route.
+- **A prediction carries its transformations, not a label for them.** Between
+  `Phi dz0` and an ambient chord sit two second-order corrections, and between
+  that and an instrument output sit `H` and the filter. `engine/prediction.py`
+  makes each one a named step on a `Prediction` that records its whole chain,
+  and the chain runs forward only -- a chord that could be stepped back into an
+  intrinsic distance is the relabelling the module exists to prevent. A
+  transformation that is not computable is *declared* missing on the
+  prediction, never omitted silently: `chord_from_tangent` applies the chord
+  correction on a varying-curvature surface and says in `chain`, `note` and
+  `extra["intrinsic_correction"]` that the finite-separation one was not
+  applied.
+- **A comparison statistic is not a scalar.** A maximum absolute residual
+  throws away the covariance, cannot be compared between instruments, and
+  cannot be held to any threshold that is not already in the measurement's
+  units. `residual_statistics` returns the full residual covariance, the
+  whitened residual and the chi-square. A filter correlates arc lengths, so a
+  filtered comparison gets one covariance over every scalar residual rather
+  than a per-sample stack; keeping the diagonal blocks alone would treat as
+  independent exactly the samples the filter made dependent.
 - **Filter agreement is proved, not asserted.** A comparison against a filtered
   trial takes a `FilteredPrediction` whose identifier, version, operator digest
   and causality all match the record. A boolean cannot tell the declared
