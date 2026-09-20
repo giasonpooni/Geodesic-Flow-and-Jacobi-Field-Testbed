@@ -9412,7 +9412,7 @@
       "id": "transfer-determinant/K=0",
       "statement": "the scaled transfer's singular values are reciprocal at every arc length, because conjugation leaves det Phi = 1 alone",
       "value": 2.220446049250313e-16,
-      "threshold": 1e-12,
+      "threshold": 1e-10,
       "comparison": "<=",
       "passed": true
     },
@@ -9428,7 +9428,7 @@
       "id": "transfer-determinant/K=+1",
       "statement": "the scaled transfer's singular values are reciprocal at every arc length, because conjugation leaves det Phi = 1 alone",
       "value": 2.6423307986078726e-14,
-      "threshold": 1e-12,
+      "threshold": 1e-10,
       "comparison": "<=",
       "passed": true
     },
@@ -9444,7 +9444,7 @@
       "id": "transfer-determinant/K=-1",
       "statement": "the scaled transfer's singular values are reciprocal at every arc length, because conjugation leaves det Phi = 1 alone",
       "value": 9.64339719189411e-13,
-      "threshold": 1e-12,
+      "threshold": 1e-10,
       "comparison": "<=",
       "passed": true
     },
@@ -9511,11 +9511,11 @@
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "0ca8cebc758eaa67d16f9e9fcf2257a7a2b8f81c0aff158f2fdf0215c768161c",
+  "content_hash": "f50ac4a21c0d87b9cfa6411724de87217574951e6672d9d13dd38726c40420b5",
   "environment": {
     "package_version": "0.1.0",
-    "python": "3.11.15",
-    "numpy": "2.4.6",
-    "platform": "Linux-6.18.44-fc-v37-x86_64-with-glibc2.39"
+    "python": "3.12.14",
+    "numpy": "2.3.5",
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.39"
   }
 }

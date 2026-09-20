@@ -40,6 +40,7 @@ import numpy as np
 
 from .observation import mode as observation_mode
 from .observation_model import FilteredPrediction
+from .transfer import _validated_covariance
 
 MEASUREMENT_SCHEMA = "path-sensitivity-observation-v1"
 
@@ -223,15 +224,7 @@ class MeasurementRecord:
         if not {"length", "angle"} <= set(self.units):
             raise ValueError("units must declare both 'length' and 'angle'")
         if self.measurement_covariance is not None:
-            matrix = np.asarray(self.measurement_covariance, dtype=float)
-            if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
-                raise ValueError("measurement_covariance must be square")
-            if not np.all(np.isfinite(matrix)):
-                raise ValueError("measurement_covariance must be finite")
-            if not np.allclose(matrix, matrix.T, atol=0.0, rtol=1e-12):
-                raise ValueError("measurement_covariance must be symmetric")
-            if np.linalg.eigvalsh(0.5 * (matrix + matrix.T))[0] < -1e-12:
-                raise ValueError("measurement_covariance must be positive semidefinite")
+            _validated_covariance(self.measurement_covariance, "measurement_covariance", size=None)
         for name in (
             "geometry_model_digest",
             "calibration_transform_digest",
@@ -256,6 +249,8 @@ class MeasurementRecord:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        if self.measurement_covariance is not None:
+            _validated_covariance(self.measurement_covariance, "measurement_covariance", size=None)
         payload = asdict(self)
         payload["schema"] = MEASUREMENT_SCHEMA
         payload["perturbation"] = self.perturbation.to_dict()
@@ -298,6 +293,8 @@ def compare(
     *instrument protocol* declares. This module reports the ratio and never
     invents the bar.
     """
+    if record.measurement_covariance is not None:
+        _validated_covariance(record.measurement_covariance, "measurement_covariance", size=None)
     expected = mode or record.observation_mode
     if expected != record.observation_mode:
         raise ValueError(
@@ -381,6 +378,9 @@ def compare(
         },
     }
     if filtered and predicted_separation.noise_covariance is not None:
+        _validated_covariance(
+            predicted_separation.noise_covariance, "filtered R", predicted.size
+        )
         result["filtered_noise_covariance_shape"] = list(
             np.shape(predicted_separation.noise_covariance)
         )

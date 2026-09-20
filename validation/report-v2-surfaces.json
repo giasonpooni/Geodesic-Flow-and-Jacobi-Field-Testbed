@@ -12667,8 +12667,8 @@
   "content_hash": "b336bbc2370617993fff083b1d422c8332471ace1970ea88bc77e9e64f4f8bc0",
   "environment": {
     "package_version": "0.1.0",
-    "python": "3.11.15",
-    "numpy": "2.4.6",
-    "platform": "Linux-6.18.44-fc-v37-x86_64-with-glibc2.39"
+    "python": "3.12.14",
+    "numpy": "2.3.5",
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.39"
   }
 }

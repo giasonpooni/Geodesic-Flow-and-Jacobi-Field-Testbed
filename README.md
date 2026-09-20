@@ -40,6 +40,33 @@ first-derivative term, so `det Phi = a b' - a' b = 1` exactly, at every arc
 length, on every surface — a quantity the solver never enforces and whose
 drift is therefore a free measure of how well it is integrating.
 
+### Numerical covariance boundary
+
+Starting-pose, observation-model, measurement-record, and temporal-filter
+covariances use one native numerical validator. Variances must be finite and
+nonnegative; an exactly zero variance requires an exactly zero row and column.
+For positive-variance coordinates, symmetry and PSD checks use dimensionless
+correlations with tolerances `1e-12` and `1e-12`, respectively. Each stored
+triangle must pass. No averaging, eigenvalue clipping, jitter, or uncertainty
+floor repairs the supplied matrix. Consequently a tiny invalid covariance is
+not accepted merely because its entries fall below an absolute threshold.
+
+Valid singular and mixed-unit covariances remain supported, including
+`[[1e-14, 1e-7], [1e-7, 1]]`. Boolean/string coercion, unrepresentable variances,
+and nonfinite propagation results are refused. Propagation refuses negative
+computed variances, including cancellation beyond representable precision,
+rather than clipping them. Floating-point underflow during covariance
+congruences is also refused: nonzero uncertainty must not silently become an
+exact zero. This is conservative even for negligible intermediate terms.
+Resolvability additionally requires positive noise
+variance in every reported output; singular covariance does not authorize
+division by zero. Eligibility close to the dimensionless threshold remains
+floating-point dependent and does not establish calibration, independence,
+model adequacy, or physical validity.
+
+This tightens numerical acceptance without rewriting retained report schemas,
+source digests, observation modes, or historical operation identities.
+
 ## Verification
 
 **235 declared checks across two stages, 0 failed.** Every number below has a

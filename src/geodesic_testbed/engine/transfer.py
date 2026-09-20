@@ -47,6 +47,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from numbers import Real
 from typing import Any
 
 import numpy as np
@@ -57,6 +58,12 @@ Array = np.ndarray
 # same block can ride along with either a scalar or a parametric flow.
 COMPONENTS = ("a", "a_rate", "b", "b_rate")
 INITIAL_STATE = (1.0, 0.0, 0.0, 1.0)
+
+# These are dimensionless numerical eligibility tolerances, not uncertainty
+# floors. Historical report/operation identities and retained matrices do not
+# change when the validator rejects a formerly admitted invalid covariance.
+COVARIANCE_SYMMETRY_ATOL = 1e-12
+COVARIANCE_PSD_ATOL = 1e-12
 
 
 @dataclass(frozen=True)
@@ -195,7 +202,7 @@ class TransferMap:
         """
         covariance = _validated_covariance(covariance)
         phi = self.matrices()
-        return phi @ covariance @ np.swapaxes(phi, -1, -2)
+        return _covariance_product(phi, covariance, "propagated covariance")
 
     def focus_events(self, *, component: str = "b") -> list[FocusEvent]:
         """Every focus of one column, located to better than the sample spacing.
@@ -302,32 +309,84 @@ class TransferMap:
         return bool(events) and events[0].arc_length < float(self.arc_length[-1])
 
 
-def _validated_covariance(covariance) -> Array:
-    """A 2x2 starting-pose covariance, or a refusal that says which property failed.
+def _finite_numeric_array(value, name: str) -> Array:
+    """Copy real numeric data without silently coercing booleans or strings."""
+    try:
+        if not isinstance(value, np.ndarray) or value.dtype.kind not in "fiu":
+            raw = np.asarray(value, dtype=object)
+            if any(isinstance(item, (bool, np.bool_)) or not isinstance(item, Real)
+                   for item in raw.flat):
+                raise ValueError(f"{name} must contain real numbers, not booleans or strings")
+        with np.errstate(over="raise", invalid="raise", under="raise"):
+            result = np.array(value, dtype=float, copy=True)
+    except (TypeError, OverflowError, FloatingPointError) as exc:
+        raise ValueError(f"{name} must contain finite real numbers") from exc
+    if not np.all(np.isfinite(result)):
+        raise ValueError(f"{name} must be finite")
+    return result
+
+
+def _covariance_product(operator: Array, covariance: Array, name: str) -> Array:
+    """Evaluate a congruence without emitting nonfinite covariance claims."""
+    try:
+        with np.errstate(over="raise", invalid="raise", under="raise"):
+            result = operator @ covariance @ np.swapaxes(operator, -1, -2)
+    except FloatingPointError as exc:
+        raise ValueError(f"{name} is outside finite floating-point range") from exc
+    if not np.all(np.isfinite(result)):
+        raise ValueError(f"{name} must be finite")
+    if np.any(np.diagonal(result, axis1=-2, axis2=-1) < 0.0):
+        raise ValueError(f"{name} has a negative computed variance; no clipping is permitted")
+    return result
+
+
+def _validated_covariance(covariance, name: str = "covariance", size: int | None = 2) -> Array:
+    """Validate covariance in dimensionless correlation coordinates, without repair.
 
     Congruence by ``Phi`` preserves indefiniteness as faithfully as it preserves
     anything else, so a matrix that is not a covariance in goes to something
     that is not a covariance out, silently and with plausible-looking numbers.
-    Symmetry alone does not catch it: ``[[1, 2], [2, 1]]`` is symmetric and has
-    eigenvalues 3 and -1.
+    Strict nonnegative variances and exactly-zero null rows precede the check
+    of both stored triangles. The returned copy retains every supplied value.
+    Singular PSD matrices are valid; no diagonal floor or jitter is added.
     """
-    covariance = np.asarray(covariance, dtype=float)
-    if covariance.shape != (2, 2):
-        raise ValueError("covariance must be 2x2 in the (lateral, heading) basis")
-    if not np.all(np.isfinite(covariance)):
-        raise ValueError("covariance must be finite")
-    if not np.allclose(covariance, covariance.T, atol=0.0, rtol=1e-12):
-        raise ValueError("covariance must be symmetric")
-    symmetric = 0.5 * (covariance + covariance.T)
-    eigenvalues = np.linalg.eigvalsh(symmetric)
-    # Scale the tolerance to the matrix: an absolute floor would reject a
-    # legitimate covariance in micrometres and accept a bad one in metres.
-    tolerance = 1e-12 * max(float(np.max(np.abs(eigenvalues))), 1.0)
-    if eigenvalues[0] < -tolerance:
-        raise ValueError(
-            "covariance must be positive semidefinite; smallest eigenvalue is "
-            f"{eigenvalues[0]!r}"
-        )
+    covariance = _finite_numeric_array(covariance, name)
+    if covariance.ndim != 2 or covariance.shape[0] != covariance.shape[1] or not covariance.size:
+        raise ValueError(f"{name} must be a non-empty square matrix")
+    if size is not None and covariance.shape != (size, size):
+        raise ValueError(f"{name} must be {size}x{size}")
+    diagonal = np.diag(covariance)
+    if np.any(diagonal < 0.0):
+        raise ValueError(f"{name} must be positive semidefinite: negative variance")
+    for index in np.flatnonzero(diagonal == 0.0):
+        if np.any(covariance[index, :] != 0.0) or np.any(covariance[:, index] != 0.0):
+            raise ValueError(f"{name}: zero variance requires an exactly zero row and column")
+    active = np.flatnonzero(diagonal > 0.0)
+    if active.size == 0:
+        return covariance
+    roots = np.sqrt(diagonal[active])
+    # Divide by the larger root first: neither products of variances nor an
+    # intermediate division by a tiny root can overflow for valid correlations.
+    larger = np.maximum(roots[:, None], roots[None, :])
+    smaller = np.minimum(roots[:, None], roots[None, :])
+    try:
+        with np.errstate(over="raise", invalid="raise", divide="raise"):
+            correlation = covariance[np.ix_(active, active)] / larger / smaller
+    except FloatingPointError as exc:
+        raise ValueError(f"{name} has nonfinite normalized correlation") from exc
+    if not np.all(np.isfinite(correlation)):
+        raise ValueError(f"{name} has nonfinite normalized correlation")
+    if np.any(np.abs(correlation) > 1.0 + COVARIANCE_PSD_ATOL):
+        raise ValueError(f"{name} must be positive semidefinite in correlation coordinates")
+    if not np.allclose(correlation, correlation.T, rtol=0.0, atol=COVARIANCE_SYMMETRY_ATOL):
+        raise ValueError(f"{name} must be symmetric in correlation coordinates")
+    try:
+        for triangle in ("L", "U"):
+            eigenvalues = np.linalg.eigvalsh(correlation, UPLO=triangle)
+            if not np.all(np.isfinite(eigenvalues)) or eigenvalues[0] < -COVARIANCE_PSD_ATOL:
+                raise ValueError(f"{name} must be positive semidefinite in correlation coordinates")
+    except np.linalg.LinAlgError as exc:
+        raise ValueError(f"{name} covariance validation did not converge") from exc
     return covariance
 
 
