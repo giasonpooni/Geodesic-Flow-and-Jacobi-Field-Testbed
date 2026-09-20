@@ -227,9 +227,10 @@ delegates to the engine rather than carrying a second copy.
 [`docs/METHODS.md`](docs/METHODS.md) is the mathematical contract,
 [`docs/EXPERIMENT.md`](docs/EXPERIMENT.md) and [`docs/SURFACES.md`](docs/SURFACES.md)
 the two verification stages in full, [`docs/INSTRUMENT.md`](docs/INSTRUMENT.md)
-the industrial reading and the roadmap, and
-[`docs/INDUSTRIAL-PILOT.md`](docs/INDUSTRIAL-PILOT.md) the physical validation
-path.
+the interpretation and validation limits, and
+[`docs/MEASUREMENT.md`](docs/MEASUREMENT.md) the implemented observation,
+filtering and tracking contracts. [CONTRIBUTING.md](CONTRIBUTING.md) records
+the contributor invariants.
 
 ## Scope
 
@@ -245,14 +246,12 @@ and names stage one as its dependency; the application report's is
   not, and the experiment measures by how much.
 - The envelope is first order. `Phi(s)` maps a starting pose error to a
   downstream one linearly; stage one measures where that stops being true.
-- Meshes are out of scope here — they belong to the Intrinsic Surface
-  Geodesics Testbed, and this runtime should consume a versioned path artefact
-  from it rather than growing a second mesh solver.
+- Meshes are out of scope here; this runtime provides parametric-surface
+  geometry and does not contain a triangle-mesh solver.
 - **No physical measurement exists in this repository.** Nothing here models
   machine servo error, material mechanics, tow compaction, weld-pool behaviour
-  or sensor probability of detection. The bench that would establish agreement
-  between prediction and measurement is described in `docs/INSTRUMENT.md` and
-  `docs/INDUSTRIAL-PILOT.md`, and has not been built.
+  or sensor probability of detection. Numerical verification does not establish
+  agreement with a physical instrument; physical validation is `not_started`.
 
 ## Portfolio context
 

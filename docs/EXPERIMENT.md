@@ -220,12 +220,10 @@ exactly where and by how much that fails.
 * **No claim beyond the closed forms.** The report's `claim_scope` is
   `numerical-verification-against-closed-form-solutions`. Every number is
   checked against an analytic solution on a surface where one exists.
-* **No general surfaces.** Triangulated or parametric surfaces, where the
-  curvature varies along the path and there is no closed form to check against,
-  are the obvious next step and are not attempted here.
-* **No physical measurement.** See [INSTRUMENT.md](INSTRUMENT.md) for what
-  would be required to turn this into an instrument, and for the line between
-  what is verified here and what is not.
+* **No general surfaces in this stage.** Parametric surfaces are covered in
+  [SURFACES.md](SURFACES.md); triangle meshes are outside this repository.
+* **No physical measurement.** See [INSTRUMENT.md](INSTRUMENT.md) for the
+  distinction between numerical verification and physical validation.
 * **No adaptive stepping, no symplectic integrator, no compiled backend.** The
   fixed-step methods are what make the order and invariant measurements
   legible.

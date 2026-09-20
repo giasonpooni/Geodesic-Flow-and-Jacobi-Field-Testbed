@@ -1,8 +1,5 @@
-# Development workflow
+# Contributing
 
-- Maintain Curved-Surface Geodesic Sensitivity as one project. `main` carries
-  the application contracts; implementation work lands on a branch and is
-  reconciled with `main` before it is tagged.
 - `geodesic_testbed` is the public API: tolerances, manufacturing and
   inspection assessments, reports. `geodesic_testbed.engine` is the verified
   numerical core underneath it. Application code imports the former; only the
@@ -86,18 +83,19 @@
   prediction with the original `R`. Every `MeasurementRecord` carries the
   filter's identity, version, parameters, causality, group delay, sampling
   rates, the dataset it was tuned on, the rejected-sample mask and the
-  outlier rule; see `docs/INDUSTRIAL-PILOT.md` for the prohibitions.
+  outlier rule; see [the measurement contract](docs/MEASUREMENT.md) for the prohibitions.
 - Repository boundaries. Mesh work -- triangulated surfaces, discrete
   curvature estimators, mesh path convergence -- belongs in the Intrinsic
-  Surface Geodesics Testbed, not here. This runtime should eventually consume
-  a versioned path artefact from it (sampled position, tangent, curvature,
-  frame, units, provenance, uncertainty) rather than growing a mesh solver.
-  Covariance representations and SPD geometry belong in the Covariance
-  Geometry Testbed; downstream decisions belong in the Construction State
-  Estimator.
+  Surface Geodesics Testbed, not here. A geometric input must retain sampled
+  position, tangent, curvature, frame, units, provenance and uncertainty.
+  Covariance-manifold geometry and downstream decision authority are outside
+  this runtime.
 - Physical validation is `not_started` and stays so until held-out measured
   data agrees. The Wronskian validates internal propagation consistency -- not
   the surface model, not the observation model, not a physical prediction.
 - No CUDA stack, no Rust gate, no compiled backend. Fixed-step methods of
   known order are what make the convergence and invariant measurements
   legible.
+
+Preserve concurrent work and existing validated behavior. Do not force-push
+shared history.

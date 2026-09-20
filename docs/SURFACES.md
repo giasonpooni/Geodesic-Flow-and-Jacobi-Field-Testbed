@@ -305,8 +305,8 @@ Boundary clearance, curvature exposure and path length are declared in
 * **Full envelope only to first order.** `Phi(s)` maps a starting pose error to
   a downstream one linearly. Stage one measured exactly where that stops being
   the truth; the same limit applies here and has **not** been re-measured on
-  the varying-curvature cases. A path-specific nonlinear validity region is the
-  next thing this stage needs.
+  the varying-curvature cases. A path-specific nonlinear validity region is
+  not supplied by this stage.
 * **Observability is a threshold schedule, not an integral.** Tracking asks
   whether `rho(s)` clears declared levels sample by sample. The accumulated
   observability Gramian `W(s0, s1) = ∫ Φᵀ Hᵀ R⁻¹ H Φ ds`, which would say how
