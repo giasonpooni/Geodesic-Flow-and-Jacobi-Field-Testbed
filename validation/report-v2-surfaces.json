@@ -4056,7 +4056,7 @@
           },
           "provenance": {
             "producer": "curved-surface-geodesic-sensitivity-runtime",
-            "producer_version": "0.2.0",
+            "producer_version": "0.2.1",
             "upstream": [],
             "note": "geodesic envelope on plane",
             "extra": {}
@@ -5315,7 +5315,7 @@
           },
           "provenance": {
             "producer": "curved-surface-geodesic-sensitivity-runtime",
-            "producer_version": "0.2.0",
+            "producer_version": "0.2.1",
             "upstream": [],
             "note": "geodesic envelope on cylinder(R=1)",
             "extra": {}
@@ -6591,7 +6591,7 @@
           },
           "provenance": {
             "producer": "curved-surface-geodesic-sensitivity-runtime",
-            "producer_version": "0.2.0",
+            "producer_version": "0.2.1",
             "upstream": [],
             "note": "geodesic envelope on sphere(R=1)",
             "extra": {}
@@ -7850,7 +7850,7 @@
           },
           "provenance": {
             "producer": "curved-surface-geodesic-sensitivity-runtime",
-            "producer_version": "0.2.0",
+            "producer_version": "0.2.1",
             "upstream": [],
             "note": "geodesic envelope on pseudosphere",
             "extra": {}
@@ -9109,7 +9109,7 @@
           },
           "provenance": {
             "producer": "curved-surface-geodesic-sensitivity-runtime",
-            "producer_version": "0.2.0",
+            "producer_version": "0.2.1",
             "upstream": [],
             "note": "geodesic envelope on hyperbolic-paraboloid(a=1)",
             "extra": {}
@@ -10368,7 +10368,7 @@
           },
           "provenance": {
             "producer": "curved-surface-geodesic-sensitivity-runtime",
-            "producer_version": "0.2.0",
+            "producer_version": "0.2.1",
             "upstream": [],
             "note": "geodesic envelope on torus(R=2, r=1)",
             "extra": {}
@@ -16081,9 +16081,9 @@
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "4d53e857f453bbde8618358c6e6c11fdc5a7b05275facc78a71cd02c0ca1903c",
+  "content_hash": "058da668d11fbf2de763ae9b2fc5514c927be596f9cf1f88a0238755c7c662d7",
   "environment": {
-    "package_version": "0.2.0",
+    "package_version": "0.2.1",
     "python": "3.11.15",
     "numpy": "2.4.6",
     "platform": "Linux-6.18.44-fc-v37-x86_64-with-glibc2.39"

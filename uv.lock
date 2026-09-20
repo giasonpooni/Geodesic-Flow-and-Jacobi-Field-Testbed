@@ -185,7 +185,6 @@ wheels = [
 
 [[package]]
 name = "curved-surface-geodesic-sensitivity"
-version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -210,7 +209,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
 ]
-provides-extras = ["figure", "dev"]
+provides-extras = ["dev", "figure"]
 
 [[package]]
 name = "cycler"

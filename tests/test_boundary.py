@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import tomllib
+from importlib.metadata import version
 from pathlib import Path
 
 import numpy as np
@@ -42,6 +44,7 @@ from geodesic_testbed.engine.record import RECORD_SCHEMA, SUPPORTED_RECORD_SCHEM
 from geodesic_testbed.engine.surfaces import torus
 
 ROOT = Path(__file__).resolve().parents[1]
+CONTRACT_SOURCE = (ROOT / "src" / "geodesic_testbed" / "engine" / "contract.py").read_text()
 SOURCE = ROOT / "src"
 GRID = np.linspace(0.0, 1.25, 126)
 
@@ -154,11 +157,39 @@ def test_the_contract_module_carries_no_numerics() -> None:
 
 
 def test_the_version_is_declared_in_one_place() -> None:
-    """Provenance naming a version the package does not have is worse than none."""
+    """Provenance naming a version the package does not have is worse than none.
+
+    ``pyproject.toml`` used to carry its own literal, and the two drifted: it
+    said 0.2.0 while the package and both reports said 0.1.0.  It now declares
+    the version dynamic and reads ``RUNTIME_VERSION`` out of ``contract.py``,
+    so there is one string and nothing to hold together by hand.  What is left
+    to check is that the arrangement is still in force.
+    """
     metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     import geodesic_testbed
 
-    assert metadata["project"]["version"] == RUNTIME_VERSION == geodesic_testbed.__version__
+    assert "version" not in metadata["project"], (
+        "pyproject declares a literal version again; that is the second source "
+        "of truth this test exists to prevent"
+    )
+    assert metadata["project"]["dynamic"] == ["version"]
+    source = metadata["tool"]["hatch"]["version"]
+    assert source["path"] == "src/geodesic_testbed/engine/contract.py"
+    assert re.search(source["pattern"], CONTRACT_SOURCE).group("version") == RUNTIME_VERSION
+    assert geodesic_testbed.__version__ == RUNTIME_VERSION
+
+
+def test_the_built_distribution_carries_the_declared_version() -> None:
+    """The dynamic hook is what the build backend runs, so run it.
+
+    A pattern that matched nothing would fail the build rather than the test
+    suite, which is the wrong place to find out.
+    """
+    metadata = version("curved-surface-geodesic-sensitivity")
+    assert metadata == RUNTIME_VERSION, (
+        f"the installed distribution reports {metadata}, the source declares "
+        f"{RUNTIME_VERSION}; reinstall or fix [tool.hatch.version]"
+    )
 
 
 # -- the contract ----------------------------------------------------------

@@ -161,8 +161,24 @@ class SurfaceConfig:
     reference_steps: int = 2560
     step_counts: tuple[int, ...] = field(default_factory=lambda: (40, 80, 160, 320))
     self_convergence_length: float = 2.0
-    epsilons: tuple[float, ...] = field(
-        default_factory=lambda: tuple(np.logspace(-4.0, -1.0, 13))
+    # Keep the declared grid platform-stable.  Recomputing it with
+    # ``np.logspace`` can change the final bit across NumPy/BLAS builds,
+    # making a committed report appear stale even when the experiment is
+    # unchanged.
+    epsilons: tuple[float, ...] = (
+        1.0e-4,
+        1.7782794100389228e-4,
+        3.1622776601683794e-4,
+        5.623413251903491e-4,
+        1.0e-3,
+        1.7782794100389228e-3,
+        3.1622776601683794e-3,
+        5.623413251903491e-3,
+        1.0e-2,
+        1.7782794100389228e-2,
+        3.1622776601683794e-2,
+        5.6234132519034905e-2,
+        1.0e-1,
     )
     two_route_arc_length: float = 1.0
     two_route_steps: int = 1000

@@ -943,17 +943,6 @@ def _grid_index(grid: np.ndarray, s_value: float, span: float, n_steps: int) -> 
     return index
 
 
-def _grid_index(grid: np.ndarray, s_value: float, span: float, n_steps: int) -> int:
-    """Index of ``s_value`` on a uniform grid, refusing to silently snap to a neighbour."""
-    index = int(round(s_value / (span / n_steps)))
-    if not (0 <= index < grid.size) or not np.isclose(grid[index], s_value, rtol=0.0, atol=1e-9):
-        raise ValueError(
-            f"sample arc length {s_value} does not lie on a grid of {n_steps} steps over "
-            f"[0, {span}]"
-        )
-    return index
-
-
 def _first_positive_zero(grid: np.ndarray, values: np.ndarray) -> float | None:
     """Linearly interpolated first sign change at positive arc length."""
     for index in range(1, len(values) - 1):

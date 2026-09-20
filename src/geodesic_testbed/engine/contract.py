@@ -378,7 +378,7 @@ PRODUCER = "curved-surface-geodesic-sensitivity-runtime"
 #: and the distribution metadata both read it, and a test holds the three
 #: together: provenance that names a version the package does not have is worse
 #: than provenance that names none.
-RUNTIME_VERSION = "0.2.0"
+RUNTIME_VERSION = "0.2.1"
 
 
 @dataclass(frozen=True)

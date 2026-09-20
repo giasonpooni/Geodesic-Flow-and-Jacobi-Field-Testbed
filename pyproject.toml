@@ -1,6 +1,6 @@
 [project]
 name = "curved-surface-geodesic-sensitivity"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Curvature-aware path sensitivity: geodesic flow, Jacobi transfer maps, and first-order tolerance contracts for curved-surface manufacturing and robotic inspection."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -39,6 +39,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/geodesic_testbed"]
+
+# The version is declared once, in engine/contract.py, and read from there:
+# a literal here as well would be a second source of truth that drifts, and
+# did -- 0.2.0 against the 0.1.0 both reports carried.
+[tool.hatch.version]
+path = "src/geodesic_testbed/engine/contract.py"
+pattern = 'RUNTIME_VERSION = "(?P<version>[^"]+)"'
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
