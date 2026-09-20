@@ -60,6 +60,15 @@ from .envelope import (
 from .experiment import _check, _jsonable, content_hash
 from .observation import catalogue as observation_catalogue
 from .observation_model import ObservationModel
+from .planning import (
+    ChartBoundary,
+    Objective,
+    combined_clearance,
+    heading_fan,
+    observability_gramian,
+    offset_courses,
+    pareto_front,
+)
 from .prediction import (
     chord_from_intrinsic,
     chord_from_tangent,
@@ -187,6 +196,15 @@ class SurfaceConfig:
     calibration_offset_sigma: float = 5.0e-5
     registration_sigma: float = 2.0e-3
     sensor_correlation_length: float = 0.05
+
+    #: Route planning. The limits are what make each objective dimensionless;
+    #: they are declared here and they decide nothing on their own -- the front
+    #: is reported, and collapsing it needs weights nobody has declared.
+    planning_route_count: int = 8
+    planning_course_spacing: float = 0.1
+    planning_amplification_limit: float = 5.0
+    planning_observability_limit: float = 1.0e3
+    planning_clearance_limit: float = 0.05
 
     transverse_tolerances: tuple[float, ...] = (1e-3, 1e-2)
     heading_scan_count: int = 24
@@ -498,6 +516,264 @@ def measure_self_convergence(config: SurfaceConfig, cases) -> list[dict[str, Any
 # ---------------------------------------------------------------------------
 # 4. the cost of not supplying analytic derivatives
 # ---------------------------------------------------------------------------
+def measure_route_planning(config: SurfaceConfig, cases) -> dict[str, Any]:
+    """Route selection with every declared quantity kept apart.
+
+    Four things this establishes, none of which a single ranking scalar can.
+
+    **Accumulated observability is not sampled resolvability.** The Gramian
+    ``int Phi^T H^T R^-1 H Phi ds`` answers a question about the whole path
+    that ``rho(s)`` answers about a sample, and its worst eigenvalue names the
+    direction of starting-pose error the route says least about. Its *density*
+    -- per unit path length -- is scale invariant, which is the property a
+    route criterion has to have and the reason the accumulated figure is
+    reported beside it rather than instead of it.
+
+    **The offset family is not the heading family.** A fan over headings
+    exercises the ``b`` column; a set of parallel courses offset from a seed
+    exercises ``a``. The two columns focus in different places, so a route
+    family chosen on one says nothing about the other, and this sweep reports
+    both.
+
+    **Boundaries are computed from the declared part.** The chart's own edge,
+    through the surface metric, rather than a clearance array supplied on a
+    grid that might not match.
+
+    **The answer is a front.** The routes nothing else beats on every declared
+    objective at once, with the dominated ones and what beat them. Collapsing
+    that needs weights, and the weights would then be the decision.
+    """
+    case = next(entry for entry in cases if entry.key == config.heading_scan_key)
+    observation, initial_covariance = _instrument(config)
+    lateral = config.route_tolerance_lateral
+    heading = config.route_tolerance_heading
+
+    families: dict[str, dict[str, Any]] = {}
+    for family, routes in (
+        (
+            "heading-fan",
+            heading_fan(
+                case.surface, u0=case.u0, v0=case.v0,
+                count=config.planning_route_count,
+                length=config.heading_scan_length,
+                n_steps=config.heading_scan_steps,
+            ),
+        ),
+        (
+            "offset-courses",
+            offset_courses(
+                case.surface, u0=case.u0, v0=case.v0, heading=case.heading,
+                spacing=config.planning_course_spacing,
+                count=config.planning_route_count,
+                length=config.heading_scan_length,
+                n_steps=config.heading_scan_steps,
+            ),
+        ),
+    ):
+        boundary = ChartBoundary(case.surface)
+        rows: dict[str, dict[str, float]] = {}
+        detail: list[dict[str, Any]] = []
+        for label, envelope in routes.items():
+            record = envelope.as_transfer_record(
+                observation_mode="ambient-euclidean-chord"
+            )
+            gramian = observability_gramian(
+                record, observation, max_lateral=lateral, max_heading=heading
+            )
+            clearance = combined_clearance(envelope, boundary)
+            rho = observation.resolvability(record, initial_covariance)
+            profile = np.min(rho, axis=1) if rho.ndim > 1 else rho
+            values = {
+                "amplification": record.amplification_score(lateral, heading),
+                "cross_track_error": float(
+                    np.max(record.cross_track_error(lateral, heading))
+                ),
+                "heading_error": float(np.max(record.heading_error(lateral, heading))),
+                "worst_observed": float(gramian.eigenvalues[0]),
+                "boundary_clearance": float(np.min(clearance)),
+                "path_length": float(record.arclength[-1] - record.arclength[0]),
+            }
+            rows[label] = values
+            detail.append(
+                values
+                | {
+                    "label": label,
+                    "observability": gramian.to_dict(),
+                    "min_resolvability_after_start": float(np.min(profile[1:])),
+                    "focus_points": record.focus_events(),
+                    "chart_complete": bool(record.chart.complete),
+                }
+            )
+        objectives = _planning_objectives(config)
+        families[family] = {
+            "routes": len(rows),
+            "objectives": [o.to_dict() for o in objectives],
+            "front": pareto_front(rows, objectives),
+            "detail": [
+                {key: value for key, value in row.items() if key != "focus_points"}
+                for row in detail
+            ],
+            "observability_anisotropy": [
+                row["observability"]["anisotropy"] for row in detail
+            ],
+        }
+
+    return {
+        "case": case.key,
+        "surface": case.surface.name,
+        "families": families,
+        "scale_invariance": _gramian_scale_invariance(config),
+        "monotone": _gramian_monotonicity(config, case),
+        "front_is_really_undominated": _front_is_sound(families),
+        "families_differ": _families_differ(families),
+        "note": (
+            "the two families exercise different columns of Phi; a route chosen "
+            "on one says nothing about the other"
+        ),
+    }
+
+
+def _gramian_scale_invariance(config: SurfaceConfig) -> dict[str, Any]:
+    """The same physical situation at twice the size, in information density.
+
+    The accumulated Gramian doubles, and should: twice the path really does
+    carry twice the information. Per unit path length it must not move at all,
+    and that is the property a route criterion needs -- the same reason ``rho``
+    is checked this way and a threshold on ``|b|`` cannot be.
+    """
+    densities = []
+    totals = []
+    for factor in (1.0, 2.0):
+        envelope = integrate_path(
+            sphere(factor), u0=np.pi / 2, v0=0.0, heading=0.6,
+            length=3.0 * factor, n_steps=config.heading_scan_steps,
+        )
+        record = envelope.as_transfer_record(observation_mode="ambient-euclidean-chord")
+        gramian = observability_gramian(
+            record,
+            ObservationModel.transverse_only(
+                config.route_measurement_sigma * factor,
+                mode="ambient-euclidean-chord",
+            ),
+            max_lateral=config.route_tolerance_lateral * factor,
+            max_heading=config.route_tolerance_heading,
+        )
+        densities.append(np.linalg.eigvalsh(gramian.per_unit_length))
+        totals.append(np.linalg.eigvalsh(gramian.total))
+    reference = np.maximum(np.abs(densities[0]), 1e-300)
+    return {
+        "identity": "W / L is unchanged when the whole situation is drawn at twice the size",
+        "density_relative_difference": float(
+            np.max(np.abs(densities[1] - densities[0]) / reference)
+        ),
+        "accumulated_ratio": float(np.max(totals[1] / np.maximum(totals[0], 1e-300))),
+        "expected_accumulated_ratio": 2.0,
+        "densities": [values.tolist() for values in densities],
+    }
+
+
+def _gramian_monotonicity(config: SurfaceConfig, case) -> dict[str, Any]:
+    """Information accumulates: ``W(s2) - W(s1)`` is positive semi-definite.
+
+    Not a tautology about the code -- it is a statement that the integrand
+    ``Phi^T H^T R^-1 H Phi`` is itself positive semi-definite everywhere, which
+    is what makes the Gramian a measure of information rather than an integral
+    that happens to grow.
+    """
+    envelope = integrate_path(
+        case.surface, u0=case.u0, v0=case.v0, heading=case.heading,
+        length=config.heading_scan_length, n_steps=config.heading_scan_steps,
+    )
+    record = envelope.as_transfer_record(observation_mode="ambient-euclidean-chord")
+    observation, _ = _instrument(config)
+    gramian = observability_gramian(
+        record, observation,
+        max_lateral=config.route_tolerance_lateral,
+        max_heading=config.route_tolerance_heading,
+    )
+    increments = np.diff(gramian.cumulative, axis=0)
+    smallest = float(np.min(np.linalg.eigvalsh(increments)))
+    return {
+        "identity": "W(s2) - W(s1) is positive semi-definite for s2 > s1",
+        "most_negative_increment_eigenvalue": smallest,
+        "samples": int(increments.shape[0]),
+    }
+
+
+def _front_is_sound(families: dict[str, Any]) -> dict[str, Any]:
+    """Every route said to be dominated really is, on every objective at once.
+
+    The front is the deliverable, so the claim behind it is checked rather than
+    trusted: for each dominated route, the route named as beating it must be no
+    worse on every declared objective and strictly better on one.
+    """
+    violations = []
+    for family, payload in families.items():
+        values = {row["label"]: row for row in payload["detail"]}
+        objectives = payload["objectives"]
+        for loser, winner in payload["front"]["dominated"].items():
+            better_everywhere = True
+            strictly_better_somewhere = False
+            for objective in objectives:
+                name, direction = objective["name"], objective["direction"]
+                mine, theirs = values[loser][name], values[winner][name]
+                if direction == "higher-is-better":
+                    mine, theirs = -mine, -theirs
+                if theirs > mine:
+                    better_everywhere = False
+                if theirs < mine:
+                    strictly_better_somewhere = True
+            if not (better_everywhere and strictly_better_somewhere):
+                violations.append({"family": family, "loser": loser, "winner": winner})
+    return {"violations": len(violations), "detail": violations}
+
+
+def _families_differ(families: dict[str, Any]) -> dict[str, Any]:
+    """The offset family is not the heading family rediscovered.
+
+    If offsetting the start point produced the same routes as fanning the
+    heading, one of the two columns of ``Phi`` would never be exercised and the
+    whole reason for generating beyond a fan would be gone.
+    """
+    labels = {name: {row["label"] for row in payload["detail"]}
+              for name, payload in families.items()}
+    fan, courses = labels["heading-fan"], labels["offset-courses"]
+    return {
+        "shared_labels": len(fan & courses),
+        "heading_fan_routes": len(fan),
+        "offset_course_routes": len(courses),
+    }
+
+
+def _planning_objectives(config: SurfaceConfig) -> tuple[Objective, ...]:
+    """The declared quantities, each with the limit that makes it dimensionless."""
+    return (
+        Objective(
+            "amplification", "lower-is-better", limit=config.planning_amplification_limit,
+            note="worst dimensionless gain of the tolerance box anywhere on the path",
+        ),
+        Objective(
+            "cross_track_error", "lower-is-better",
+            limit=config.route_max_cross_track_error,
+        ),
+        Objective(
+            "heading_error", "lower-is-better", limit=config.route_max_heading_error,
+        ),
+        Objective(
+            "worst_observed", "higher-is-better",
+            limit=config.planning_observability_limit,
+            note="smallest eigenvalue of the dimensionless accumulated Gramian",
+        ),
+        Objective(
+            "boundary_clearance", "higher-is-better",
+            limit=config.planning_clearance_limit,
+        ),
+        Objective(
+            "path_length", "lower-is-better", limit=config.heading_scan_length,
+        ),
+    )
+
+
 def measure_uncertainty_budget(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
     """The whole budget on each path, and which term actually dominates.
 
@@ -1632,6 +1908,68 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
                 )
             )
 
+    planning = results["route_planning"]
+    checks.append(
+        _check(
+            "gramian-density-is-scale-invariant",
+            "the accumulated observability per unit path length is unchanged when "
+            "the same physical situation is drawn at twice the size -- the "
+            "property a route criterion must have, and a dimensionful score "
+            "cannot",
+            planning["scale_invariance"]["density_relative_difference"],
+            1e-9,
+        )
+    )
+    checks.append(
+        _check(
+            "gramian-accumulates-with-path-length",
+            "while the accumulated figure doubles, because twice the path really "
+            "does carry twice the information",
+            abs(
+                planning["scale_invariance"]["accumulated_ratio"]
+                - planning["scale_invariance"]["expected_accumulated_ratio"]
+            ),
+            1e-9,
+        )
+    )
+    checks.append(
+        _check(
+            "gramian-is-monotone",
+            "W(s2) - W(s1) is positive semi-definite, so the Gramian measures "
+            "information rather than merely growing",
+            -planning["monotone"]["most_negative_increment_eigenvalue"],
+            1e-12,
+        )
+    )
+    checks.append(
+        _check(
+            "pareto-front-is-sound",
+            "every route the front calls dominated is beaten on every declared "
+            "objective at once, and strictly on at least one",
+            float(planning["front_is_really_undominated"]["violations"]),
+            0.0,
+        )
+    )
+    checks.append(
+        _check(
+            "route-families-are-different-families",
+            "offsetting the start point does not rediscover the heading fan; the "
+            "two exercise different columns of Phi",
+            float(planning["families_differ"]["shared_labels"]),
+            0.0,
+        )
+    )
+    for family, payload in planning["families"].items():
+        checks.append(
+            _check(
+                f"pareto-front-is-not-everything/{family}",
+                "and the front is a selection rather than the whole set, so the "
+                "declared objectives are actually in tension",
+                float(payload["front"]["front_size"]),
+                float(payload["routes"]) - 0.5,
+            )
+        )
+
     for row in results["uncertainty_budget"]:
         checks.append(
             _check(
@@ -2000,6 +2338,7 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
         "error_budget": measure_error_budget(config, cases),
         "prediction_chain": measure_prediction_chain(config, cases),
         "uncertainty_budget": measure_uncertainty_budget(config, cases),
+        "route_planning": measure_route_planning(config, cases),
         "jet_step_sensitivity": measure_jet_step_sensitivity(config, cases),
         "envelopes": build_envelopes(config, cases),
         "chart_rescaling_invariance": measure_chart_rescaling_invariance(cases),
@@ -2012,6 +2351,10 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
             "schema": REPORT_SCHEMA,
             "supersedes": SUPERSEDES,
             "schema_changes": [
+                "adds results.route_planning: the accumulated observability "
+                "Gramian, boundaries computed from the declared part, a second "
+                "route family that exercises the a column, and a Pareto front "
+                "instead of a ranking scalar",
                 "adds results.uncertainty_budget: every declared source of error, "
                 "its shape, and which one dominates -- the starting pose is one "
                 "term and rarely the largest",

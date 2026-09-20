@@ -2,6 +2,7 @@
   "schema": "geodesic-jacobi-surfaces-v3",
   "supersedes": "geodesic-jacobi-surfaces-v2",
   "schema_changes": [
+    "adds results.route_planning: the accumulated observability Gramian, boundaries computed from the declared part, a second route family that exercises the a column, and a Pareto front instead of a ranking scalar",
     "adds results.uncertainty_budget: every declared source of error, its shape, and which one dominates -- the starting pose is one term and rarely the largest",
     "adds results.prediction_chain: the named transformations from Phi dz0 to an ambient chord, against an independent measurement",
     "adds results.error_budget: a per-quantity step-doubling error estimate, checked against the closed forms where one exists",
@@ -216,6 +217,11 @@
     "calibration_offset_sigma": 5e-05,
     "registration_sigma": 0.002,
     "sensor_correlation_length": 0.05,
+    "planning_route_count": 8,
+    "planning_course_spacing": 0.1,
+    "planning_amplification_limit": 5.0,
+    "planning_observability_limit": 1000.0,
+    "planning_clearance_limit": 0.05,
     "transverse_tolerances": [
       0.001,
       0.01
@@ -2799,6 +2805,705 @@
         "starting_pose_share_at_worst": 0.994466703506
       }
     ],
+    "route_planning": {
+      "case": "torus",
+      "surface": "torus(R=2, r=1)",
+      "families": {
+        "heading-fan": {
+          "routes": 8,
+          "objectives": [
+            {
+              "name": "amplification",
+              "direction": "lower-is-better",
+              "limit": 5.0,
+              "note": "worst dimensionless gain of the tolerance box anywhere on the path"
+            },
+            {
+              "name": "cross_track_error",
+              "direction": "lower-is-better",
+              "limit": 0.02,
+              "note": ""
+            },
+            {
+              "name": "heading_error",
+              "direction": "lower-is-better",
+              "limit": 0.05,
+              "note": ""
+            },
+            {
+              "name": "worst_observed",
+              "direction": "higher-is-better",
+              "limit": 1000.0,
+              "note": "smallest eigenvalue of the dimensionless accumulated Gramian"
+            },
+            {
+              "name": "boundary_clearance",
+              "direction": "higher-is-better",
+              "limit": 0.05,
+              "note": ""
+            },
+            {
+              "name": "path_length",
+              "direction": "lower-is-better",
+              "limit": 6.0,
+              "note": ""
+            }
+          ],
+          "front": {
+            "objectives": [
+              {
+                "name": "amplification",
+                "direction": "lower-is-better",
+                "limit": 5.0,
+                "note": "worst dimensionless gain of the tolerance box anywhere on the path"
+              },
+              {
+                "name": "cross_track_error",
+                "direction": "lower-is-better",
+                "limit": 0.02,
+                "note": ""
+              },
+              {
+                "name": "heading_error",
+                "direction": "lower-is-better",
+                "limit": 0.05,
+                "note": ""
+              },
+              {
+                "name": "worst_observed",
+                "direction": "higher-is-better",
+                "limit": 1000.0,
+                "note": "smallest eigenvalue of the dimensionless accumulated Gramian"
+              },
+              {
+                "name": "boundary_clearance",
+                "direction": "higher-is-better",
+                "limit": 0.05,
+                "note": ""
+              },
+              {
+                "name": "path_length",
+                "direction": "lower-is-better",
+                "limit": 6.0,
+                "note": ""
+              }
+            ],
+            "front": [
+              "u0.300/v0.200/135.0deg",
+              "u0.300/v0.200/270.0deg"
+            ],
+            "front_size": 2,
+            "dominated": {
+              "u0.300/v0.200/0.0deg": "u0.300/v0.200/45.0deg",
+              "u0.300/v0.200/45.0deg": "u0.300/v0.200/90.0deg",
+              "u0.300/v0.200/90.0deg": "u0.300/v0.200/270.0deg",
+              "u0.300/v0.200/180.0deg": "u0.300/v0.200/45.0deg",
+              "u0.300/v0.200/225.0deg": "u0.300/v0.200/135.0deg",
+              "u0.300/v0.200/315.0deg": "u0.300/v0.200/90.0deg"
+            },
+            "note": "nothing on the front is beaten on every objective at once; choosing among them needs a declared preference, which is not a property of the geometry"
+          },
+          "detail": [
+            {
+              "amplification": 21.4066305725,
+              "cross_track_error": 0.024289430784,
+              "heading_error": 0.00894771042831,
+              "worst_observed": 159.556938914,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.300/v0.200/0.0deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  159.556938914,
+                  91976.4503361
+                ],
+                "worst_observed": 159.556938914,
+                "best_observed": 91976.4503361,
+                "anisotropy": 576.449078066,
+                "worst_direction": [
+                  -0.988320163075,
+                  0.152391782123
+                ],
+                "worst_observed_per_unit_length": 26.5928231524,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.0418878930227,
+              "chart_complete": true
+            },
+            {
+              "amplification": 2.87208262708,
+              "cross_track_error": 0.00331201273412,
+              "heading_error": 0.00128880597142,
+              "worst_observed": 312.647964598,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.300/v0.200/45.0deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  312.647964598,
+                  3814.27158048
+                ],
+                "worst_observed": 312.647964598,
+                "best_observed": 3814.27158048,
+                "anisotropy": 12.1998925705,
+                "worst_direction": [
+                  -0.999224734755,
+                  -0.0393691434273
+                ],
+                "worst_observed_per_unit_length": 52.1079940997,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.0418878930221,
+              "chart_complete": true
+            },
+            {
+              "amplification": 1.74524938541,
+              "cross_track_error": 0.00201840605994,
+              "heading_error": 0.00116248501344,
+              "worst_observed": 465.646958524,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.300/v0.200/90.0deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  465.646958524,
+                  1203.91591283
+                ],
+                "worst_observed": 465.646958524,
+                "best_observed": 1203.91591283,
+                "anisotropy": 2.5854692934,
+                "worst_direction": [
+                  -0.999252769266,
+                  0.0386510428665
+                ],
+                "worst_observed_per_unit_length": 77.6078264207,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.00210747799535,
+              "chart_complete": true
+            },
+            {
+              "amplification": 2.47243241001,
+              "cross_track_error": 0.00330722473212,
+              "heading_error": 0.00115326959081,
+              "worst_observed": 414.236010558,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.300/v0.200/135.0deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  414.236010558,
+                  2878.01419837
+                ],
+                "worst_observed": 414.236010558,
+                "best_observed": 2878.01419837,
+                "anisotropy": 6.94776437832,
+                "worst_direction": [
+                  -0.978910995487,
+                  -0.204287206927
+                ],
+                "worst_observed_per_unit_length": 69.039335093,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.0418878930195,
+              "chart_complete": true
+            },
+            {
+              "amplification": 20.6043783198,
+              "cross_track_error": 0.0210167462693,
+              "heading_error": 0.00848987922181,
+              "worst_observed": 235.87565815,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.300/v0.200/180.0deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  235.87565815,
+                  57418.4270944
+                ],
+                "worst_observed": 235.87565815,
+                "best_observed": 57418.4270944,
+                "anisotropy": 243.42667465,
+                "worst_direction": [
+                  -0.999097729428,
+                  -0.0424703078961
+                ],
+                "worst_observed_per_unit_length": 39.3126096916,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.0418878930189,
+              "chart_complete": true
+            },
+            {
+              "amplification": 2.47243241001,
+              "cross_track_error": 0.00330722473212,
+              "heading_error": 0.00115326959081,
+              "worst_observed": 414.236010558,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.300/v0.200/225.0deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  414.236010558,
+                  2878.01419837
+                ],
+                "worst_observed": 414.236010558,
+                "best_observed": 2878.01419837,
+                "anisotropy": 6.94776437832,
+                "worst_direction": [
+                  -0.978910995487,
+                  -0.204287206927
+                ],
+                "worst_observed_per_unit_length": 69.039335093,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.0418878930195,
+              "chart_complete": true
+            },
+            {
+              "amplification": 1.74524938541,
+              "cross_track_error": 0.00201840605994,
+              "heading_error": 0.00116248501344,
+              "worst_observed": 465.646958524,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.300/v0.200/270.0deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  465.646958524,
+                  1203.91591283
+                ],
+                "worst_observed": 465.646958524,
+                "best_observed": 1203.91591283,
+                "anisotropy": 2.5854692934,
+                "worst_direction": [
+                  -0.999252769266,
+                  0.0386510428665
+                ],
+                "worst_observed_per_unit_length": 77.6078264207,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.00210747799535,
+              "chart_complete": true
+            },
+            {
+              "amplification": 2.87208262708,
+              "cross_track_error": 0.00331201273412,
+              "heading_error": 0.00128880597142,
+              "worst_observed": 312.647964598,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.300/v0.200/315.0deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  312.647964598,
+                  3814.27158048
+                ],
+                "worst_observed": 312.647964598,
+                "best_observed": 3814.27158048,
+                "anisotropy": 12.1998925705,
+                "worst_direction": [
+                  -0.999224734755,
+                  -0.0393691434273
+                ],
+                "worst_observed_per_unit_length": 52.1079940997,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.0418878930221,
+              "chart_complete": true
+            }
+          ],
+          "observability_anisotropy": [
+            576.449078066,
+            12.1998925705,
+            2.5854692934,
+            6.94776437832,
+            243.42667465,
+            6.94776437832,
+            2.5854692934,
+            12.1998925705
+          ]
+        },
+        "offset-courses": {
+          "routes": 8,
+          "objectives": [
+            {
+              "name": "amplification",
+              "direction": "lower-is-better",
+              "limit": 5.0,
+              "note": "worst dimensionless gain of the tolerance box anywhere on the path"
+            },
+            {
+              "name": "cross_track_error",
+              "direction": "lower-is-better",
+              "limit": 0.02,
+              "note": ""
+            },
+            {
+              "name": "heading_error",
+              "direction": "lower-is-better",
+              "limit": 0.05,
+              "note": ""
+            },
+            {
+              "name": "worst_observed",
+              "direction": "higher-is-better",
+              "limit": 1000.0,
+              "note": "smallest eigenvalue of the dimensionless accumulated Gramian"
+            },
+            {
+              "name": "boundary_clearance",
+              "direction": "higher-is-better",
+              "limit": 0.05,
+              "note": ""
+            },
+            {
+              "name": "path_length",
+              "direction": "lower-is-better",
+              "limit": 6.0,
+              "note": ""
+            }
+          ],
+          "front": {
+            "objectives": [
+              {
+                "name": "amplification",
+                "direction": "lower-is-better",
+                "limit": 5.0,
+                "note": "worst dimensionless gain of the tolerance box anywhere on the path"
+              },
+              {
+                "name": "cross_track_error",
+                "direction": "lower-is-better",
+                "limit": 0.02,
+                "note": ""
+              },
+              {
+                "name": "heading_error",
+                "direction": "lower-is-better",
+                "limit": 0.05,
+                "note": ""
+              },
+              {
+                "name": "worst_observed",
+                "direction": "higher-is-better",
+                "limit": 1000.0,
+                "note": "smallest eigenvalue of the dimensionless accumulated Gramian"
+              },
+              {
+                "name": "boundary_clearance",
+                "direction": "higher-is-better",
+                "limit": 0.05,
+                "note": ""
+              },
+              {
+                "name": "path_length",
+                "direction": "lower-is-better",
+                "limit": 6.0,
+                "note": ""
+              }
+            ],
+            "front": [
+              "u0.099/v0.296/35.5deg"
+            ],
+            "front_size": 1,
+            "dominated": {
+              "u0.492/v0.100/32.2deg": "u0.439/v0.129/32.9deg",
+              "u0.439/v0.129/32.9deg": "u0.384/v0.158/33.6deg",
+              "u0.384/v0.158/33.6deg": "u0.328/v0.186/34.1deg",
+              "u0.328/v0.186/34.1deg": "u0.272/v0.214/34.6deg",
+              "u0.272/v0.214/34.6deg": "u0.215/v0.242/35.0deg",
+              "u0.215/v0.242/35.0deg": "u0.157/v0.269/35.3deg",
+              "u0.157/v0.269/35.3deg": "u0.099/v0.296/35.5deg"
+            },
+            "note": "nothing on the front is beaten on every objective at once; choosing among them needs a declared preference, which is not a property of the geometry"
+          },
+          "detail": [
+            {
+              "amplification": 8.02070908579,
+              "cross_track_error": 0.00852398438012,
+              "heading_error": 0.00243151697432,
+              "worst_observed": 201.251499422,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.492/v0.100/32.2deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  201.251499422,
+                  18545.6946463
+                ],
+                "worst_observed": 201.251499422,
+                "best_observed": 18545.6946463,
+                "anisotropy": 92.1518334006,
+                "worst_direction": [
+                  -0.994963054471,
+                  0.100242307625
+                ],
+                "worst_observed_per_unit_length": 33.5419165703,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.04188789351,
+              "chart_complete": true
+            },
+            {
+              "amplification": 7.14971834799,
+              "cross_track_error": 0.00737777448509,
+              "heading_error": 0.00211757908522,
+              "worst_observed": 213.379515312,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.439/v0.129/32.9deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  213.379515312,
+                  15447.6750701
+                ],
+                "worst_observed": 213.379515312,
+                "best_observed": 15447.6750701,
+                "anisotropy": 72.3953048985,
+                "worst_direction": [
+                  -0.997189300999,
+                  0.0749232805834
+                ],
+                "worst_observed_per_unit_length": 35.5632525519,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.0418878933485,
+              "chart_complete": true
+            },
+            {
+              "amplification": 6.48639609581,
+              "cross_track_error": 0.00649594243831,
+              "heading_error": 0.00195500352282,
+              "worst_observed": 225.56675579,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.384/v0.158/33.6deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  225.56675579,
+                  13189.7357074
+                ],
+                "worst_observed": 225.56675579,
+                "best_observed": 13189.7357074,
+                "anisotropy": 58.4737571866,
+                "worst_direction": [
+                  -0.998742946492,
+                  0.050125111788
+                ],
+                "worst_observed_per_unit_length": 37.5944592983,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.0418878932043,
+              "chart_complete": true
+            },
+            {
+              "amplification": 5.97548442619,
+              "cross_track_error": 0.0061735880948,
+              "heading_error": 0.00182843363942,
+              "worst_observed": 237.696217227,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.328/v0.186/34.1deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  237.696217227,
+                  11510.0273079
+                ],
+                "worst_observed": 237.696217227,
+                "best_observed": 11510.0273079,
+                "anisotropy": 48.4232666475,
+                "worst_direction": [
+                  -0.999662490161,
+                  0.0259789484992
+                ],
+                "worst_observed_per_unit_length": 39.6160362045,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.0418878930783,
+              "chart_complete": true
+            },
+            {
+              "amplification": 5.58057777805,
+              "cross_track_error": 0.00593298674643,
+              "heading_error": 0.00172970289412,
+              "worst_observed": 249.663301287,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.272/v0.214/34.6deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  249.663301287,
+                  10241.405858
+                ],
+                "worst_observed": 249.663301287,
+                "best_observed": 10241.405858,
+                "anisotropy": 41.0208701286,
+                "worst_direction": [
+                  -0.999996657758,
+                  0.00258543469991
+                ],
+                "worst_observed_per_unit_length": 41.6105502145,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.0418878929713,
+              "chart_complete": true
+            },
+            {
+              "amplification": 5.27716011715,
+              "cross_track_error": 0.00575912941456,
+              "heading_error": 0.00165349365892,
+              "worst_observed": 261.377376277,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.215/v0.242/35.0deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  261.377376277,
+                  9273.8139118
+                ],
+                "worst_observed": 261.377376277,
+                "best_observed": 9273.8139118,
+                "anisotropy": 35.4805532288,
+                "worst_direction": [
+                  -0.999800357616,
+                  -0.019981113856
+                ],
+                "worst_observed_per_unit_length": 43.5628960462,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.041887892884,
+              "chart_complete": true
+            },
+            {
+              "amplification": 5.04861823407,
+              "cross_track_error": 0.00564238600304,
+              "heading_error": 0.00159644987279,
+              "worst_observed": 272.762284081,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.157/v0.269/35.3deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  272.762284081,
+                  8532.95517942
+                ],
+                "worst_observed": 272.762284081,
+                "best_observed": 8532.95517942,
+                "anisotropy": 31.2834863082,
+                "worst_direction": [
+                  -0.9991315146,
+                  -0.0416679317149
+                ],
+                "worst_observed_per_unit_length": 45.4603806801,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.0418878928169,
+              "chart_complete": true
+            },
+            {
+              "amplification": 4.88390238531,
+              "cross_track_error": 0.00557704847764,
+              "heading_error": 0.00155668241336,
+              "worst_observed": 283.7559949,
+              "boundary_clearance": null,
+              "path_length": 6.0,
+              "label": "u0.099/v0.296/35.5deg",
+              "observability": {
+                "scale_basis": "tolerance-box",
+                "path_length": 6.0,
+                "eigenvalues": [
+                  283.7559949,
+                  7967.72174468
+                ],
+                "worst_observed": 283.7559949,
+                "best_observed": 7967.72174468,
+                "anisotropy": 28.0794833867,
+                "worst_direction": [
+                  -0.998048786101,
+                  -0.0624389346704
+                ],
+                "worst_observed_per_unit_length": 47.2926658167,
+                "note": "accumulated over the whole path; rho(s) is the same question asked at one arc length, and a route can pass that everywhere while telling you almost nothing about one direction"
+              },
+              "min_resolvability_after_start": 0.0418878927705,
+              "chart_complete": true
+            }
+          ],
+          "observability_anisotropy": [
+            92.1518334006,
+            72.3953048985,
+            58.4737571866,
+            48.4232666475,
+            41.0208701286,
+            35.4805532288,
+            31.2834863082,
+            28.0794833867
+          ]
+        }
+      },
+      "scale_invariance": {
+        "identity": "W / L is unchanged when the whole situation is drawn at twice the size",
+        "density_relative_difference": 0.0,
+        "accumulated_ratio": 2.0,
+        "expected_accumulated_ratio": 2.0,
+        "densities": [
+          [
+            68.6131198066,
+            75.3868801934
+          ],
+          [
+            68.6131198066,
+            75.3868801934
+          ]
+        ]
+      },
+      "monotone": {
+        "identity": "W(s2) - W(s1) is positive semi-definite for s2 > s1",
+        "most_negative_increment_eigenvalue": 2.88821251984e-09,
+        "samples": 3000
+      },
+      "front_is_really_undominated": {
+        "violations": 0,
+        "detail": []
+      },
+      "families_differ": {
+        "shared_labels": 0,
+        "heading_fan_routes": 8,
+        "offset_course_routes": 8
+      },
+      "note": "the two families exercise different columns of Phi; a route chosen on one says nothing about the other"
+    },
     "jet_step_sensitivity": [
       {
         "case": "plate",
@@ -11903,11 +12608,11 @@
           "tracking": {
             "outcome": "TRACKED",
             "acquired": true,
-            "acquisition_arclength": 0.24,
-            "acquisition_latency": 0.24,
-            "acquisition_window_started_at": 0.24,
+            "acquisition_arclength": 0.239479903994,
+            "acquisition_latency": 0.239479903994,
+            "acquisition_window_started_at": 0.239479903994,
             "acquisition_declared_at": 0.292,
-            "tracked_distance": 5.76,
+            "tracked_distance": 5.76052009601,
             "min_resolvability_while_tracked": 4.18835693346,
             "max_resolvability": 38.0277590878,
             "loss_intervals": [],
@@ -11915,7 +12620,7 @@
             "loss_started_at": null,
             "track_loss_declared_at": null,
             "processing": "offline",
-            "detail": "acquired at 0.24 and held for 5.76",
+            "detail": "acquired at 0.23948 and held for 5.76052",
             "satisfied": true
           },
           "crossed_first_conjugate_point": false,
@@ -11951,7 +12656,7 @@
               "worst_value": 4.18835693346,
               "margin": 1.18835693346,
               "satisfied": true,
-              "at_arclength": 0.24
+              "at_arclength": 0.239479903994
             }
           ],
           "source_digest": "sha256:f0ee4be4c09a13d85da9172122cf534e",
@@ -11982,11 +12687,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239479903994,
+              "acquisition_latency": 0.239479903994,
+              "acquisition_window_started_at": 0.239479903994,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76052009601,
               "min_resolvability_while_tracked": 4.18835693346,
               "max_resolvability": 38.0277590878,
               "loss_intervals": [],
@@ -11994,7 +12699,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.23948 and held for 5.76052",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12030,7 +12735,7 @@
                 "worst_value": 4.18835693346,
                 "margin": 1.18835693346,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239479903994
               }
             ],
             "source_digest": "sha256:f0ee4be4c09a13d85da9172122cf534e",
@@ -12047,11 +12752,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239481371108,
+              "acquisition_latency": 0.239481371108,
+              "acquisition_window_started_at": 0.239481371108,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76051862889,
               "min_resolvability_while_tracked": 5.010760344,
               "max_resolvability": 40.1419551896,
               "loss_intervals": [],
@@ -12059,7 +12764,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239481 and held for 5.76052",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12095,7 +12800,7 @@
                 "worst_value": 5.010760344,
                 "margin": 2.010760344,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239481371108
               }
             ],
             "source_digest": "sha256:21add373d049d09e5d734cc5e6034386",
@@ -12112,24 +12817,24 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239461276133,
+              "acquisition_latency": 0.239461276133,
+              "acquisition_window_started_at": 0.239461276133,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76053872387,
               "min_resolvability_while_tracked": 2.80069286425,
               "max_resolvability": 42.17530001,
               "loss_intervals": [
                 [
-                  5.992,
+                  5.99161151264,
                   6.0
                 ]
               ],
-              "longest_loss": 0.008,
+              "longest_loss": 0.00838848736129,
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239461 and held for 5.76054",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12165,7 +12870,7 @@
                 "worst_value": 2.80069286425,
                 "margin": -0.199307135747,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239461276133
               }
             ],
             "source_digest": "sha256:0c989ec61a1724a1bb0aff61bcbf8dd7",
@@ -12182,11 +12887,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239458666835,
+              "acquisition_latency": 0.239458666835,
+              "acquisition_window_started_at": 0.239458666835,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76054133317,
               "min_resolvability_while_tracked": 5.01123563189,
               "max_resolvability": 47.3635716788,
               "loss_intervals": [],
@@ -12194,7 +12899,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239459 and held for 5.76054",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12230,7 +12935,7 @@
                 "worst_value": 5.01123563189,
                 "margin": 2.01123563189,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239458666835
               }
             ],
             "source_digest": "sha256:8ccb82babca1ee05cbc14c9d86daaee2",
@@ -12247,11 +12952,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239482606553,
+              "acquisition_latency": 0.239482606553,
+              "acquisition_window_started_at": 0.239482606553,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76051739345,
               "min_resolvability_while_tracked": 5.01073451754,
               "max_resolvability": 47.6472427959,
               "loss_intervals": [],
@@ -12259,7 +12964,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239483 and held for 5.76052",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12295,7 +13000,7 @@
                 "worst_value": 5.01073451754,
                 "margin": 2.01073451754,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239482606553
               }
             ],
             "source_digest": "sha256:824d057ace93b47a28833e7f151e6568",
@@ -12312,11 +13017,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239456203891,
+              "acquisition_latency": 0.239456203891,
+              "acquisition_window_started_at": 0.239456203891,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76054379611,
               "min_resolvability_while_tracked": 5.01128724244,
               "max_resolvability": 59.5319441363,
               "loss_intervals": [],
@@ -12324,7 +13029,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239456 and held for 5.76054",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12360,7 +13065,7 @@
                 "worst_value": 5.01128724244,
                 "margin": 2.01128724244,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239456203891
               }
             ],
             "source_digest": "sha256:976e9574621141b72b79e7cb0d581841",
@@ -12377,11 +13082,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239453961876,
+              "acquisition_latency": 0.239453961876,
+              "acquisition_window_started_at": 0.239453961876,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76054603812,
               "min_resolvability_while_tracked": 5.01133423058,
               "max_resolvability": 92.2216206968,
               "loss_intervals": [],
@@ -12389,7 +13094,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239454 and held for 5.76055",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12425,7 +13130,7 @@
                 "worst_value": 5.01133423058,
                 "margin": 2.01133423058,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239453961876
               }
             ],
             "source_digest": "sha256:5edd8653d417979312dc1b8f91b145d7",
@@ -12442,11 +13147,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239452012436,
+              "acquisition_latency": 0.239452012436,
+              "acquisition_window_started_at": 0.239452012436,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76054798756,
               "min_resolvability_while_tracked": 5.01137509227,
               "max_resolvability": 197.626437409,
               "loss_intervals": [],
@@ -12454,7 +13159,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239452 and held for 5.76055",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12490,7 +13195,7 @@
                 "worst_value": 5.01137509227,
                 "margin": 2.01137509227,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239452012436
               }
             ],
             "source_digest": "sha256:38c6b25dce4a150df82d446a9723d388",
@@ -12507,11 +13212,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239483619217,
+              "acquisition_latency": 0.239483619217,
+              "acquisition_window_started_at": 0.239483619217,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76051638078,
               "min_resolvability_while_tracked": 5.01071335338,
               "max_resolvability": 78.127873473,
               "loss_intervals": [],
@@ -12519,7 +13224,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239484 and held for 5.76052",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12555,7 +13260,7 @@
                 "worst_value": 5.01071335338,
                 "margin": 2.01071335338,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239483619217
               }
             ],
             "source_digest": "sha256:53868ad04c97d668bdc3e38fe8d15c6c",
@@ -12572,11 +13277,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239485696546,
+              "acquisition_latency": 0.239485696546,
+              "acquisition_window_started_at": 0.239485696546,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76051430345,
               "min_resolvability_while_tracked": 5.01066995679,
               "max_resolvability": 452.671437927,
               "loss_intervals": [],
@@ -12584,7 +13289,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239486 and held for 5.76051",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12620,7 +13325,7 @@
                 "worst_value": 5.01066995679,
                 "margin": 2.01066995679,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239485696546
               }
             ],
             "source_digest": "sha256:cf15e91b6d3b814ca050d166b20becc0",
@@ -12637,11 +13342,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239484421412,
+              "acquisition_latency": 0.239484421412,
+              "acquisition_window_started_at": 0.239484421412,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76051557859,
               "min_resolvability_while_tracked": 5.01069659177,
               "max_resolvability": 167.268108759,
               "loss_intervals": [],
@@ -12649,7 +13354,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239484 and held for 5.76052",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12685,7 +13390,7 @@
                 "worst_value": 5.01069659177,
                 "margin": 2.01069659177,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239484421412
               }
             ],
             "source_digest": "sha256:dce3fc60bdaa609377596b2a9bb5aebb",
@@ -12702,11 +13407,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239485448279,
+              "acquisition_latency": 0.239485448279,
+              "acquisition_window_started_at": 0.239485448279,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76051455172,
               "min_resolvability_while_tracked": 5.01067514165,
               "max_resolvability": 583.0850101,
               "loss_intervals": [],
@@ -12714,7 +13419,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239485 and held for 5.76051",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12750,7 +13455,7 @@
                 "worst_value": 5.01067514165,
                 "margin": 2.01067514165,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239485448279
               }
             ],
             "source_digest": "sha256:8a4e58a64fd5606afa670d7400bbfdac",
@@ -12767,11 +13472,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239485026772,
+              "acquisition_latency": 0.239485026772,
+              "acquisition_window_started_at": 0.239485026772,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76051497323,
               "min_resolvability_while_tracked": 5.01068394557,
               "max_resolvability": 441.006629934,
               "loss_intervals": [],
@@ -12779,7 +13484,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239485 and held for 5.76051",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12815,7 +13520,7 @@
                 "worst_value": 5.01068394557,
                 "margin": 2.01068394557,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239485026772
               }
             ],
             "source_digest": "sha256:2b85e04bac935cc86a4feecf34504134",
@@ -12832,11 +13537,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239450420625,
+              "acquisition_latency": 0.239450420625,
+              "acquisition_window_started_at": 0.239450420625,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76054957938,
               "min_resolvability_while_tracked": 5.01140846147,
               "max_resolvability": 670.40886756,
               "loss_intervals": [],
@@ -12844,7 +13549,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.23945 and held for 5.76055",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12880,7 +13585,7 @@
                 "worst_value": 5.01140846147,
                 "margin": 2.01140846147,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239450420625
               }
             ],
             "source_digest": "sha256:9b0cc66caee6949c7c3a419ccf4057f8",
@@ -12897,11 +13602,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239448271803,
+              "acquisition_latency": 0.239448271803,
+              "acquisition_window_started_at": 0.239448271803,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.7605517282,
               "min_resolvability_while_tracked": 5.01145351238,
               "max_resolvability": 443.144720637,
               "loss_intervals": [],
@@ -12909,7 +13614,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239448 and held for 5.76055",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -12945,7 +13650,7 @@
                 "worst_value": 5.01145351238,
                 "margin": 2.01145351238,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239448271803
               }
             ],
             "source_digest": "sha256:84fc035a64f96d62f8bcc750c3273ad9",
@@ -12962,11 +13667,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239448516414,
+              "acquisition_latency": 0.239448516414,
+              "acquisition_window_started_at": 0.239448516414,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76055148359,
               "min_resolvability_while_tracked": 5.01144838373,
               "max_resolvability": 499.358395165,
               "loss_intervals": [],
@@ -12974,7 +13679,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239449 and held for 5.76055",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -13010,7 +13715,7 @@
                 "worst_value": 5.01144838373,
                 "margin": 2.01144838373,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239448516414
               }
             ],
             "source_digest": "sha256:ef5c6c426b9dfdc1e57c1f4f8913718f",
@@ -13027,11 +13732,11 @@
             "tracking": {
               "outcome": "TRACKED",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239449241377,
+              "acquisition_latency": 0.239449241377,
+              "acquisition_window_started_at": 0.239449241377,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.76,
+              "tracked_distance": 5.76055075862,
               "min_resolvability_while_tracked": 5.01143318415,
               "max_resolvability": 772.926021554,
               "loss_intervals": [],
@@ -13039,7 +13744,7 @@
               "loss_started_at": null,
               "track_loss_declared_at": null,
               "processing": "offline",
-              "detail": "acquired at 0.24 and held for 5.76",
+              "detail": "acquired at 0.239449 and held for 5.76055",
               "satisfied": true
             },
             "crossed_first_conjugate_point": false,
@@ -13075,7 +13780,7 @@
                 "worst_value": 5.01143318415,
                 "margin": 2.01143318415,
                 "satisfied": true,
-                "at_arclength": 0.24
+                "at_arclength": 0.239449241377
               }
             ],
             "source_digest": "sha256:880120acfa78c137299964b3747c4fa5",
@@ -13092,24 +13797,24 @@
             "tracking": {
               "outcome": "TRACK_LOST",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.23946395784,
+              "acquisition_latency": 0.23946395784,
+              "acquisition_window_started_at": 0.23946395784,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.432,
+              "tracked_distance": 5.4322321258,
               "min_resolvability_while_tracked": 3.03804514513,
               "max_resolvability": 39.5162590739,
               "loss_intervals": [
                 [
-                  5.672,
-                  5.94
+                  5.67169608364,
+                  5.93866338348
                 ]
               ],
-              "longest_loss": 0.268,
-              "loss_started_at": 5.672,
-              "track_loss_declared_at": 5.772,
+              "longest_loss": 0.266967299834,
+              "loss_started_at": 5.67169608364,
+              "track_loss_declared_at": 5.77169608364,
               "processing": "offline",
-              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.672 and detectable at 5.772",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.6717 and detectable at 5.7717",
               "satisfied": false
             },
             "crossed_first_conjugate_point": true,
@@ -13145,7 +13850,7 @@
                 "worst_value": 3.03804514513,
                 "margin": -3.0,
                 "satisfied": false,
-                "at_arclength": 0.24
+                "at_arclength": 0.23946395784
               }
             ],
             "source_digest": "sha256:1ddc5e3e38883410a72c5be3e4295b4a",
@@ -13162,24 +13867,24 @@
             "tracking": {
               "outcome": "TRACK_LOST",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239466641862,
+              "acquisition_latency": 0.239466641862,
+              "acquisition_window_started_at": 0.239466641862,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.23,
+              "tracked_distance": 5.22970900022,
               "min_resolvability_while_tracked": 3.02554171085,
               "max_resolvability": 37.9744875943,
               "loss_intervals": [
                 [
-                  5.47,
-                  5.746
+                  5.46917564208,
+                  5.74477682838
                 ]
               ],
-              "longest_loss": 0.276,
-              "loss_started_at": 5.47,
-              "track_loss_declared_at": 5.57,
+              "longest_loss": 0.275601186299,
+              "loss_started_at": 5.46917564208,
+              "track_loss_declared_at": 5.56917564208,
               "processing": "offline",
-              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.47 and detectable at 5.57",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.46918 and detectable at 5.56918",
               "satisfied": false
             },
             "crossed_first_conjugate_point": true,
@@ -13215,7 +13920,7 @@
                 "worst_value": 3.02554171085,
                 "margin": -3.0,
                 "satisfied": false,
-                "at_arclength": 0.24
+                "at_arclength": 0.239466641862
               }
             ],
             "source_digest": "sha256:a4cf0440ed2188d2c0a06415a5250e31",
@@ -13232,24 +13937,24 @@
             "tracking": {
               "outcome": "TRACK_LOST",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239469264685,
+              "acquisition_latency": 0.239469264685,
+              "acquisition_window_started_at": 0.239469264685,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.118,
+              "tracked_distance": 5.11696218011,
               "min_resolvability_while_tracked": 3.00917335869,
               "max_resolvability": 37.0538566492,
               "loss_intervals": [
                 [
-                  5.358,
-                  5.64
+                  5.3564314448,
+                  5.63802797453
                 ]
               ],
-              "longest_loss": 0.282,
-              "loss_started_at": 5.358,
-              "track_loss_declared_at": 5.46,
+              "longest_loss": 0.28159652973,
+              "loss_started_at": 5.3564314448,
+              "track_loss_declared_at": 5.4564314448,
               "processing": "offline",
-              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.358 and detectable at 5.46",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.35643 and detectable at 5.45643",
               "satisfied": false
             },
             "crossed_first_conjugate_point": true,
@@ -13285,7 +13990,7 @@
                 "worst_value": 3.00917335869,
                 "margin": -3.0,
                 "satisfied": false,
-                "at_arclength": 0.24
+                "at_arclength": 0.239469264685
               }
             ],
             "source_digest": "sha256:afcb0984e40b6b1c63415bd4f9f1a30d",
@@ -13302,24 +14007,24 @@
             "tracking": {
               "outcome": "TRACK_LOST",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239471771468,
+              "acquisition_latency": 0.239471771468,
+              "acquisition_window_started_at": 0.239471771468,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.08,
+              "tracked_distance": 5.07902931461,
               "min_resolvability_while_tracked": 3.01046009913,
               "max_resolvability": 36.5511418241,
               "loss_intervals": [
                 [
-                  5.32,
-                  5.606
+                  5.31850108607,
+                  5.60529766834
                 ]
               ],
-              "longest_loss": 0.286,
-              "loss_started_at": 5.32,
-              "track_loss_declared_at": 5.422,
+              "longest_loss": 0.286796582263,
+              "loss_started_at": 5.31850108607,
+              "track_loss_declared_at": 5.41850108607,
               "processing": "offline",
-              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.32 and detectable at 5.422",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.3185 and detectable at 5.4185",
               "satisfied": false
             },
             "crossed_first_conjugate_point": true,
@@ -13355,7 +14060,7 @@
                 "worst_value": 3.01046009913,
                 "margin": -3.0,
                 "satisfied": false,
-                "at_arclength": 0.24
+                "at_arclength": 0.239471771468
               }
             ],
             "source_digest": "sha256:a8aba482c160e56b661abaa9fd6d4c4d",
@@ -13372,24 +14077,24 @@
             "tracking": {
               "outcome": "TRACK_LOST",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239474117447,
+              "acquisition_latency": 0.239474117447,
+              "acquisition_window_started_at": 0.239474117447,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.114,
+              "tracked_distance": 5.11256528536,
               "min_resolvability_while_tracked": 3.00080744764,
               "max_resolvability": 36.3807931313,
               "loss_intervals": [
                 [
-                  5.354,
-                  5.646
+                  5.35203940281,
+                  5.64417662268
                 ]
               ],
-              "longest_loss": 0.292,
-              "loss_started_at": 5.354,
-              "track_loss_declared_at": 5.456,
+              "longest_loss": 0.292137219872,
+              "loss_started_at": 5.35203940281,
+              "track_loss_declared_at": 5.45203940281,
               "processing": "offline",
-              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.354 and detectable at 5.456",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.35204 and detectable at 5.45204",
               "satisfied": false
             },
             "crossed_first_conjugate_point": true,
@@ -13425,7 +14130,7 @@
                 "worst_value": 3.00080744764,
                 "margin": -3.0,
                 "satisfied": false,
-                "at_arclength": 0.24
+                "at_arclength": 0.239474117447
               }
             ],
             "source_digest": "sha256:3b58c6bce5f82f06b40f718091858ccf",
@@ -13442,24 +14147,24 @@
             "tracking": {
               "outcome": "TRACK_LOST",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239476268634,
+              "acquisition_latency": 0.239476268634,
+              "acquisition_window_started_at": 0.239476268634,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.226,
+              "tracked_distance": 5.22638169999,
               "min_resolvability_while_tracked": 3.03732823567,
               "max_resolvability": 36.5228860764,
               "loss_intervals": [
                 [
-                  5.466,
-                  5.764
+                  5.46585796862,
+                  5.76377577087
                 ]
               ],
-              "longest_loss": 0.298,
-              "loss_started_at": 5.466,
-              "track_loss_declared_at": 5.568,
+              "longest_loss": 0.297917802243,
+              "loss_started_at": 5.46585796862,
+              "track_loss_declared_at": 5.56585796862,
               "processing": "offline",
-              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.466 and detectable at 5.568",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.46586 and detectable at 5.56586",
               "satisfied": false
             },
             "crossed_first_conjugate_point": true,
@@ -13495,7 +14200,7 @@
                 "worst_value": 3.03732823567,
                 "margin": -3.0,
                 "satisfied": false,
-                "at_arclength": 0.24
+                "at_arclength": 0.239476268634
               }
             ],
             "source_digest": "sha256:7db693f1a5d04681dc968c8f9817546c",
@@ -13512,24 +14217,24 @@
             "tracking": {
               "outcome": "TRACK_LOST",
               "acquired": true,
-              "acquisition_arclength": 0.24,
-              "acquisition_latency": 0.24,
-              "acquisition_window_started_at": 0.24,
+              "acquisition_arclength": 0.239478201827,
+              "acquisition_latency": 0.239478201827,
+              "acquisition_window_started_at": 0.239478201827,
               "acquisition_declared_at": 0.292,
-              "tracked_distance": 5.446,
+              "tracked_distance": 5.44573525945,
               "min_resolvability_while_tracked": 3.0239467589,
               "max_resolvability": 37.0194068159,
               "loss_intervals": [
                 [
-                  5.686,
-                  5.99
+                  5.68521346127,
+                  5.98848971067
                 ]
               ],
-              "longest_loss": 0.304,
-              "loss_started_at": 5.686,
-              "track_loss_declared_at": 5.786,
+              "longest_loss": 0.303276249392,
+              "loss_started_at": 5.68521346127,
+              "track_loss_declared_at": 5.78521346127,
               "processing": "offline",
-              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.686 and detectable at 5.786",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.68521 and detectable at 5.78521",
               "satisfied": false
             },
             "crossed_first_conjugate_point": true,
@@ -13565,7 +14270,7 @@
                 "worst_value": 3.0239467589,
                 "margin": -3.0,
                 "satisfied": false,
-                "at_arclength": 0.24
+                "at_arclength": 0.239478201827
               }
             ],
             "source_digest": "sha256:9ac7f9e398aa3d43213295df91a40ff3",
@@ -14489,6 +15194,62 @@
       "passed": true
     },
     {
+      "id": "gramian-density-is-scale-invariant",
+      "statement": "the accumulated observability per unit path length is unchanged when the same physical situation is drawn at twice the size -- the property a route criterion must have, and a dimensionful score cannot",
+      "value": 0.0,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "gramian-accumulates-with-path-length",
+      "statement": "while the accumulated figure doubles, because twice the path really does carry twice the information",
+      "value": 0.0,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "gramian-is-monotone",
+      "statement": "W(s2) - W(s1) is positive semi-definite, so the Gramian measures information rather than merely growing",
+      "value": -2.88821251984e-09,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "pareto-front-is-sound",
+      "statement": "every route the front calls dominated is beaten on every declared objective at once, and strictly on at least one",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "route-families-are-different-families",
+      "statement": "offsetting the start point does not rediscover the heading fan; the two exercise different columns of Phi",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "pareto-front-is-not-everything/heading-fan",
+      "statement": "and the front is a selection rather than the whole set, so the declared objectives are actually in tension",
+      "value": 2.0,
+      "threshold": 7.5,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "pareto-front-is-not-everything/offset-courses",
+      "statement": "and the front is a selection rather than the whole set, so the declared objectives are actually in tension",
+      "value": 1.0,
+      "threshold": 7.5,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
       "id": "budget-is-invertible/plate",
       "statement": "the declared budget can whiten a residual: at least one term has full rank, which in practice means the sensor's own noise",
       "value": 0.0,
@@ -15226,12 +15987,12 @@
     }
   ],
   "summary": {
-    "n_checks": 159,
+    "n_checks": 166,
     "n_failed": 0,
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "e6ad20ce364147ef4d557eba6321e3ea1f7d02119ed83f0e3063910e127d03d8",
+  "content_hash": "7e32f6b5a24950e9c4e659935610ee768a63899994b9023fbe9e71803881c626",
   "environment": {
     "package_version": "0.2.0",
     "python": "3.11.15",

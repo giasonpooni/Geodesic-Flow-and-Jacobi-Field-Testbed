@@ -352,6 +352,22 @@ class ParametricSurface:
         """
         return np.array([u0, v0, float(du), float(dv), *TRANSFER_INITIAL_STATE])
 
+    def heading_of(self, u, v, du, dv) -> float:
+        """The inverse of :meth:`unit_direction`: the angle a tangent points at.
+
+        Needed wherever a direction arrives from the flow rather than from an
+        angle -- parallel-transported along a perpendicular geodesic, say --
+        and has to be handed to something that takes a heading. Inverting the
+        same Gram-Schmidt frame keeps the two consistent by construction:
+        ``sin h = dv W / sqrt(E)`` and ``cos h = du sqrt(E) + dv F / sqrt(E)``.
+        """
+        E, F, G = self.first_fundamental_form(u, v)
+        root_E = np.sqrt(E)
+        W = np.sqrt(E * G - F * F)
+        sine = float(dv) * W / root_E
+        cosine = float(du) * root_E + float(dv) * F / root_E
+        return float(np.arctan2(sine, cosine))
+
     def perpendicular_direction(self, u, v, du, dv) -> tuple[float, float]:
         """Unit tangent orthogonal to ``(du, dv)`` in the surface metric.
 

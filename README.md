@@ -38,7 +38,7 @@ drift is therefore a free measure of how well it is integrating.
 
 ## Verification
 
-**302 declared checks across two stages, 0 failed.** Every number below has a
+**309 declared checks across two stages, 0 failed.** Every number below has a
 threshold attached in `engine/experiment.py` or `engine/experiment_surfaces.py`,
 and the committed reports are regenerated and compared in CI.
 
@@ -234,9 +234,44 @@ checks, and both quantities stay in the report.
 
 The ranking scalar is therefore named
 `minimum-forward-angular-error-amplification`, not robustness, and it decides
-nothing. Boundary clearance, curvature exposure and path length are declared in
-`RouteConstraints` and left unbounded in this example; accumulated
-observability `W = ∫ Phi^T H^T R^-1 H Phi ds` is not computed at all.
+nothing.
+
+### Six quantities, kept apart
+
+Ranking by any one of them is the mistake. The planner reports amplification,
+cross-track error, heading error, accumulated observability, boundary clearance
+and path length **separately**, each divided by its own declared limit so the
+six are comparable, and returns the **Pareto front** — the routes nothing else
+beats on every one at once. Of eight heading-fan routes on the torus, two
+survive; of eight offset courses, one does, which is the answer when the
+objectives happen not to be in tension. Collapsing the front to a single number
+needs weights, `weighted_cost` refuses to run without them, and it refuses to
+normalise an objective that has no declared limit — because without the limit
+the weights would be carrying the units.
+
+Accumulated observability is now computed. `W = ∫ Phi^T H^T R^-1 H Phi ds`
+asks what the *whole path* says about a starting-pose error, which is not what
+`rho(s)` asks about a sample: a route can be resolvable everywhere and still
+say almost nothing about one direction, because `Phi` keeps rotating that
+direction into the sensor's blind one. On the torus fan the ratio between the
+best- and worst-observed directions runs from 2.6 to 576, and on the offset
+courses from 28 to 92 — different families, different blind directions. The Gramian's
+*density* — per unit path length — is exactly scale invariant, which is the
+property a route criterion must have; the accumulated figure doubles with the
+path, as it should, and both are declared checks.
+
+Boundaries are computed from the declared part rather than handed in: the
+chart's own edge through the surface metric, and keep-out discs measured by the
+ambient chord, which is never longer than the in-surface distance and so errs
+in the direction an obstacle constraint has to err in.
+
+And routes are generated over both degrees of freedom. A heading fan exercises
+the `b` column; a set of parallel offset courses — each started where a
+geodesic perpendicular to the seed reaches the declared spacing, with its
+direction parallel-transported along that perpendicular — exercises `a`. The
+two columns focus in different places, so a family chosen on one says nothing
+about the other. Their heading *coordinates* differ, by exactly the holonomy of
+the perpendicular each was carried along; on a plane they do not differ at all.
 
 ![Geodesic flow and Jacobi fields on the three constant-curvature surfaces](figures/jacobi-testbed-v1.png)
 
@@ -244,7 +279,7 @@ observability `W = ∫ Phi^T H^T R^-1 H Phi ds` is not computed at all.
 
 ```bash
 uv sync --locked --extra dev          # or: pip install -e ".[dev]"
-uv run pytest -q                      # 417 tests, no network, about six minutes
+uv run pytest -q                      # 445 tests, no network, about seven minutes
 uv run python examples/run_experiment.py --out out        # both stages: reports + figures
 uv run python examples/write_reference_report.py          # application reference report
 ```

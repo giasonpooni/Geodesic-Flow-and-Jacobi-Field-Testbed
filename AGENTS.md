@@ -107,6 +107,37 @@
   `rho = sqrt(diag(H Phi C0 Phi^T H^T)) / sqrt(diag R)`, which asks whether the
   declared instrument can distinguish the starting poses the tolerance admits.
   Dimensionful quantities may be reported; they may not decide.
+- **Route selection reports a front, not a score.** Amplification, cross-track
+  error, heading error, accumulated observability, boundary clearance and path
+  length stay separate, each divided by its own declared limit so they are
+  comparable. `pareto_front` returns what nothing else beats on every one at
+  once; `weighted_cost` collapses that only with weights the caller declared,
+  which must sum to one and must name every objective -- an omitted weight is a
+  zero chosen by accident -- and it refuses an objective with no limit, because
+  the limit is what keeps the weights from carrying units.
+- **Accumulated observability is not sampled resolvability.** `rho(s)` asks
+  about one arc length; `W = int Phi^T H^T R^-1 H Phi ds` asks what the whole
+  path says, and a route can pass the first everywhere while saying almost
+  nothing about one direction of the starting pose. The Gramian is reported
+  only in a declared dimensionless scaling -- a tolerance box or a prior
+  covariance -- because its entries do not share units. Its *density* is scale
+  invariant and the accumulated figure is not, and both are declared checks.
+- **Boundaries are computed from the declared part**, not supplied as an array
+  that might be on the wrong grid. An obstacle clearance uses the ambient
+  chord, which is never longer than the in-surface distance, so it errs towards
+  rejecting a route rather than towards clearing one.
+- **Generate routes over both degrees of freedom.** A heading fan exercises the
+  `b` column and a set of offset courses exercises `a`, and the two columns
+  focus in different places. An offset course starts where a geodesic
+  perpendicular to the seed reaches the declared spacing, with its direction
+  parallel-transported along it -- stepping linearly in `u` and `v` instead is
+  right to first order and wrong by `O(K spacing^2)`, which is the size of the
+  effects measured here.
+- **Every event is located between samples.** Threshold crossings in
+  `evaluate_tracking` are interpolated and a track loss is declared exactly one
+  tolerated length after the excursion began, for the same reason focus
+  locations are Hermite-refined: an event snapped to the next sample is known
+  only to the sample spacing, and the rounding is one-sided.
 - **A declared constraint is never skipped.** If its evidence is missing,
   `assess_route` raises. An acquisition schedule with no observation model or
   no starting covariance, or a boundary limit with no boundary data, is an

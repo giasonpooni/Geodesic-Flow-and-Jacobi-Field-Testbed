@@ -41,6 +41,14 @@ may use the retrospective start, because an offline analysis has the whole
 record in hand. An offline schedule reported as a real-time result is the
 error this distinction exists to prevent.
 
+**Events are located between samples.** Every threshold crossing here is
+linearly interpolated, for the same reason the focus locations are
+Hermite-refined: an event snapped to the sample that follows it is known only
+to the sample spacing, and the rounding is one-sided, so every latency comes
+out biased upward by half a step. A loss is *declared* exactly one tolerated
+length after the excursion began -- when a causal instrument's timer expires --
+rather than at whichever sample came next.
+
 **What "while tracked" means.** ``min_resolvability_while_tracked`` is taken
 over the span the instrument actually held the path: from acquisition to the
 end of the route, or to the point where the track was lost. It is never taken
@@ -158,6 +166,30 @@ def _runs(mask: Array) -> list[tuple[int, int]]:
     return list(zip(edges[0::2], edges[1::2], strict=True))
 
 
+def _crossing(grid: Array, values: Array, threshold: float, index: int) -> float:
+    """Where ``rho`` crossed ``threshold`` between samples ``index-1`` and ``index``.
+
+    Linear interpolation, and the reason to bother is the same one that made
+    the focus locations Hermite-refined: an event reported at a sample boundary
+    is located only to the sample spacing, and a schedule that says "acquire
+    within 1.0 of path length" is being judged against a number known to 0.005.
+    Rounding an event to the sample that happened to follow it also biases
+    every latency upward by half a step, systematically, in the direction that
+    makes a route look worse than it is.
+
+    The bracket is the interval where the sign of ``rho - threshold`` changes,
+    so the root is inside it and the interpolation cannot leave it.
+    """
+    if index <= 0 or index >= grid.size:
+        return float(grid[max(0, min(index, grid.size - 1))])
+    before, after = float(values[index - 1]) - threshold, float(values[index]) - threshold
+    if before == after:
+        return float(grid[index])
+    weight = before / (before - after)
+    weight = min(max(weight, 0.0), 1.0)
+    return float(grid[index - 1] + weight * (grid[index] - grid[index - 1]))
+
+
 def evaluate_tracking(
     arclength: Array, resolvability: Array, spec: AcquisitionSpec
 ) -> TrackingOutcome:
@@ -229,8 +261,15 @@ def evaluate_tracking(
             f"{spec.acquisition_window:g}; it peaked at {maximum:g}",
         )
 
-    window_started_at = float(grid[window_start_index])
-    declared_at = float(grid[declared_index])
+    # Both events are located between samples. The run *began* where rho
+    # crossed the acquire threshold, not at the first sample that happened to
+    # be above it; the window then completes one window length later.
+    window_started_at = _crossing(
+        grid, rho, spec.acquire_threshold, window_start_index
+    )
+    declared_at = max(
+        float(grid[declared_index]), window_started_at + spec.acquisition_window
+    )
     acquired_at = declared_at if causal else window_started_at
     acquisition_index = declared_index if causal else window_start_index
     latency = acquired_at - start
@@ -267,21 +306,21 @@ def evaluate_tracking(
     loss_started_at: float | None = None
     loss_declared_at: float | None = None
     for first, last in _runs(below):
-        begin = float(tail_grid[first])
-        finish = float(tail_grid[min(last, tail_grid.size - 1)])
+        begin = _crossing(tail_grid, tail_rho, spec.hold_threshold, first)
+        finish = (
+            _crossing(tail_grid, tail_rho, spec.hold_threshold, last)
+            if last < tail_grid.size
+            else float(tail_grid[-1])
+        )
         intervals.append((begin, finish))
         if loss_started_at is not None:
             continue
-        exceeded = np.flatnonzero(
-            tail_grid[first:last] - begin > spec.max_loss_distance
-        )
-        if exceeded.size:
+        if finish - begin > spec.max_loss_distance:
             loss_started_at = begin
-            loss_declared_at = float(tail_grid[first + exceeded[0]])
-        elif finish - begin > spec.max_loss_distance:
-            # The run reaches the end of the path still below threshold.
-            loss_started_at = begin
-            loss_declared_at = finish
+            # The declaration is exactly one tolerated length after the
+            # excursion began: that is when a causal instrument's timer
+            # expires, and it has nothing to do with where a sample fell.
+            loss_declared_at = min(begin + spec.max_loss_distance, finish)
     longest = max((end_ - start_ for start_, end_ in intervals), default=0.0)
 
     if loss_started_at is not None:
@@ -295,7 +334,7 @@ def evaluate_tracking(
         # reports the depth of the failure as though it were a property of the
         # tracked stretch -- a number that is both wrong and unusable, since it
         # is always below the hold threshold by construction.
-        tracked_span = tail_grid < loss_started_at
+        tracked_span = tail_grid <= loss_started_at
         min_while_tracked = (
             float(np.min(tail_rho[tracked_span])) if bool(tracked_span.any()) else None
         )
