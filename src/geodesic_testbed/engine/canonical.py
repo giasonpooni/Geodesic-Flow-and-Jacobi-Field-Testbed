@@ -22,9 +22,19 @@ Across environments it buys nothing, and no rounding rule could. ``sin``,
 ``cosh``, ``exp`` and every BLAS reduction are the platform's, they differ in
 their last bits between builds, and an ODE integrated over two thousand steps
 carries that difference upward. Four numpy builds here produce four different
-content hashes. So the cross-environment claim is not a hash at all: it is that
-every *reported value* agrees to a declared tolerance, which is both true and
-more informative, and ``tests/test_committed_report.py`` is where it is made.
+content hashes.
+
+Nor can the cross-environment claim be "the values agree to a tolerance",
+which was tried and measured: against a GitHub runner, a fitted convergence
+order moved by 3e-6 relative, a ``coefficient_relative_error`` by 9%, and a
+finite-difference jet value at a step of 1e-6 by a factor of 2.8. That is not
+a defect -- the last two are a residual and a cancellation-limited probe, both
+of which exist to measure error and are therefore made of it. A tolerance
+loose enough to admit them would admit a regression.
+
+What crosses is the **verdict**: every declared check reaches the same
+conclusion against its own threshold, which is what a threshold is for. See
+``tests/test_committed_report.py``.
 """
 
 from __future__ import annotations

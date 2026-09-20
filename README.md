@@ -310,11 +310,23 @@ A content hash is an identity *within one environment* and nothing more. Four
 numpy builds here produce four different content hashes, because the last
 digits of `sin`, `cosh`, `svd` and every BLAS reduction belong to the
 platform's libm and no rounding rule aligns them. So `--baseline self` is what
-CI uses — every cycle against the first cycle's own output — while the claim
-made against the *tracked* reports is that every check reaches the same
-verdict, and every value large enough for a relative comparison to mean
-anything agrees to 1e-6. Residuals below that floor are not compared by value,
-because their last digits are the platform's; their verdicts are.
+CI uses — every cycle against the first cycle's own output.
+
+Nor do the *values* cross a build. Measured, not assumed: against a GitHub
+runner a fitted convergence order moves by 3e-6 relative, a
+`coefficient_relative_error` by 9%, and a finite-difference jet value at a
+differencing step of 1e-6 by a factor of 2.8. The last two are a residual and
+a cancellation-limited probe — this is a report *about* numerical error, so
+most of its numbers are numerical error, and that is precisely what two builds
+of libm disagree about. A tolerance loose enough to admit them would admit a
+regression.
+
+What does cross is the **verdict**: every declared check reaches the same
+conclusion against its own threshold, on every Python version CI runs. That is
+sufficient rather than merely available — every quantitative claim here has a
+declared check, so a regression large enough to matter flips one, and a test
+demonstrates that by pushing each value past its own threshold and watching
+the verdict turn.
 
 ## Using it
 

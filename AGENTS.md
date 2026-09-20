@@ -211,12 +211,21 @@
   `tools/e2e.py` asserts across a hundred cycles of varying hash seed, BLAS
   thread count and working directory. It cannot answer "do two numpy builds
   agree", because they do not in the last digits and no rounding rule makes
-  them: four builds here give four hashes. The cross-environment claim is that
-  every *reported value* agrees to a declared tolerance
-  (`AGREEMENT_RTOL`/`AGREEMENT_ATOL` in `tests/test_committed_report.py`), which
-  is true, is stronger than "the hashes differ or they do not", and says how far
-  the artefact is allowed to drift. Do not assert hash equality in the test
-  suite; assert it in the end-to-end harness, where the environment is fixed. Rounding is relative, so a
+  them: four builds here give four hashes.
+- **Across environments the claim is the verdict, not the value.** Comparing
+  values to a tolerance was tried and measured against a GitHub runner: a
+  fitted order moved by 3e-6 relative, a `coefficient_relative_error` by 9%,
+  and a finite-difference jet value at a step of 1e-6 by a factor of 2.8. The
+  last two are a residual and a cancellation-limited probe -- this artefact is
+  a report *about* numerical error, so most of its numbers are numerical
+  error, and that is the thing two builds of libm disagree about. A tolerance
+  loose enough to admit them admits a regression.
+  `_assert_same_verdicts` compares every check's pass/fail against its own
+  threshold instead, and that is sufficient rather than merely possible:
+  every quantitative claim here must have a declared check, so a regression
+  large enough to matter flips one. Do not assert hash or value equality in
+  the test suite; assert bytes in the end-to-end harness, where the
+  environment is fixed. Rounding is relative, so a
   1e-16 residual is still recorded as 1e-16, and no declared threshold is
   anywhere near the floor. A consistency check on *reported* values may
   therefore not demand better than `10^-(CANONICAL_DIGITS - 1)`. Anything a
