@@ -207,22 +207,41 @@ arithmetic.
 
 ## The rule has a direction, and the direction is checked
 
-`geodesic_testbed.boundary` names three layers:
+`geodesic_testbed.boundary` names five layers, in `LAYERS`:
 
-| layer | modules |
-|---|---|
-| `SUBSTRATE` | `spaceforms`, `surfaces`, `integrators`, `flows`, `transfer`, `envelope`, `analysis`, `jacobi` |
-| `CONTRACT` | `contract`, `observation`, `record` |
-| `INSTRUMENT_FACING` | `observation_model`, `measurement`, `tracking`, `routing` |
+| layer | modules | what it is |
+|---|---|---|
+| `CONTRACT` | `contract`, `canonical`, `observation`, `record` | the shared vocabulary and the record |
+| `SUBSTRATE` | `spaceforms`, `surfaces`, `integrators`, `flows`, `transfer`, `envelope`, `analysis`, `jacobi` | geometry in, transfer map out |
+| `INSTRUMENT_FACING` | `observation_model`, `prediction`, `planning`, `uncertainty`, `measurement`, `campaign`, `tracking`, `routing` | everything that exists to meet an instrument |
+| `CONSUMERS` | `applications`, `tolerances`, `reports` | the application contracts, which speak the record and not the instrument |
+| `HARNESS` | `boundary`, `experiment`, `experiment_surfaces`, `figure`, `figure_surfaces`, `cli` | the experiment stages and entry points |
 
-The substrate may not import the instrument-facing side. The contract may
-import neither — `record` reaches `transfer` for the map it wraps and nothing
-else, and `contract.py` imports nothing but the standard library and NumPy, so
-a vocabulary that computes nothing cannot drift from what it promises.
+The rules:
+
+- the **substrate** may not import the instrument-facing side;
+- the **contract** may import neither — `record` reaches `transfer` for the map
+  it wraps and nothing else, and `contract.py` imports nothing but the standard
+  library and NumPy, so a vocabulary that computes nothing cannot drift from
+  what it promises;
+- the **consumers** may not import the instrument-facing side either: a
+  tolerance assessment that reached for an observation model would be deciding
+  with a threshold that belongs to a protocol;
+- the **harness** may import anything, which is exactly why it is named. A
+  layer allowed to reach everywhere has to be listed, or every module could
+  quietly claim to be it.
+
+Note what is on the instrument-facing side. The whole prediction chain, the
+uncertainty budget, the route planner and the coupon programme are built from
+the record and import no solver — which is the strongest statement available
+that the record is complete.
 
 `tests/test_boundary.py` reads the imports out of the syntax tree and asserts
 this, rather than importing the modules — a rule about what a module is allowed
-to depend on should not be enforced by a mechanism that depends on it. The
+to depend on should not be enforced by a mechanism that depends on it. It also
+asserts that **every** module in the package belongs to exactly one layer: a
+module in none of them is a module the rule does not reach, and a new one that
+imports across the boundary would otherwise pass by not being listed. The
 separation is therefore a property of the code, not an intention in a document.
 
 ## Versioning
