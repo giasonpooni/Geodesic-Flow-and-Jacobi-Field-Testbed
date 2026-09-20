@@ -1,4 +1,10 @@
-"""Curved-surface geodesic sensitivity: transfer maps and tolerance contracts."""
+"""Curved-surface geodesic sensitivity: transfer maps and tolerance contracts.
+
+This is a computational substrate that an instrument may consume, not a module
+inside one. The whole of what it offers outward is the transfer record;
+:mod:`geodesic_testbed.boundary` is that contract on its own, and
+``docs/BOUNDARY.md`` says what stays on each side of it.
+"""
 
 from .applications import (
     InspectionAssessment,
@@ -8,12 +14,24 @@ from .applications import (
     assess_inspection,
     assess_manufacturing,
 )
+from .boundary import read_record, write_record
+from .engine.contract import (
+    BOUNDARY_CONTRACT,
+    DEFAULT_FRAME,
+    RUNTIME_VERSION,
+    CalibrationBinding,
+    Frame,
+    Provenance,
+    StartingCovariance,
+    UpstreamArtefact,
+)
 from .engine.measurement import (
     MEASUREMENT_SCHEMA,
     MeasurementRecord,
     Perturbation,
     Uncertainty,
     compare,
+    prediction_binding,
 )
 from .engine.observation_model import (
     FilteredPrediction,
@@ -25,6 +43,7 @@ from .engine.observation_model import (
 )
 from .engine.record import (
     RECORD_SCHEMA,
+    SUPPORTED_RECORD_SCHEMAS,
     FirstOrderValidity,
     Resolution,
     SupportsTransferRecord,
@@ -52,9 +71,21 @@ from .jacobi import (
 from .tolerances import PathTolerance
 
 __all__ = [
+    "BOUNDARY_CONTRACT",
+    "DEFAULT_FRAME",
     "MEASUREMENT_SCHEMA",
     "RECORD_SCHEMA",
+    "RUNTIME_VERSION",
+    "SUPPORTED_RECORD_SCHEMAS",
     "AcquisitionSpec",
+    "CalibrationBinding",
+    "Frame",
+    "Provenance",
+    "StartingCovariance",
+    "UpstreamArtefact",
+    "prediction_binding",
+    "read_record",
+    "write_record",
     "Chart",
     "ConstraintMargin",
     "CoverageSpec",
@@ -95,4 +126,4 @@ __all__ = [
     "integrate_jacobi",
 ]
 
-__version__ = "0.1.0"
+__version__ = RUNTIME_VERSION

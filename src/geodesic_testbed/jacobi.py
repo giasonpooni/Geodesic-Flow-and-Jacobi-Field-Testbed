@@ -23,10 +23,14 @@ from numpy.typing import ArrayLike, NDArray
 
 from .engine.integrators import integrate_on_grid
 from .engine.record import (
+    CalibrationBinding,
     FirstOrderValidity,
+    Provenance,
     Resolution,
+    StartingCovariance,
     TransferRecord,
     Units,
+    UpstreamArtefact,
     digest,
 )
 from .engine.spaceforms import asin_k, sin_k
@@ -113,6 +117,10 @@ class JacobiTrace:
         units: Units | None = None,
         observation_mode: str = "intrinsic-surface-distance",
         relative_tolerance: float = 1.0e-6,
+        covariance: StartingCovariance | None = None,
+        calibration: CalibrationBinding | None = None,
+        upstream: tuple[UpstreamArtefact, ...] = (),
+        provenance: Provenance | None = None,
     ) -> TransferRecord:
         """Present this trace as the public transfer record.
 
@@ -166,6 +174,19 @@ class JacobiTrace:
             validity=validity,
             observation_mode=observation_mode,
             domain="constant-curvature" if constant else "declared-curvature-profile",
+            covariance=covariance
+            or StartingCovariance.not_declared(
+                "computed from a declared curvature profile; no starting pose "
+                "distribution exists here"
+            ),
+            provenance=(
+                provenance
+                or Provenance(
+                    note="Jacobi transfer from a declared curvature profile"
+                )
+            ).with_upstream(*upstream),
+            calibration=calibration
+            or CalibrationBinding.unbound("no instrument took part in this computation"),
         )
 
     def as_dict(self) -> dict[str, object]:

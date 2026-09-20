@@ -38,8 +38,10 @@ from typing import Any
 
 import numpy as np
 
+from .contract import CalibrationBinding
 from .observation import mode as observation_mode
 from .observation_model import FilteredPrediction
+from .record import TransferRecord, to_transfer_record
 
 MEASUREMENT_SCHEMA = "path-sensitivity-observation-v1"
 
@@ -270,12 +272,30 @@ class MeasurementRecord:
         return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
 
 
+def prediction_binding(record: MeasurementRecord) -> CalibrationBinding:
+    """The trial's calibration state, in the contract's vocabulary.
+
+    The instrument names its calibration one way and the boundary contract
+    another; this is the single place the two are translated, so a comparison
+    can ask whether a prediction and a trial share an instrument state without
+    either side learning the other's field names.
+    """
+    return CalibrationBinding(
+        calibration_ids=(record.calibration_id,) if record.calibration_id else (),
+        registration_id=record.calibration_transform_digest,
+        reconstruction_version=record.reconstruction_version,
+        instrument_id=record.geometry_model,
+        note=f"from trial {record.run_id}",
+    )
+
+
 def compare(
     record: MeasurementRecord,
     predicted_separation,
     *,
     mode: str | None = None,
     resolvability_threshold: float | None = None,
+    prediction_source: Any = None,
 ):
     """Residual of a prediction against a trial, refusing a mismatched comparison.
 
@@ -297,6 +317,18 @@ def compare(
     ``resolvability_threshold``, when given, is the signal-to-noise bar the
     *instrument protocol* declares. This module reports the ratio and never
     invents the bar.
+
+    ``prediction_source`` is the transfer record the prediction came from. It
+    is optional because a prediction can be handed over as bare numbers, and
+    that is the case worth discouraging: supplying the record lets this
+    function check the two things the numbers cannot carry. Units, because a
+    prediction in metres against a trial in millimetres is a thousandfold error
+    that agrees in shape. And calibration, because a record *bound* to one
+    instrument state and a trial run under another are not comparable however
+    well they agree. A record that declares no calibration is not an error --
+    a prediction from an analytic surface correctly declares none -- but the
+    result says so rather than leaving the reader to assume a tie that was
+    never established.
     """
     expected = mode or record.observation_mode
     if expected != record.observation_mode:
@@ -304,6 +336,45 @@ def compare(
             f"prediction is in {expected!r} but the trial measured "
             f"{record.observation_mode!r}; convert one before comparing"
         )
+
+    prediction_record: TransferRecord | None = (
+        None if prediction_source is None else to_transfer_record(prediction_source)
+    )
+    calibration: dict[str, Any] = {
+        "trial": prediction_binding(record).to_dict(),
+        "prediction": (
+            None if prediction_record is None else prediction_record.calibration.to_dict()
+        ),
+        "agreed": None,
+    }
+    if prediction_record is not None:
+        trial_units = dict(record.units)
+        declared = prediction_record.units.to_dict()
+        clashes = [
+            (key, declared[key], trial_units[key])
+            for key in declared
+            if key in trial_units and declared[key] != trial_units[key]
+        ]
+        if clashes:
+            detail = "; ".join(
+                f"the prediction's {key} unit is {mine!r} but the trial's is {theirs!r}"
+                for key, mine, theirs in clashes
+            )
+            raise ValueError(
+                f"{detail}. A comparison in two different units agrees in shape and "
+                "disagrees by a scale factor nothing else here would catch"
+            )
+        bound = prediction_record.calibration
+        if bound.bound:
+            agreed = bound.agrees_with(prediction_binding(record))
+            calibration["agreed"] = agreed
+            if not agreed:
+                raise ValueError(
+                    f"the prediction is bound to calibration {sorted(bound.calibration_ids)} "
+                    f"and the trial ran under {record.calibration_id!r} at reconstruction "
+                    f"{record.reconstruction_version!r}; a prediction bound to a different "
+                    "instrument state is not comparable with this measurement"
+                )
 
     filtered = isinstance(predicted_separation, FilteredPrediction)
     if record.filter_identifier != "none":
@@ -370,6 +441,7 @@ def compare(
             None if resolvability_threshold is None
             else bool(snr >= float(resolvability_threshold))
         ),
+        "calibration": calibration,
         "prediction_report_digest": record.prediction_report_digest,
         "raw_data_digest": record.raw_data_digest,
         "filter": {

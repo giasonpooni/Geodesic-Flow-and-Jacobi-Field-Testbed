@@ -36,6 +36,32 @@
   produces a transfer map presents one, and anything that consumes a path takes
   one. New consumers accept `to_transfer_record(source)`, never a concrete
   producer type.
+- **The record is the whole of the outward interface.** This runtime is a
+  parallel computational substrate that an instrument may consume, not a module
+  inside an instrument workbench. `geodesic_testbed.boundary` presents the
+  contract on its own, `docs/BOUNDARY.md` states it, and the record carries the
+  seven things a consumer cannot reconstruct: units, frame, arclength grid,
+  covariance, provenance, calibration IDs and observation mode. Anything a
+  downstream system needs goes in the record; nothing else is public.
+- **The one-way rule is checked, not intended.** `boundary.SUBSTRATE` may not
+  import `boundary.INSTRUMENT_FACING`, and `boundary.CONTRACT` may import
+  neither -- `record` reaches `transfer` for the map it wraps and nothing else,
+  and `engine/contract.py` imports only the standard library and NumPy.
+  `tests/test_boundary.py` reads this out of the syntax tree. A new module goes
+  in one of the three lists.
+- **A field that may say no is never silently filled in.** Covariance,
+  calibration and validity each have an undeclared state, and undeclared is the
+  correct answer for a record computed from an analytic surface.
+  `propagate_declared_covariance()` raises rather than substitute a `C0`; two
+  unbound calibration bindings do **not** agree, because absence of a
+  calibration is not evidence of a shared one. Converting a tolerance box to a
+  covariance records its `coverage_factor`: a box is a bound and a covariance
+  is a distribution, and the convention between them is not a silent choice.
+- The version is declared once, in `engine/contract.py`. `pyproject.toml`,
+  `geodesic_testbed.__version__` and every record's `producer_version` read it,
+  and a test holds the three together. A record carries no timestamp and no
+  hostname: both would make two runs of the same computation differ, and a
+  report that cannot be regenerated and compared is not worth shipping.
 - **No dimensionful thresholds in a criterion.** `|b|` is a length per radian:
   a cutoff on it is specific to one part size and one angle unit. Route
   decisions use quantities that survive rescaling -- the dimensionless
@@ -69,11 +95,41 @@
   layer reports signal-to-noise, resolvability and margins; it does not decide
   what counts as resolved. A constant like `SNR >= 3` compiled into the
   comparison is a declared limit smuggled into arithmetic.
-- A path that leaves its chart must say so. Every surface declares a `Chart`
-  and a conditioning floor; `require_valid_chart` refuses a start the
-  parameterisation cannot represent, and `PathEnvelope.chart` records where a
-  path left the valid region. Silent NaNs, or an envelope computed from a
-  degenerate metric, are defects.
+- **A path that leaves its chart is stopped, not cleaned up afterwards.** Every
+  surface declares a `Chart` and a conditioning floor; `require_valid_chart`
+  refuses a start the parameterisation cannot represent, and `integrate_paths`
+  defaults to `on_chart_exit="truncate"`, which runs `integrate_guarded` so the
+  right-hand side is never evaluated past the exit. Truncating the output
+  afterwards removes the invalid samples and not the arithmetic that produced
+  them, and on a degenerate chart that arithmetic overflows. `"report"` is for
+  the experiments that measure the exit itself, and is the only policy allowed
+  to integrate past it. `PathEnvelope.chart` records what happened either way,
+  and `as_transfer_record()` refuses an envelope with invalid samples: a record
+  carries no chart and cannot warn a consumer.
+- **Every float in a committed artefact is canonicalised**
+  (`engine/canonical.py`, twelve significant digits, no signed zero) before it
+  is serialised or hashed. A content hash that moves because a BLAS reduction
+  summed in a different order is not an identity. Rounding is relative, so a
+  1e-16 residual is still recorded as 1e-16, and no declared threshold is
+  anywhere near the floor. A consistency check on *reported* values may
+  therefore not demand better than `10^-(CANONICAL_DIGITS - 1)`. Anything a
+  report names -- a route label included -- must be built so that it cannot
+  move on the last bit: `heading_label` uses a decimal place because the scan's
+  headings land exactly on the `:.0f` rounding boundary.
+- **An invariant is checked directly, never through a decomposition.**
+  `det Phi = a b' - a' b` is two products and a subtraction; reading it off
+  `sigma_1 sigma_2` instead measures the SVD's conditioning on the tolerance
+  box, which on a 10^4 aspect ratio is three orders of magnitude worse than the
+  quantity being tested. Report the decomposition if it is interesting; do not
+  let it carry the check.
+- **Declared evidence is validated, not merely present.** A limit that admits
+  nothing (zero, negative, non-finite) is refused at declaration; a boundary
+  array must be finite and on the record's own arclength grid, or it pairs
+  clearances with the wrong arc lengths; a covariance goes through the single
+  `contract.validated_covariance`, because two implementations of "is this a
+  covariance" eventually disagree and the laxer one wins. An observation mode
+  and a domain are checked **together**: each is real on its own, and the pair
+  is what is false.
 - The finite-difference fallback jet uses a step **relative** to the parameter
   scale, and reports `derivative_convergence`. An absolute step is a scale
   defect, and second derivatives amplify it.

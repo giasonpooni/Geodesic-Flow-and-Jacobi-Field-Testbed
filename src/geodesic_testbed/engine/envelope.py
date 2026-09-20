@@ -25,56 +25,84 @@ check it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import numpy as np
 
-from .integrators import integrate
+from .integrators import integrate, integrate_guarded
 from .record import (
+    CalibrationBinding,
     FirstOrderValidity,
+    Provenance,
     Resolution,
+    StartingCovariance,
     TransferRecord,
     Units,
+    UpstreamArtefact,
     digest,
 )
 from .surfaces import ParametricSurface
 from .transfer import FocusEvent, TransferMap
 
 
-def _chart_report(surface: ParametricSurface, grid, u, v) -> dict[str, Any]:
+def _chart_report(
+    surface: ParametricSurface,
+    grid,
+    u,
+    v,
+    *,
+    stopped_at: int | None = None,
+    reason: str | None = None,
+) -> dict[str, Any]:
     """Where, if anywhere, the path left the chart it was computed in.
 
     Reported rather than raised: a path that runs off the edge of a
     parameterisation is a legitimate thing to have asked for and a useful thing
     to be told about, and the samples before the event are still valid. What is
     not acceptable is returning the samples after it without saying so.
+
+    ``stopped_at`` is for the guarded flow, where the integrator stopped the
+    path at the exit and froze it. The frozen samples are copies of the last
+    valid state and would pass a validity check, so the exit has to be carried
+    in rather than rediscovered -- the whole point of stopping was not to
+    compute the invalid ones.
     """
     validity = surface.chart_validity(u, v)
     usable = np.asarray(validity["in_domain"]) & np.asarray(validity["well_conditioned"])
+    if stopped_at is not None:
+        usable = usable.copy()
+        usable[stopped_at:] = False
     if bool(np.all(usable)):
         return {
             "valid": True,
             "valid_until": float(grid[-1]),
             "first_invalid_index": None,
             "reason": None,
+            "truncated": False,
             "min_conditioning": float(np.min(validity["conditioning"])),
             "min_domain_margin": float(np.min(validity["domain_margin"])),
             "declared_domain": surface.chart.to_dict(),
         }
     index = int(np.argmax(~usable))
-    reason = (
-        "left the declared parameter domain"
-        if not bool(validity["in_domain"][index])
-        else "chart became degenerate: EG - F^2 unresolved"
-    )
+    if reason is None:
+        reason = (
+            "left the declared parameter domain"
+            if not bool(validity["in_domain"][index])
+            else "chart became degenerate: EG - F^2 unresolved"
+        )
+    # Conditioning is reported over the prefix that is still usable. Taken over
+    # the whole run it would describe the region the path should never have
+    # been integrated into, which is a number about nothing.
+    kept = slice(0, max(index, 1))
     return {
         "valid": False,
         "valid_until": float(grid[index - 1]) if index > 0 else float(grid[0]),
         "first_invalid_index": index,
         "reason": reason,
-        "min_conditioning": float(np.min(validity["conditioning"])),
-        "min_domain_margin": float(np.min(validity["domain_margin"])),
+        "truncated": False,
+        "min_conditioning": float(np.min(validity["conditioning"][kept])),
+        "min_domain_margin": float(np.min(validity["domain_margin"][kept])),
         "declared_domain": surface.chart.to_dict(),
     }
 
@@ -117,6 +145,70 @@ class PathEnvelope:
     speed: np.ndarray
     chart: dict[str, Any] = field(default_factory=dict)
 
+    # -- chart validity ----------------------------------------------------
+    @property
+    def chart_valid(self) -> bool:
+        """Whether every sample of this path lies in a usable part of the chart."""
+        return bool(self.chart.get("valid", True))
+
+    @property
+    def valid_samples(self) -> int:
+        """How many leading samples are usable. The rest are not results.
+
+        Past the first invalid sample the metric is degenerate or the point is
+        outside the declared domain, so the geodesic equation was integrated
+        through coefficients that do not describe the surface. Those samples
+        are not a worse answer; they are not an answer.
+        """
+        index = self.chart.get("first_invalid_index")
+        return int(self.arc_length.size) if index is None else int(index)
+
+    def truncated_to_chart(self) -> PathEnvelope:
+        """The leading prefix of this path that stayed inside the chart.
+
+        Returned as a whole envelope rather than as a mask, so that everything
+        computed from it -- the transfer map, the foci, the record -- is
+        computed from valid samples only and cannot silently reach past the
+        exit. An unbroken path is returned unchanged.
+        """
+        if self.chart_valid:
+            return self
+        keep = self.valid_samples
+        if keep < 2:
+            raise ValueError(
+                f"the path left the chart of {self.surface.name} at sample {keep} "
+                f"({self.chart.get('reason')}); there is no valid prefix to keep. "
+                "Start elsewhere, or shorten the path"
+            )
+        sliced = {
+            name: np.asarray(getattr(self, name))[:keep]
+            for name in (
+                "arc_length", "u", "v", "points", "curvature", "lateral_basis",
+                "lateral_rate", "jacobi_field", "jacobi_derivative", "speed",
+            )
+        }
+        grid = sliced["arc_length"]
+        # Every sample that remains is inside the chart, so the truncated
+        # envelope *is* valid. What it is not is the path that was asked for,
+        # and that stays on the record: ``valid`` describes the samples in
+        # hand, ``truncated`` describes what happened to the request.
+        return replace(
+            self,
+            length=float(grid[-1] - grid[0]),
+            n_steps=int(keep - 1),
+            chart=self.chart | {
+                "valid": True,
+                "valid_until": float(grid[-1]),
+                "first_invalid_index": None,
+                "truncated": True,
+                "truncated_at": float(grid[-1]),
+                "truncation_reason": self.chart.get("reason"),
+                "truncated_from_length": float(self.length),
+                "truncated_from_samples": int(self.arc_length.size),
+            },
+            **sliced,
+        )
+
     # -- readout -----------------------------------------------------------
     @property
     def transfer_map(self) -> TransferMap:
@@ -135,6 +227,10 @@ class PathEnvelope:
         units: Units | None = None,
         observation_mode: str = "ambient-euclidean-chord",
         validity: FirstOrderValidity | None = None,
+        covariance: StartingCovariance | None = None,
+        calibration: CalibrationBinding | None = None,
+        upstream: tuple[UpstreamArtefact, ...] = (),
+        provenance: Provenance | None = None,
     ) -> TransferRecord:
         """Present this path as the public transfer record.
 
@@ -147,7 +243,27 @@ class PathEnvelope:
         Validity is declared not established by default, for the same reason --
         the ``eps^2`` coefficient is known in closed form only on the constant
         curvature model spaces. A caller who has measured it can pass one in.
+
+        The starting covariance and the calibration identifiers default to
+        undeclared and unbound, and correctly so: this envelope was computed
+        from an analytic surface, and neither a pose distribution nor an
+        instrument exists anywhere in that computation. A caller who has one
+        attaches it here or with :meth:`TransferRecord.with_covariance`.
+
+        A path that left its chart cannot become a record. The samples past the
+        exit were integrated through a degenerate metric and would cross the
+        boundary indistinguishable from valid ones -- a downstream consumer
+        sees an arclength grid and a transfer map, not a chart. Truncate first,
+        explicitly, and the record then describes the prefix that is real.
         """
+        if not self.chart_valid:
+            raise ValueError(
+                f"this path left the chart of {self.surface.name} at arc length "
+                f"{self.chart.get('valid_until')} ({self.chart.get('reason')}), so "
+                "its later samples were computed from a metric that does not "
+                "describe the surface. Call truncated_to_chart() and present that "
+                "prefix; a record carries no chart and cannot warn a consumer"
+            )
         steps = int(self.n_steps)
         return TransferRecord(
             arclength=self.arc_length,
@@ -178,6 +294,14 @@ class PathEnvelope:
             ),
             observation_mode=observation_mode,
             domain="parametric-surface",
+            covariance=covariance
+            or StartingCovariance.not_declared(
+                "computed from an analytic surface; no starting pose distribution exists here"
+            ),
+            provenance=(provenance or Provenance(note=f"geodesic envelope on {self.surface.name}"))
+            .with_upstream(*upstream),
+            calibration=calibration
+            or CalibrationBinding.unbound("no instrument took part in this computation"),
         )
 
     @property
@@ -253,6 +377,15 @@ class PathEnvelope:
         }
 
 
+#: What to do with a path that runs off the edge of its parameterisation.
+#: ``truncate`` keeps the valid prefix and says so, and is the default because
+#: the samples past the exit were integrated through a metric that does not
+#: describe the surface -- returning them by default means the careless path is
+#: the wrong one. ``raise`` refuses outright; ``report`` returns the whole run
+#: with the exit recorded, for the experiments that measure the exit itself.
+CHART_EXIT_POLICIES: tuple[str, ...] = ("truncate", "raise", "report")
+
+
 def integrate_paths(
     surface: ParametricSurface,
     *,
@@ -262,12 +395,20 @@ def integrate_paths(
     length: float,
     n_steps: int,
     method: str = "rk4",
+    on_chart_exit: str = "truncate",
 ) -> list[PathEnvelope]:
     """Flow a fan of geodesics and their Jacobi fields in one pass.
 
     A whole fan costs barely more than a single path: the state is small and
     the expense is the per-step Python overhead, which the fan shares.
+
+    ``on_chart_exit`` decides what happens to a path that leaves the region in
+    which the parameterisation is a chart. The default truncates it to the
+    prefix that is real. Each envelope is truncated on its own: one heading in
+    a fan running off the edge says nothing about the others.
     """
+    if on_chart_exit not in CHART_EXIT_POLICIES:
+        raise ValueError(f"on_chart_exit must be one of {CHART_EXIT_POLICIES}")
     angles = np.atleast_1d(np.asarray(headings, dtype=float))
     # Refuse a start the chart cannot represent, rather than integrating out of
     # a singularity and returning something that looks like an envelope.
@@ -275,11 +416,88 @@ def integrate_paths(
     starts = np.stack(
         [surface.initial_state(u0, v0, float(angle)) for angle in angles], axis=0
     )
-    grid, trajectory = integrate(
-        surface.geodesic_transfer_rhs(), starts, length=length, n_steps=n_steps, method=method
+    rhs = surface.geodesic_transfer_rhs()
+    if on_chart_exit == "report":
+        # The one policy that integrates past the exit, because the experiments
+        # that measure *where* a chart fails need the samples on both sides.
+        grid, trajectory = integrate(
+            rhs, starts, length=length, n_steps=n_steps, method=method
+        )
+        valid = np.full(angles.shape, n_steps + 1, dtype=int)
+        reasons: dict[int, str] = {}
+    else:
+        guard, reasons = _chart_guard(surface)
+        grid, trajectory, valid = integrate_guarded(
+            rhs, starts, length=length, n_steps=n_steps, method=method, guard=guard
+        )
+
+    envelopes = _wrap(
+        surface, angles, grid, trajectory, u0, v0, length, n_steps, method,
+        valid=valid, reasons=reasons,
     )
+    if on_chart_exit == "report":
+        return envelopes
+    if on_chart_exit == "raise":
+        for envelope in envelopes:
+            if not envelope.chart_valid:
+                raise ValueError(
+                    f"the geodesic at heading {envelope.start[2]:g} left the chart of "
+                    f"{surface.name} at arc length {envelope.chart['valid_until']:g} "
+                    f"({envelope.chart['reason']})"
+                )
+        return envelopes
+    return [
+        envelope if envelope.chart_valid else envelope.truncated_to_chart()
+        for envelope in envelopes
+    ]
+
+
+def _chart_guard(surface: ParametricSurface) -> tuple[Any, dict[int, str]]:
+    """A guard that is ``True`` inside the chart, and the reasons it said no.
+
+    The reasons are collected as the guard runs because they cannot be
+    recovered afterwards: a stopped trajectory is frozen at its last *valid*
+    state, so nothing in the returned samples remembers what went wrong. That
+    is the trade for never computing the invalid samples in the first place.
+    """
+    reasons: dict[int, str] = {}
+
+    def guard(state: np.ndarray) -> np.ndarray:
+        u, v = state[..., 0], state[..., 1]
+        validity = surface.chart_validity(u, v)
+        in_domain = np.asarray(validity["in_domain"])
+        conditioned = np.asarray(validity["well_conditioned"])
+        usable = in_domain & conditioned
+        for position in np.flatnonzero(np.atleast_1d(~usable)):
+            reasons.setdefault(
+                int(position),
+                "left the declared parameter domain"
+                if not bool(np.atleast_1d(in_domain)[position])
+                else "chart became degenerate: EG - F^2 unresolved",
+            )
+        return usable
+
+    return guard, reasons
+
+
+def _wrap(
+    surface: ParametricSurface,
+    angles: np.ndarray,
+    grid: np.ndarray,
+    trajectory: np.ndarray,
+    u0: float,
+    v0: float,
+    length: float,
+    n_steps: int,
+    method: str,
+    valid: np.ndarray,
+    reasons: dict[int, str],
+) -> list[PathEnvelope]:
+    """Wrap each trajectory of a flown fan as an envelope."""
     envelopes = []
     for index, angle in enumerate(angles):
+        stopped = int(valid[index])
+        stopped_at = None if stopped > int(n_steps) else stopped
         u, v = trajectory[:, index, 0], trajectory[:, index, 1]
         du, dv = trajectory[:, index, 2], trajectory[:, index, 3]
         envelopes.append(
@@ -299,7 +517,11 @@ def integrate_paths(
                 jacobi_field=trajectory[:, index, 6],
                 jacobi_derivative=trajectory[:, index, 7],
                 speed=np.asarray(surface.speed(u, v, du, dv), dtype=float),
-                chart=_chart_report(surface, grid, u, v),
+                chart=_chart_report(
+                    surface, grid, u, v,
+                    stopped_at=stopped_at,
+                    reason=reasons.get(index),
+                ),
             )
         )
     return envelopes
@@ -314,8 +536,15 @@ def integrate_path(
     length: float,
     n_steps: int,
     method: str = "rk4",
+    on_chart_exit: str = "truncate",
 ) -> PathEnvelope:
-    """Flow one geodesic and its Jacobi field together along ``surface``."""
+    """Flow one geodesic and its Jacobi field together along ``surface``.
+
+    A path that leaves its chart is truncated to the prefix that stayed inside
+    it, and the envelope's ``chart`` says where and why. Pass
+    ``on_chart_exit="raise"`` to refuse such a path outright, or ``"report"``
+    to receive the whole run with the exit recorded.
+    """
     return integrate_paths(
         surface,
         u0=u0,
@@ -324,6 +553,7 @@ def integrate_path(
         length=length,
         n_steps=n_steps,
         method=method,
+        on_chart_exit=on_chart_exit,
     )[0]
 
 

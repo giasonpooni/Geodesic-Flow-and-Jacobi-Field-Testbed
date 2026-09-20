@@ -37,7 +37,6 @@ attached, so the report either passes or it does not.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import platform
 from dataclasses import asdict, dataclass, field
@@ -47,6 +46,8 @@ import numpy as np
 
 from .. import __version__
 from .analysis import fit_power_law, successive_orders
+from .canonical import CANONICAL_DIGITS, content_hash
+from .canonical import jsonable as _jsonable
 from .flows import (
     geodesic_position_error,
     integrate_geodesic,
@@ -389,7 +390,7 @@ def sweep_wronskian(config: ExperimentConfig) -> list[dict[str, Any]]:
 # sweep 2c: what det Phi = 1 costs a route planner
 # ---------------------------------------------------------------------------
 def sweep_transfer_determinant(config: ExperimentConfig) -> list[dict[str, Any]]:
-    """The reciprocal-singular-value consequence of the conserved Wronskian.
+    """The conserved Wronskian, and its consequence for a route planner.
 
     Scaling the transfer map by the tolerance box, ``S^-1 Phi S``, makes its
     entries pure ratios so that paths can be compared -- and leaves the
@@ -400,6 +401,17 @@ def sweep_transfer_determinant(config: ExperimentConfig) -> list[dict[str, Any]]
     That is the precise sense in which a low ``max |b|`` is error
     redistribution rather than robustness, so it is measured rather than
     asserted, on a range of tolerance boxes with very different aspect ratios.
+
+    **The invariant is checked directly, not through the singular values.**
+    ``sigma_1 sigma_2 = |det Phi|`` is an identity, and testing ``det Phi = 1``
+    by forming that product tests the SVD as much as the flow: ``sigma_1``
+    comes back with a relative error of order ``eps``, so on the ``10^5``
+    aspect-ratio box the product is accurate only to about ``10^-12`` and the
+    threshold is really measuring how badly conditioned the box was. The
+    determinant of the 2x2 itself is two products and a subtraction and holds
+    to machine precision on every box, so that is what carries the check.
+    The product error is still reported, as a measurement of the SVD rather
+    than of the geometry.
     """
     boxes = ((1e-3, 1e-3), (1e-2, 1e-4), (1e-5, 1e-1))
     rows: list[dict[str, Any]] = []
@@ -412,29 +424,39 @@ def sweep_transfer_determinant(config: ExperimentConfig) -> list[dict[str, Any]]
             a=phi.a, a_rate=phi.a_rate, b=phi.b, b_rate=phi.b_rate,
             domain="constant-curvature",
         )
+        determinant_error = float(np.max(np.abs(record.determinant - 1.0)))
+        scaled_determinant_error = 0.0
         product_error = 0.0
         smallest = float("inf")
         per_box = []
         for lateral, heading in boxes:
+            scaled = float(np.max(np.abs(record.scaled_determinant(lateral, heading) - 1.0)))
             singular = record.scaled_singular_values(lateral, heading)
-            product_error = max(
-                product_error, float(np.max(np.abs(singular[:, 0] * singular[:, 1] - 1.0)))
-            )
+            product = float(np.max(np.abs(singular[:, 0] * singular[:, 1] - 1.0)))
+            scaled_determinant_error = max(scaled_determinant_error, scaled)
+            product_error = max(product_error, product)
             smallest = min(smallest, float(np.min(singular[:, 0])))
             per_box.append(
                 {
                     "max_lateral": lateral,
                     "max_heading": heading,
+                    "aspect_ratio": float(max(lateral, heading) / min(lateral, heading)),
                     "amplification_score": float(np.max(singular[:, 0])),
                     "min_largest_singular_value": float(np.min(singular[:, 0])),
+                    "scaled_determinant_error": scaled,
+                    "singular_value_product_error": product,
                 }
             )
         rows.append(
             {
                 "curvature": form.K,
                 "curvature_label": form.label,
-                "identity": "sigma_1 sigma_2 = |det Phi| = 1",
-                "product_error": product_error,
+                "identity": "det Phi = a b' - a' b = 1, and sigma_1 sigma_2 = |det Phi|",
+                "determinant_error": determinant_error,
+                "scaled_determinant_error": scaled_determinant_error,
+                #: Reported, not decisive: this is the SVD's accuracy on a
+                #: badly conditioned box, not the flow's accuracy.
+                "singular_value_product_error": product_error,
                 "min_largest_singular_value": smallest,
                 "boxes": per_box,
             }
@@ -1108,10 +1130,19 @@ def collect_checks(results: dict[str, Any], config: ExperimentConfig) -> list[di
         checks.append(
             _check(
                 f"transfer-determinant/{row['curvature_label']}",
-                "the scaled transfer's singular values are reciprocal at every arc "
-                "length, because conjugation leaves det Phi = 1 alone",
-                row["product_error"],
-                1e-12,
+                "det Phi = a b' - a' b is 1 at every arc length, formed directly "
+                "rather than as a product of singular values",
+                row["determinant_error"],
+                1e-13,
+            )
+        )
+        checks.append(
+            _check(
+                f"transfer-determinant-scaled/{row['curvature_label']}",
+                "and conjugating by the tolerance box leaves it alone, on boxes "
+                "with aspect ratios from 1 to 10^4",
+                row["scaled_determinant_error"],
+                1e-13,
             )
         )
         checks.append(
@@ -1183,33 +1214,6 @@ def collect_checks(results: dict[str, Any], config: ExperimentConfig) -> list[di
 # ---------------------------------------------------------------------------
 # report
 # ---------------------------------------------------------------------------
-def _jsonable(value: Any) -> Any:
-    """Normalise to strict JSON: numpy scalars become Python, non-finite becomes null.
-
-    ``NaN`` and ``Infinity`` are not JSON, and a report that only some parsers
-    can read is not machine readable.  They arise here legitimately -- an order
-    fit has nothing to fit when a method is already exact -- so they are
-    recorded as ``null``.
-    """
-    if isinstance(value, dict):
-        return {str(key): _jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonable(item) for item in value]
-    if isinstance(value, np.ndarray):
-        return _jsonable(value.tolist())
-    if isinstance(value, (np.floating, np.integer)):
-        value = value.item()
-    if isinstance(value, float) and not np.isfinite(value):
-        return None
-    return value
-
-
-def content_hash(payload: dict[str, Any]) -> str:
-    return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    ).hexdigest()
-
-
 def run_experiment(config: ExperimentConfig | None = None) -> dict[str, Any]:
     """Run every sweep and assemble the machine-readable report."""
     config = config or ExperimentConfig()
@@ -1230,8 +1234,12 @@ def run_experiment(config: ExperimentConfig | None = None) -> dict[str, Any]:
             "supersedes": SUPERSEDES,
             "schema_changes": [
                 "observation_modes: support is now per domain, not one boolean",
-                "adds results.transfer_determinant: reciprocal singular values of "
-                "the scaled transfer map",
+                f"every float is canonicalised to {CANONICAL_DIGITS} significant "
+                "digits before hashing, so the content hash is reproducible "
+                "across platforms",
+                "transfer_determinant: the invariant is checked as det Phi "
+                "directly, not as a product of singular values, which measured "
+                "the SVD's conditioning rather than the flow's accuracy",
                 "adds results.focus_refinement: Hermite-refined focus location "
                 "against a linear one",
                 "conjugate_point: adds the refined root's uncertainty and names "

@@ -29,39 +29,73 @@ reconstruct and must not guess:
     on what basis. Unknown is a legal and frequently correct answer.
 ``observation_mode``
     the quantity a comparison against this record would be in.
+``covariance``
+    the starting-pose covariance the record is to be propagated with, when one
+    is declared. Not declaring one is legal; inventing one is not.
+``provenance``
+    who produced the record, at what version, and from which upstream
+    artefacts.
+``calibration``
+    opaque calibration identifiers, carried and never interpreted here.
 
 It is also the natural interchange boundary outward: a mesh project can emit
 one of these instead of this repository growing a mesh solver, and an evidence
-system downstream can consume one without knowing how it was produced.
+system downstream can consume one without knowing how it was produced. The
+vocabulary of that boundary -- units, frames, covariance, provenance,
+calibration identifiers -- lives in :mod:`geodesic_testbed.engine.contract`,
+and :mod:`geodesic_testbed.boundary` is the single import that presents it.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
-from .observation import DEFAULT_MODE
-from .observation import mode as observation_mode
+from .contract import (
+    BOUNDARY_CONTRACT,
+    DEFAULT_FRAME,
+    CalibrationBinding,
+    Provenance,
+    StartingCovariance,
+    Units,
+    UpstreamArtefact,
+)
+from .contract import frame as declared_frame
+from .observation import DEFAULT_MODE, require_available
 from .transfer import FocusEvent, TransferMap
 
 Array = np.ndarray
 
-RECORD_SCHEMA = "path-transfer-record-v1"
+RECORD_SCHEMA = "path-transfer-record-v2"
 
+#: Schemas :meth:`TransferRecord.from_dict` will read. ``v1`` predates the
+#: covariance, provenance and calibration fields; a ``v1`` payload is accepted
+#: and those fields come back undeclared, which is what they in fact were.
+SUPPORTED_RECORD_SCHEMAS: tuple[str, ...] = (
+    "path-transfer-record-v1",
+    "path-transfer-record-v2",
+)
 
-@dataclass(frozen=True)
-class Units:
-    """Units the record's numbers are in. There is no default that is safe."""
-
-    length: str = "declared length unit"
-    angle: str = "radian"
-
-    def to_dict(self) -> dict[str, str]:
-        return asdict(self)
+__all__ = [
+    "BOUNDARY_CONTRACT",
+    "RECORD_SCHEMA",
+    "SUPPORTED_RECORD_SCHEMAS",
+    "CalibrationBinding",
+    "FirstOrderValidity",
+    "Provenance",
+    "Resolution",
+    "StartingCovariance",
+    "SupportsTransferRecord",
+    "TransferRecord",
+    "Units",
+    "UpstreamArtefact",
+    "digest",
+    "to_transfer_record",
+]
 
 
 @dataclass(frozen=True)
@@ -120,7 +154,7 @@ class TransferRecord:
     a_rate: Array
     b: Array
     b_rate: Array
-    frame: str = "transverse-to-gamma, parallel-transported"
+    frame: str = DEFAULT_FRAME
     units: Units = field(default_factory=Units)
     source_digest: str = ""
     resolution: Resolution = field(
@@ -131,6 +165,9 @@ class TransferRecord:
     )
     observation_mode: str = DEFAULT_MODE
     domain: str = "constant-curvature"
+    covariance: StartingCovariance = field(default_factory=StartingCovariance.not_declared)
+    provenance: Provenance = field(default_factory=Provenance)
+    calibration: CalibrationBinding = field(default_factory=CalibrationBinding.unbound)
 
     def __post_init__(self) -> None:
         arrays = ("arclength", "gaussian_curvature", "a", "a_rate", "b", "b_rate")
@@ -147,7 +184,44 @@ class TransferRecord:
             object.__setattr__(self, name, values)
         if np.any(np.diff(self.arclength) <= 0.0):
             raise ValueError("arclength must be strictly increasing")
-        observation_mode(self.observation_mode)
+        # The mode and the domain are checked *together*. Each is fine alone
+        # and the pair is what fails: a surface record tagged with the
+        # intrinsic distance names two real things and claims a quantity
+        # nothing here computes -- in the one field a downstream comparison
+        # trusts to decide whether two numbers are comparable at all.
+        require_available(self.observation_mode, self.domain)
+        declared_frame(self.frame)
+        if self.covariance.declared:
+            if self.covariance.frame != self.frame:
+                raise ValueError(
+                    f"the starting covariance is in frame {self.covariance.frame!r} but "
+                    f"the record is in {self.frame!r}; a covariance in a different frame "
+                    "differs by a rotation neither of them records"
+                )
+            if self.covariance.units != self.units:
+                raise ValueError(
+                    f"the starting covariance is in {self.covariance.units.to_dict()} but "
+                    f"the record is in {self.units.to_dict()}"
+                )
+
+    # -- the arclength grid -----------------------------------------------
+    @property
+    def grid(self) -> dict[str, Any]:
+        """The sample grid, summarised. The samples themselves stay authoritative.
+
+        A start/stop/count triple is not a substitute for the vector: a
+        non-uniform grid is legal here, and a consumer that resampled one onto
+        a uniform grid of the same extent would be holding a different record.
+        """
+        steps = np.diff(self.arclength)
+        return {
+            "start": float(self.arclength[0]),
+            "end": float(self.arclength[-1]),
+            "samples": int(self.arclength.size),
+            "min_step": float(np.min(steps)),
+            "max_step": float(np.max(steps)),
+            "uniform": bool(np.allclose(steps, steps[0], rtol=1e-12, atol=0.0)),
+        }
 
     # -- the map ----------------------------------------------------------
     def transfer_map(self) -> TransferMap:
@@ -187,7 +261,18 @@ class TransferRecord:
         )
 
     def propagate_covariance(self, covariance) -> Array:
+        """``Phi C Phi^T`` for a caller-supplied starting covariance."""
         return self.transfer_map().propagate_covariance(covariance)
+
+    def propagate_declared_covariance(self) -> Array:
+        """``Phi C0 Phi^T`` for the covariance *this record declares*.
+
+        Raises when none is declared. That is the point: a consumer needing a
+        distributional answer must not receive one computed from a covariance
+        nobody stated, and the failure has to happen here rather than downstream
+        where the substituted number would already look like a result.
+        """
+        return self.transfer_map().propagate_covariance(self.covariance.require())
 
     # -- conditioning ------------------------------------------------------
     def focus_events(self, *, component: str = "b") -> list[FocusEvent]:
@@ -211,6 +296,30 @@ class TransferRecord:
         scale = np.array([lateral, heading])
         phi = self.transfer_map().matrices()
         return (phi * scale) / scale[:, None]
+
+    @property
+    def determinant(self) -> Array:
+        """``det Phi = a b' - a' b``, which is 1 at every arc length, exactly."""
+        return self.transfer_map().determinant
+
+    def scaled_determinant(self, max_lateral: float, max_heading: float) -> Array:
+        """``det(S^-1 Phi S)``, formed directly from the scaled entries.
+
+        The same invariant as :attr:`determinant`, checked after the
+        conjugation that makes the entries comparable -- and formed as a 2x2
+        determinant rather than as a product of singular values.
+
+        That distinction is the whole point. ``sigma_1 sigma_2 = |det Phi|`` is
+        true, and testing the invariant through it is a bad way to test it: the
+        SVD of a badly conditioned scaled transfer returns ``sigma_1`` with a
+        relative error of order ``eps``, so with a tolerance box whose aspect
+        ratio is ``10^4`` the product lands near ``1`` only to about ``10^-12``
+        and the "invariant" check is really a check on the conditioning of the
+        box. The 2x2 determinant has no such dependence: it is two products and
+        a subtraction, and it holds to machine precision on every box.
+        """
+        phi = self.scaled_transfer(max_lateral, max_heading)
+        return phi[..., 0, 0] * phi[..., 1, 1] - phi[..., 0, 1] * phi[..., 1, 0]
 
     def scaled_singular_values(self, max_lateral: float, max_heading: float) -> Array:
         """Singular values of the dimensionless transfer, largest first, per sample.
@@ -237,10 +346,34 @@ class TransferRecord:
         """
         return float(np.max(self.scaled_singular_values(max_lateral, max_heading)))
 
+    # -- amending the contract fields --------------------------------------
+    def with_covariance(self, covariance: StartingCovariance) -> TransferRecord:
+        """The same record, now declaring a starting covariance.
+
+        Separate from construction because ``C0`` is usually known later and
+        elsewhere: the runtime computes ``Phi`` from geometry alone, and what
+        the starting pose error actually is belongs to whoever set the part up.
+        """
+        return replace(self, covariance=covariance)
+
+    def with_calibration(self, calibration: CalibrationBinding) -> TransferRecord:
+        """The same record, now carrying calibration identifiers.
+
+        Carrying, not using. The identifiers are opaque here; they exist so a
+        downstream comparison can establish that a prediction and a measurement
+        came from the same instrument state.
+        """
+        return replace(self, calibration=calibration)
+
+    def with_provenance(self, provenance: Provenance) -> TransferRecord:
+        """The same record, with its provenance replaced."""
+        return replace(self, provenance=provenance)
+
     # -- serialisation -----------------------------------------------------
     def to_dict(self, *, include_samples: bool = True) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "schema": RECORD_SCHEMA,
+            "contract": BOUNDARY_CONTRACT,
             "frame": self.frame,
             "units": self.units.to_dict(),
             "source_digest": self.source_digest,
@@ -249,6 +382,10 @@ class TransferRecord:
             "observation_mode": self.observation_mode,
             "domain": self.domain,
             "samples": int(self.arclength.size),
+            "grid": self.grid,
+            "covariance": self.covariance.to_dict(),
+            "provenance": self.provenance.to_dict(),
+            "calibration": self.calibration.to_dict(),
         }
         if include_samples:
             payload |= {
@@ -256,6 +393,56 @@ class TransferRecord:
                 for name in ("arclength", "gaussian_curvature", "a", "a_rate", "b", "b_rate")
             }
         return payload
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> TransferRecord:
+        """Rebuild a record from :meth:`to_dict`, refusing an unknown schema.
+
+        The round trip is what makes this a boundary rather than an internal
+        type: a record has to survive being written to a file by one process
+        and read by another that shares no code with it. A payload without
+        samples cannot be rebuilt and says so, rather than coming back as a
+        record with the metadata right and the numbers missing.
+        """
+        schema = payload.get("schema")
+        if schema not in SUPPORTED_RECORD_SCHEMAS:
+            raise ValueError(
+                f"unknown record schema {schema!r}; this reader understands "
+                f"{SUPPORTED_RECORD_SCHEMAS}"
+            )
+        arrays = ("arclength", "gaussian_curvature", "a", "a_rate", "b", "b_rate")
+        missing = [name for name in arrays if name not in payload]
+        if missing:
+            raise ValueError(
+                "this payload carries no samples "
+                f"(missing {', '.join(missing)}); it was written with "
+                "include_samples=False and is a summary, not a record"
+            )
+        resolution = payload.get("resolution") or {}
+        validity = payload.get("validity") or {}
+        return cls(
+            **{name: np.asarray(payload[name], dtype=float) for name in arrays},
+            frame=str(payload.get("frame", DEFAULT_FRAME)),
+            units=Units.from_dict(payload.get("units")),
+            source_digest=str(payload.get("source_digest", "")),
+            resolution=Resolution(
+                method=str(resolution.get("method", "unspecified")),
+                samples=int(resolution.get("samples", 0)),
+                max_step=float(resolution.get("max_step", float("nan"))),
+                uniform=bool(resolution.get("uniform", False)),
+            ),
+            validity=FirstOrderValidity(
+                basis=str(validity.get("basis", "not-established: no declaration supplied")),
+                relative_tolerance=validity.get("relative_tolerance"),
+                max_lateral=validity.get("max_lateral"),
+                max_heading=validity.get("max_heading"),
+            ),
+            observation_mode=str(payload.get("observation_mode", DEFAULT_MODE)),
+            domain=str(payload.get("domain", "constant-curvature")),
+            covariance=StartingCovariance.from_dict(payload.get("covariance")),
+            provenance=Provenance.from_dict(payload.get("provenance")),
+            calibration=CalibrationBinding.from_dict(payload.get("calibration")),
+        )
 
     def as_transfer_record(self) -> TransferRecord:
         return self

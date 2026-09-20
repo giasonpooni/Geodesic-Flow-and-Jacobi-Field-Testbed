@@ -40,6 +40,15 @@ distance and the tracked span. ``causal`` uses the declaration; ``offline``
 may use the retrospective start, because an offline analysis has the whole
 record in hand. An offline schedule reported as a real-time result is the
 error this distinction exists to prevent.
+
+**What "while tracked" means.** ``min_resolvability_while_tracked`` is taken
+over the span the instrument actually held the path: from acquisition to the
+end of the route, or to the point where the track was lost. It is never taken
+over the samples past a loss. Those samples are below the hold threshold by
+construction, so including them would report the depth of the failure as a
+property of the tracked stretch and would make the figure useless for the one
+thing it is for -- saying how much margin the instrument had while it was
+working. It is ``None`` when there was no tracked span at all.
 """
 
 from __future__ import annotations
@@ -280,13 +289,23 @@ def evaluate_tracking(
         # where the failure was admitted: the samples in between are degraded
         # whether or not the instrument had noticed yet.
         tracked = loss_started_at - acquired_at
+        # ... and the minimum "while tracked" must run over the same span. The
+        # samples past the loss are exactly the ones the instrument was *not*
+        # tracking through, and they are also the smallest, so including them
+        # reports the depth of the failure as though it were a property of the
+        # tracked stretch -- a number that is both wrong and unusable, since it
+        # is always below the hold threshold by construction.
+        tracked_span = tail_grid < loss_started_at
+        min_while_tracked = (
+            float(np.min(tail_rho[tracked_span])) if bool(tracked_span.any()) else None
+        )
         return outcome(
             TRACK_LOST,
             f"rho stayed below {spec.hold_threshold:g} for longer than the "
             f"tolerated {spec.max_loss_distance:g}, from {loss_started_at:g}"
             f" and detectable at {loss_declared_at:g}",
             tracked_distance=tracked,
-            min_resolvability_while_tracked=float(np.min(tail_rho)),
+            min_resolvability_while_tracked=min_while_tracked,
             loss_intervals=intervals,
             longest_loss=longest,
             loss_started_at=loss_started_at,

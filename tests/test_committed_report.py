@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from geodesic_testbed.engine.canonical import canonical_float
 from geodesic_testbed.engine.experiment import REPORT_SCHEMA, SUPERSEDES
 from geodesic_testbed.engine.spaceforms import SpaceForm
 
@@ -87,3 +88,41 @@ def test_the_committed_surface_report_is_not_stale(
         check["id"] for check in surface_report["checks"]
     ]
     assert committed_surface_report["config"] == surface_report["config"]
+
+
+def test_the_committed_report_hash_is_reproducible(committed: dict, report: dict) -> None:
+    """Recomputing the report reproduces the committed content hash exactly.
+
+    This is what canonicalising every float to a fixed number of significant
+    digits buys, and it is only worth anything if it is asserted. Without it
+    the hash drifts on the last two or three digits of a BLAS reduction, an
+    ``svd`` or a ``trapezoid`` -- quantities that did not change -- and a
+    "content hash" that changes when the content did not is not an identity.
+
+    Compared by *identity*, unlike the check-by-check comparison above: the
+    numbers may legitimately move between numpy builds, and the claim here is
+    precisely that they may not move by more than the canonicalisation hides.
+    """
+    assert report["content_hash"] == committed["content_hash"]
+
+
+def test_the_committed_surface_report_hash_is_reproducible(
+    committed_surface_report: dict, surface_report: dict
+) -> None:
+    assert surface_report["content_hash"] == committed_surface_report["content_hash"]
+
+
+def test_every_float_in_a_committed_report_is_canonical(committed: dict) -> None:
+    """No value in the artefact carries a digit the canonical form would drop."""
+
+    def walk(node) -> None:
+        if isinstance(node, dict):
+            for item in node.values():
+                walk(item)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+        elif isinstance(node, float):
+            assert node == canonical_float(node), node
+
+    walk({key: value for key, value in committed.items() if key != "environment"})

@@ -38,7 +38,7 @@ drift is therefore a free measure of how well it is integrating.
 
 ## Verification
 
-**235 declared checks across two stages, 0 failed.** Every number below has a
+**238 declared checks across two stages, 0 failed.** Every number below has a
 threshold attached in `engine/experiment.py` or `engine/experiment_surfaces.py`,
 and the committed reports are regenerated and compared in CI.
 
@@ -135,8 +135,8 @@ tolerate at most 0.1 of continuous loss, and report `TRACKED`,
 | | declared process limits | plus the scanner's schedule |
 |---|---|---|
 | feasible, of 24 | 15 | 8 |
-| recommended | 97°, `max \|b\|` = 1.74 | 120°, `max \|b\|` = 1.82 |
-| fate of 97° | feasible | `TRACK_LOST` from `s = 5.354` |
+| recommended | 97.5°, `max \|b\|` = 1.74 | 120°, `max \|b\|` = 1.82 |
+| fate of 97.5° | feasible | `TRACK_LOST` from `s = 5.354` |
 
 **5% more amplification, for a route the scanner can actually follow** — and
 the seven routes it cannot follow are *exactly* the seven that pass through a
@@ -166,7 +166,7 @@ observability `W = ∫ Phi^T H^T R^-1 H Phi ds` is not computed at all.
 
 ```bash
 uv sync --locked --extra dev          # or: pip install -e ".[dev]"
-uv run pytest -q                      # 283 tests, no network, about three minutes
+uv run pytest -q                      # 338 tests, no network, about three minutes
 uv run python examples/run_experiment.py --out out        # both stages: reports + figures
 uv run python examples/write_reference_report.py          # application reference report
 ```
@@ -214,16 +214,74 @@ print(phi.worst_case_offset(lateral=1e-3, heading=1e-3)[-1])
 print(envelope.summary()["focus_points"])
 ```
 
+## The boundary
+
+This is a computational substrate an instrument may consume, not a module
+inside one. It answers how a starting-pose error propagates, from geometry
+alone; calibration, sensing, filtering, physical trials and operational
+decisions are a different kind of work and belong to a different system. They
+are adjacent, and exactly one thing passes between them:
+
+```text
+geometry / path artefact
+        |
+        v
+geodesic sensitivity runtime            <- this repository
+        |
+        v
+transfer / path-sensitivity record      <- the shared contract
+        |
+        v
+instrument calibration + measurement tooling
+```
+
+`geodesic_testbed.boundary` is that contract on its own. The record carries the
+seven things a consumer cannot reconstruct from the samples and must not guess
+— **units, frame, arclength grid, covariance, provenance, calibration IDs and
+observation mode** — and it round-trips through a file, because a boundary that
+has never left the process is a type rather than a boundary.
+
+```bash
+uv run python examples/emit_boundary_record.py --out out
+```
+
+```text
+  schema           path-transfer-record-v2 under path-sensitivity-boundary-v1
+  frame            transverse-to-gamma, parallel-transported
+  units            millimetre / radian
+  grid             4001 samples over [0, 240], uniform=True
+  observation mode ambient-euclidean-chord on parametric-surface
+  covariance       declared-tolerance-box
+  provenance       curved-surface-geodesic-sensitivity-runtime 0.2.0
+  calibration      unbound: no instrument took part in this computation
+```
+
+`unbound` is the honest default and the interesting one. Nothing here was
+calibrated, so nothing claims to be — and a field that is allowed to say *no*
+is never silently filled in: `propagate_declared_covariance()` raises rather
+than invent a `C0`, two *unbound* records do not agree on calibration, and a
+prediction bound to one instrument state is refused against a trial run under
+another.
+
+What does not cross, in either direction: solver internals, mesh processing,
+filters, hardware behaviour and route policy. That rule has a direction, and
+`tests/test_boundary.py` reads the imports out of the syntax tree to enforce
+it — the substrate may not import the instrument-facing side, and the contract
+may import neither. [`docs/BOUNDARY.md`](docs/BOUNDARY.md) is the whole of it.
+
 ## Layout
 
 | package | what lives there |
 |---|---|
 | `geodesic_testbed` | the public API: `PathTolerance`, manufacturing and inspection assessments, the reference report |
+| `geodesic_testbed.boundary` | the shared contract, on its own: the record, its vocabulary, and the layers the one-way import rule is checked against |
 | `geodesic_testbed.engine` | the verified numerical core: space forms, parametric surfaces, integrators, transfer maps, envelopes, observation modes, both experiment stages and their figures |
 
 There is one integrator and one transfer map; `geodesic_testbed.jacobi`
 delegates to the engine rather than carrying a second copy.
 
+[`docs/BOUNDARY.md`](docs/BOUNDARY.md) is what this runtime hands downstream
+and what stays on each side of it,
 [`docs/METHODS.md`](docs/METHODS.md) is the mathematical contract,
 [`docs/EXPERIMENT.md`](docs/EXPERIMENT.md) and [`docs/SURFACES.md`](docs/SURFACES.md)
 the two verification stages in full, [`docs/INSTRUMENT.md`](docs/INSTRUMENT.md)
@@ -246,8 +304,9 @@ and names stage one as its dependency; the application report's is
 - The envelope is first order. `Phi(s)` maps a starting pose error to a
   downstream one linearly; stage one measures where that stops being true.
 - Meshes are out of scope here — they belong to the Intrinsic Surface
-  Geodesics Testbed, and this runtime should consume a versioned path artefact
-  from it rather than growing a second mesh solver.
+  Geodesics Testbed, and this runtime consumes a versioned path artefact from
+  it, named in the record's provenance, rather than growing a second mesh
+  solver.
 - **No physical measurement exists in this repository.** Nothing here models
   machine servo error, material mechanics, tow compaction, weld-pool behaviour
   or sensor probability of detection. The bench that would establish agreement

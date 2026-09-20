@@ -521,6 +521,20 @@ def build_envelopes(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
         singular = record.scaled_singular_values(
             config.route_tolerance_lateral, config.route_tolerance_heading
         )
+        # The invariant, formed as a 2x2 determinant. Reading it off the
+        # product of singular values instead would measure the SVD's accuracy
+        # on the tolerance box's aspect ratio rather than the integrator's on
+        # the surface, and the two differ by two orders of magnitude.
+        summary["scaled_determinant_error"] = float(
+            np.max(
+                np.abs(
+                    record.scaled_determinant(
+                        config.route_tolerance_lateral, config.route_tolerance_heading
+                    )
+                    - 1.0
+                )
+            )
+        )
         summary["scaled_singular_value_product_error"] = float(
             np.max(np.abs(singular[:, 0] * singular[:, 1] - 1.0))
         )
@@ -812,6 +826,21 @@ def measure_focus_versus_resolvability(config: SurfaceConfig, cases) -> dict[str
     }
 
 
+def heading_label(degrees: float) -> str:
+    """A stable name for one candidate heading.
+
+    One decimal place, not zero. The scan's headings are multiples of 7.5
+    degrees, so half of them land exactly on a rounding boundary -- and
+    ``f"{97.5:.0f}"`` is ``'98'`` while ``f"{97.49999999999999:.0f}"`` is
+    ``'97'``. Which of the two a ``2 pi k / n`` division produces is a property
+    of the platform's last bit, so with a zero-decimal label the *name of the
+    recommended route* moved between machines, and the figure that looks a
+    route up by name could not find it. A decimal place puts the label off the
+    boundary entirely.
+    """
+    return f"{float(degrees):.1f}deg"
+
+
 def scan_for_robust_heading(config: SurfaceConfig, cases) -> dict[str, Any]:
     """Rank starting headings, then choose among them by declared process limits.
 
@@ -845,7 +874,7 @@ def scan_for_robust_heading(config: SurfaceConfig, cases) -> dict[str, Any]:
         n_steps=config.heading_scan_steps,
     )
     candidates = {
-        f"{np.rad2deg(heading):.0f}deg": envelope
+        heading_label(np.rad2deg(heading)): envelope
         for heading, envelope in zip(headings, envelopes, strict=True)
     }
 
@@ -1128,10 +1157,11 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
         checks.append(
             _check(
                 f"surface-no-free-robustness/{row['case']}",
-                "det Phi = 1 makes the scaled transfer's singular values reciprocal, "
-                "so no path contracts every starting-pose error at once",
-                row["scaled_singular_value_product_error"],
-                1e-12,
+                "conjugating by the tolerance box leaves det Phi = 1, so no path "
+                "contracts every starting-pose error at once -- checked as the "
+                "determinant itself, not as a product of singular values",
+                row["scaled_determinant_error"],
+                config.wronskian_tolerance,
             )
         )
         checks.append(
@@ -1225,7 +1255,9 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
         label for label, outcome in outcome_by_label.items() if outcome != "TRACKED"
     }
     focus_labels = {
-        f"{row['heading_degrees']:.0f}deg" for row in scan["headings"] if row["passes_a_focus"]
+        heading_label(row["heading_degrees"])
+        for row in scan["headings"]
+        if row["passes_a_focus"]
     }
     checks.append(
         _check(

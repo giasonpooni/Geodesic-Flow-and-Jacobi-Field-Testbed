@@ -37,8 +37,21 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 #: The settings a mode can be asked for. They are ordered by how far each is
-#: from the mathematics: a model space, a real surface, a real instrument.
-DOMAINS: tuple[str, ...] = ("constant-curvature", "parametric-surface", "physical-instrument")
+#: from the mathematics: a model space, a curvature profile someone declared,
+#: a real surface, a real instrument.
+#:
+#: ``declared-curvature-profile`` is the setting a
+#: :class:`~geodesic_testbed.jacobi.JacobiTrace` on a varying ``K(s)`` lives
+#: in, and it is genuinely its own: there is no closed form, because ``K``
+#: varies, and there is no embedding either, because a curvature profile is
+#: not a surface. Folding it into either neighbour would have to claim one of
+#: those, and the modes divide on exactly that line.
+DOMAINS: tuple[str, ...] = (
+    "constant-curvature",
+    "declared-curvature-profile",
+    "parametric-surface",
+    "physical-instrument",
+)
 
 #: How well a mode is supported in one domain.
 #: ``exact``       -- available in closed form.
@@ -87,6 +100,7 @@ MODES: dict[str, ObservationMode] = {
             quantity="Riemannian distance between two points, measured in the surface",
             support={
                 "constant-curvature": "exact",
+                "declared-curvature-profile": "numerical",
                 "parametric-surface": "unavailable",
                 "physical-instrument": "unavailable",
             },
@@ -103,6 +117,9 @@ MODES: dict[str, ObservationMode] = {
             quantity="straight-line distance in R^3 between two points of the surface",
             support={
                 "constant-curvature": "exact",
+                # A curvature profile is not an embedding, so there is no chord
+                # to measure between two of its points.
+                "declared-curvature-profile": "unavailable",
                 "parametric-surface": "numerical",
                 "physical-instrument": "unavailable",
             },
@@ -120,6 +137,7 @@ MODES: dict[str, ObservationMode] = {
             quantity="ambient chord as reported by a calibrated metrology system",
             support={
                 "constant-curvature": "unavailable",
+                "declared-curvature-profile": "unavailable",
                 "parametric-surface": "unavailable",
                 "physical-instrument": "unavailable",
             },
@@ -134,6 +152,7 @@ MODES: dict[str, ObservationMode] = {
             quantity="residual in image coordinates, before reconstruction",
             support={
                 "constant-curvature": "unavailable",
+                "declared-curvature-profile": "unavailable",
                 "parametric-surface": "unavailable",
                 "physical-instrument": "unavailable",
             },
@@ -160,6 +179,34 @@ def available_modes(domain: str) -> tuple[str, ...]:
     if domain not in DOMAINS:
         raise KeyError(f"unknown domain {domain!r}; have {DOMAINS}")
     return tuple(key for key, value in MODES.items() if value.is_available(domain))
+
+
+def require_domain(domain: str) -> str:
+    """The domain, or an error naming the ones that exist."""
+    if domain not in DOMAINS:
+        raise KeyError(f"unknown domain {domain!r}; have {DOMAINS}")
+    return domain
+
+
+def require_available(identifier: str, domain: str) -> ObservationMode:
+    """The mode, if this repository can actually produce it in ``domain``.
+
+    The combination is checked rather than each half, because each half is
+    fine on its own and the pair is what fails. A record on a parametric
+    surface tagged ``intrinsic-surface-distance`` names a real mode and a real
+    domain and claims a quantity that would take a boundary-value solver
+    nothing here has -- and it claims it in the one field a downstream
+    comparison trusts to decide whether two numbers are comparable.
+    """
+    require_domain(domain)
+    declared = mode(identifier)
+    if not declared.is_available(domain):
+        raise ValueError(
+            f"observation mode {identifier!r} is {declared.support_in(domain)} on "
+            f"{domain!r}; available there: {available_modes(domain) or '(none)'}. "
+            f"{declared.note}"
+        )
+    return declared
 
 
 def catalogue() -> list[dict[str, Any]]:

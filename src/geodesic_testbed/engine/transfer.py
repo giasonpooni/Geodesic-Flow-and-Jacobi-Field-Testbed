@@ -51,6 +51,8 @@ from typing import Any
 
 import numpy as np
 
+from .contract import validated_covariance
+
 Array = np.ndarray
 
 # Index of each component inside the flow state, counted from the end, so the
@@ -310,25 +312,12 @@ def _validated_covariance(covariance) -> Array:
     that is not a covariance out, silently and with plausible-looking numbers.
     Symmetry alone does not catch it: ``[[1, 2], [2, 1]]`` is symmetric and has
     eigenvalues 3 and -1.
+
+    The checks live in :mod:`geodesic_testbed.engine.contract`, because the
+    covariance is a boundary type and two implementations of "is this a
+    covariance" eventually disagree -- with the laxer one deciding.
     """
-    covariance = np.asarray(covariance, dtype=float)
-    if covariance.shape != (2, 2):
-        raise ValueError("covariance must be 2x2 in the (lateral, heading) basis")
-    if not np.all(np.isfinite(covariance)):
-        raise ValueError("covariance must be finite")
-    if not np.allclose(covariance, covariance.T, atol=0.0, rtol=1e-12):
-        raise ValueError("covariance must be symmetric")
-    symmetric = 0.5 * (covariance + covariance.T)
-    eigenvalues = np.linalg.eigvalsh(symmetric)
-    # Scale the tolerance to the matrix: an absolute floor would reject a
-    # legitimate covariance in micrometres and accept a bad one in metres.
-    tolerance = 1e-12 * max(float(np.max(np.abs(eigenvalues))), 1.0)
-    if eigenvalues[0] < -tolerance:
-        raise ValueError(
-            "covariance must be positive semidefinite; smallest eigenvalue is "
-            f"{eigenvalues[0]!r}"
-        )
-    return covariance
+    return validated_covariance(covariance, "covariance")
 
 
 def constant_curvature_transfer(arc_length, curvature: float) -> TransferMap:

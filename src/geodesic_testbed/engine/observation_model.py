@@ -62,6 +62,7 @@ from typing import Any
 
 import numpy as np
 
+from .contract import validated_covariance
 from .observation import mode as observation_mode
 from .record import TransferRecord, to_transfer_record
 
@@ -71,21 +72,10 @@ Array = np.ndarray
 STATE_COMPONENTS = ("transverse", "heading")
 
 
-def _validated_covariance(matrix, name: str, size: int) -> Array:
-    matrix = np.asarray(matrix, dtype=float)
-    if matrix.shape != (size, size):
-        raise ValueError(f"{name} must be {size}x{size}")
-    if not np.all(np.isfinite(matrix)):
-        raise ValueError(f"{name} must be finite")
-    if not np.allclose(matrix, matrix.T, atol=0.0, rtol=1e-12):
-        raise ValueError(f"{name} must be symmetric")
-    eigenvalues = np.linalg.eigvalsh(0.5 * (matrix + matrix.T))
-    tolerance = 1e-12 * max(float(np.max(np.abs(eigenvalues))), 1.0)
-    if eigenvalues[0] < -tolerance:
-        raise ValueError(
-            f"{name} must be positive semidefinite; smallest eigenvalue is {eigenvalues[0]!r}"
-        )
-    return matrix
+#: One covariance validator for the whole repository, in the contract module
+#: where the vocabulary lives. Two implementations of "is this a covariance"
+#: eventually disagree, and the one that is laxer is the one that gets used.
+_validated_covariance = validated_covariance
 
 
 @dataclass(frozen=True)

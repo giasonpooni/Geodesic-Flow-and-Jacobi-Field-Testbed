@@ -7,6 +7,7 @@ import math
 
 import pytest
 
+from geodesic_testbed.engine.canonical import CANONICAL_DIGITS
 from geodesic_testbed.engine.experiment import (
     REPORT_SCHEMA,
     ExperimentConfig,
@@ -89,6 +90,14 @@ def test_the_conjugate_point_is_found_and_costs_what_it_should(report: dict) -> 
     assert after["length_excess"] == pytest.approx(math.pi, abs=1e-8)
 
 
+#: The tightest a consistency check on *reported* values can be. Every float in
+#: a report is canonicalised to ``CANONICAL_DIGITS`` significant figures before
+#: it is written, so recomputing one from another that was also canonicalised
+#: reproduces it to that many digits and no further. Demanding more would be
+#: testing the rounding rather than the arithmetic.
+REPORTED = 10.0 ** -(CANONICAL_DIGITS - 1)
+
+
 def test_sensitivity_readout_is_internally_consistent(report: dict) -> None:
     for row in report["results"]["path_sensitivity"]:
         form = SpaceForm(row["curvature"])
@@ -98,10 +107,10 @@ def test_sensitivity_readout_is_internally_consistent(report: dict) -> None:
                     entry["arc_length"], budget["max_initial_angle"]
                 )
                 assert float(separation) == pytest.approx(
-                    budget["transverse_tolerance"], rel=1e-12
+                    budget["transverse_tolerance"], rel=REPORTED
                 )
                 assert budget["max_initial_angle_degrees"] == pytest.approx(
-                    math.degrees(budget["max_initial_angle"]), rel=1e-12
+                    math.degrees(budget["max_initial_angle"]), rel=REPORTED
                 )
         assert row["bench_predictions"]["max_flow_vs_closed_form_relative_error"] < 1e-10
 

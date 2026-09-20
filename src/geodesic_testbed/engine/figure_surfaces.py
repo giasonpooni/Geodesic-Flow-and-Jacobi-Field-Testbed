@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 
+from .experiment_surfaces import heading_label
 from .figure import _RC, GRID, INK, INK_MUTED, INK_SOFT, SURFACE, _panel_title, _style_axes
 
 CASE_COLOURS = {
@@ -211,7 +212,7 @@ def _panel_decision(ax, report: dict[str, Any]) -> None:
     headings = np.array([row["heading_degrees"] for row in rows])
     worst = np.array([row["max_forward_amplification"] for row in rows])
     lost = np.array(
-        [outcomes.get(f"{h:.0f}deg", "TRACKED") != "TRACKED" for h in headings]
+        [outcomes.get(heading_label(h), "TRACKED") != "TRACKED" for h in headings]
     )
     colour = CASE_COLOURS["torus"]
 
@@ -225,7 +226,7 @@ def _panel_decision(ax, report: dict[str, Any]) -> None:
     tracked = tracked_selection["recommended"]
     highest = scan["highest_amplification"]
     def _held(degrees: float) -> bool:
-        return outcomes.get(f"{degrees:.0f}deg", "TRACKED") == "TRACKED"
+        return outcomes.get(heading_label(degrees), "TRACKED") == "TRACKED"
 
     annotations = [
         (
@@ -237,7 +238,7 @@ def _panel_decision(ax, report: dict[str, Any]) -> None:
     ]
     if declared is not None:
         label = declared["label"]
-        row = next(r for r in rows if f"{r['heading_degrees']:.0f}deg" == label)
+        row = next(r for r in rows if heading_label(r["heading_degrees"]) == label)
         held = outcomes.get(label, "TRACKED") == "TRACKED"
         annotations.append(
             (
@@ -250,7 +251,7 @@ def _panel_decision(ax, report: dict[str, Any]) -> None:
         )
     if tracked is not None:
         label = tracked["label"]
-        row = next(r for r in rows if f"{r['heading_degrees']:.0f}deg" == label)
+        row = next(r for r in rows if heading_label(r["heading_degrees"]) == label)
         annotations.append(
             (
                 row["heading_degrees"],

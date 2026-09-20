@@ -100,6 +100,84 @@ def integrate(
     return grid, trajectory
 
 
+#: A predicate on a batch of states, ``True`` where the state is still usable.
+Guard = Callable[[State], np.ndarray]
+
+
+def integrate_guarded(
+    rhs: Rhs,
+    y0: State,
+    *,
+    length: float,
+    n_steps: int,
+    method: str = "rk4",
+    s0: float = 0.0,
+    guard: Guard,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """:func:`integrate`, stopping each trajectory where ``guard`` says to.
+
+    The reason this is not a flag on :func:`integrate` is that stopping is not
+    a variation on integrating: a trajectory that has left the region where its
+    equation means anything must not be advanced *at all*, because the next
+    step evaluates the right-hand side inside that region. Truncating the
+    output afterwards removes the samples and not the arithmetic that produced
+    them -- on a chart that degenerates, that arithmetic overflows.
+
+    Trajectories are guarded independently and are advanced together. One that
+    stops is frozen at its last usable state, so the batch keeps its shape and
+    the right-hand side is only ever evaluated at states that passed the guard;
+    the frozen rows are meaningless and the returned counts say where each one
+    stopped.
+
+    Returns ``(grid, trajectory, valid_samples)``, where ``valid_samples`` has
+    the batch's shape and counts the leading samples of each trajectory that
+    are real -- ``n_steps + 1`` for one that never tripped the guard.
+    """
+    if isinstance(n_steps, bool) or not isinstance(n_steps, (int, np.integer)):
+        raise TypeError("n_steps must be an integer")
+    if n_steps < 1:
+        raise ValueError("n_steps must be >= 1")
+    length = float(length)
+    if not np.isfinite(length) or length <= 0.0:
+        raise ValueError("length must be finite and positive")
+    if not np.isfinite(s0):
+        raise ValueError("s0 must be finite")
+    integrator = get_integrator(method)
+    h = length / float(n_steps)
+    y0 = np.asarray(y0, dtype=float)
+    if not np.all(np.isfinite(y0)):
+        raise ValueError("the initial state must be finite")
+    batch = y0.shape[:-1]
+    if not np.all(np.asarray(guard(y0), dtype=bool)):
+        raise ValueError("the initial state does not pass the guard")
+
+    trajectory = np.empty((n_steps + 1,) + y0.shape, dtype=float)
+    trajectory[0] = y0
+    grid = s0 + h * np.arange(n_steps + 1, dtype=float)
+    valid = np.full(batch, n_steps + 1, dtype=int)
+    running = np.ones(batch, dtype=bool)
+    y = y0
+    for index in range(n_steps):
+        if not running.any():
+            trajectory[index + 1] = y
+            continue
+        stepped = integrator.step(rhs, float(grid[index]), y, h)
+        usable = np.asarray(guard(stepped), dtype=bool) & np.all(
+            np.isfinite(stepped), axis=-1
+        )
+        stopping = running & ~usable
+        if stopping.any():
+            # Freeze, so that the next step's right-hand side is evaluated at a
+            # state the guard already accepted.
+            stepped = np.where(stopping[..., None], y, stepped)
+            valid = np.where(stopping, index + 1, valid)
+            running = running & ~stopping
+        stepped = np.where(running[..., None], stepped, y)
+        y = stepped
+        trajectory[index + 1] = y
+    return grid, trajectory, valid
+
+
 def integrate_on_grid(
     rhs: Rhs,
     y0: State,

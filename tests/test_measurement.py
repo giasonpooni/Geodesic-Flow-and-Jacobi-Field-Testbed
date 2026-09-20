@@ -218,3 +218,70 @@ def test_a_measurement_covariance_must_be_a_covariance() -> None:
     for bad in ([[1.0, 2.0], [2.0, 1.0]], [[float("nan")]], [[1.0, 0.0]]):
         with pytest.raises(ValueError):
             _record(measurement_covariance=bad)
+
+
+# -- binding a trial to the record the prediction came from ----------------
+
+
+def _prediction_record(**overrides):
+    """A transfer record on the trial's own arclength, in the trial's units."""
+    from geodesic_testbed import constant_curvature_trace
+    from geodesic_testbed.boundary import Units
+
+    grid = np.array([0.0, 100.0, 200.0])
+    return constant_curvature_trace(grid, 0.0).as_transfer_record(
+        units=overrides.pop("units", Units(length="mm", angle="radian")),
+        observation_mode="ambient-euclidean-chord",
+        **overrides,
+    )
+
+
+def test_a_prediction_record_in_other_units_is_refused() -> None:
+    """Metres against millimetres agrees in shape and is wrong by a thousand."""
+    from geodesic_testbed.boundary import Units
+
+    with pytest.raises(ValueError, match="length unit"):
+        compare(
+            _record(),
+            _filtered([0.0, 1.70, 3.40]),
+            prediction_source=_prediction_record(units=Units(length="m", angle="radian")),
+        )
+
+
+def test_a_prediction_bound_to_another_calibration_is_refused() -> None:
+    from geodesic_testbed.boundary import CalibrationBinding
+
+    bound = _prediction_record(
+        calibration=CalibrationBinding(
+            calibration_ids=("bench-cal-2025-01",),
+            registration_id="sha256:bbb",
+            reconstruction_version="recon-0.0",
+        )
+    )
+    with pytest.raises(ValueError, match="different instrument state"):
+        compare(_record(), _filtered([0.0, 1.70, 3.40]), prediction_source=bound)
+
+
+def test_a_prediction_bound_to_the_trials_own_calibration_agrees() -> None:
+    from geodesic_testbed.boundary import CalibrationBinding
+
+    trial = _record()
+    bound = _prediction_record(
+        calibration=CalibrationBinding(
+            calibration_ids=(trial.calibration_id,),
+            registration_id=trial.calibration_transform_digest,
+            reconstruction_version=trial.reconstruction_version,
+        )
+    )
+    result = compare(trial, _filtered([0.0, 1.70, 3.40]), prediction_source=bound)
+    assert result["calibration"]["agreed"] is True
+
+
+def test_an_unbound_prediction_reports_that_no_tie_was_established() -> None:
+    """Allowed -- a prediction from geometry has no calibration -- and stated."""
+    result = compare(
+        _record(), _filtered([0.0, 1.70, 3.40]), prediction_source=_prediction_record()
+    )
+    assert result["calibration"]["agreed"] is None
+    assert result["calibration"]["prediction"]["bound"] is False
+    assert result["calibration"]["trial"]["calibration_ids"] == ["bench-cal-2026-09"]
