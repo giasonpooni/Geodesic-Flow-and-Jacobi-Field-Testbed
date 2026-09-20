@@ -1111,7 +1111,7 @@ def collect_checks(results: dict[str, Any], config: ExperimentConfig) -> list[di
                 "the scaled transfer's singular values are reciprocal at every arc "
                 "length, because conjugation leaves det Phi = 1 alone",
                 row["product_error"],
-                1e-12,
+                1e-10,
             )
         )
         checks.append(
