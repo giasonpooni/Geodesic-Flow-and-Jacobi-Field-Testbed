@@ -20,6 +20,12 @@ by the *caller*, not by the solver, and each one says on what basis:
 * the calibration identifiers, left unbound -- this record was computed from an
   analytic torus, no instrument took part, and writing a placeholder identifier
   into it would be exactly the failure the field exists to prevent.
+
+What the *runtime* fills in, because only it can: the path itself. Positions,
+the Darboux frame as vectors rather than as a name, both normal curvatures, how
+much of the requested path the chart could carry, whether the curve is a
+geodesic, and -- for the price of a second integration -- what the numerics
+cost, per quantity.
 """
 
 from __future__ import annotations
@@ -35,7 +41,7 @@ from geodesic_testbed.boundary import (
     read_record,
     write_record,
 )
-from geodesic_testbed.engine.envelope import integrate_path
+from geodesic_testbed.engine.envelope import estimate_convergence, integrate_path
 from geodesic_testbed.engine.surfaces import torus
 
 #: Millimetres and radians, declared once. A record whose units are a guess is
@@ -51,6 +57,11 @@ def build_record(*, length: float = 240.0, steps: int = 4000):
     )
     return envelope.as_transfer_record(
         units=UNITS,
+        # Paid for on purpose: a second integration at half the step, so the
+        # record states what its own numbers cost instead of naming the recipe
+        # and leaving the consumer to guess.
+        convergence=estimate_convergence(envelope),
+        datum_frame="coupon-datum-A",
         covariance=StartingCovariance.from_tolerance_box(
             0.100,
             0.0035,
@@ -94,6 +105,17 @@ def main() -> None:
           f"{summary['provenance']['producer_version']}")
     print(f"  calibration      {'bound' if summary['calibration']['bound'] else 'unbound'}: "
           f"{summary['calibration']['note'] or summary['calibration']['calibration_ids']}")
+    geometry = summary["geometry"]
+    convergence = summary["resolution"]["convergence"]
+    print(f"  geometry         {geometry['samples']} points, frame in "
+          f"{geometry['coordinate_frame']}, datum {geometry['datum_frame']}")
+    print(f"  geometry sigma   {geometry['uncertainty']['basis']}")
+    print(f"  path type        {summary['path_type']}")
+    print("  chart            {samples} of {requested_samples} samples, "
+          "complete={complete}".format(**summary["chart"]))
+    print(f"  error budget     position {convergence['position']:.2e}, "
+          f"transfer {convergence['transfer']:.2e}, focus "
+          f"{'n/a' if convergence['focus'] is None else format(convergence['focus'], '.2e')}")
     print(f"  amplification    {restored.amplification_score(0.100, 0.0035):.3f} "
           "(dimensionless, over the declared tolerance box)")
 

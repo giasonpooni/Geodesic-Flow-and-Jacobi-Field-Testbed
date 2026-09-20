@@ -286,6 +286,10 @@ class ParametricSurface:
         """``K = (LN - M^2) / (EG - F^2)``, from the jet."""
         return gaussian_curvature(self.jet_at(u, v))
 
+    def mean_curvature(self, u, v) -> Array:
+        """``H``, the average of the principal curvatures, from the jet."""
+        return mean_curvature(self.jet_at(u, v))
+
     def christoffel(self, u, v) -> tuple[Array, Array, Array, Array, Array, Array]:
         """``(G1_11, G1_12, G1_22, G2_11, G2_12, G2_22)`` at ``(u, v)``."""
         return christoffel(self.jet_at(u, v))
@@ -393,6 +397,21 @@ def unit_normal(jet: SurfaceJet) -> Array:
 def second_fundamental_form(jet: SurfaceJet) -> tuple[Array, Array, Array]:
     normal = unit_normal(jet)
     return _dot(jet.ruu, normal), _dot(jet.ruv, normal), _dot(jet.rvv, normal)
+
+
+def mean_curvature(jet: SurfaceJet) -> Array:
+    """``H = (EN - 2FM + GL) / (2(EG - F^2))``, the average of the principal curvatures.
+
+    Carried for one reason: Euler's theorem says the normal curvatures in any
+    two orthogonal tangent directions sum to ``2H``, independently of which
+    pair. That makes the two normal curvatures a record now carries checkable
+    against a quantity computed a different way, on every surface, with no
+    closed form needed -- which is the standard everything else here is held
+    to.
+    """
+    E, F, G = first_fundamental_form(jet)
+    L, M, N = second_fundamental_form(jet)
+    return (E * N - 2.0 * F * M + G * L) / (2.0 * (E * G - F * F))
 
 
 def gaussian_curvature(jet: SurfaceJet) -> Array:
@@ -715,3 +734,53 @@ def built_in(name: str) -> ParametricSurface:
         return CATALOGUE[name]()
     except KeyError as exc:  # pragma: no cover - guard
         raise KeyError(f"unknown surface {name!r}; have {sorted(CATALOGUE)}") from exc
+
+
+def darboux_frame(
+    surface: ParametricSurface, u, v, du, dv
+) -> dict[str, Array]:
+    """The path's own frame in ambient space, and how the surface bends in it.
+
+    Returns the three unit vectors -- ``tangent`` along the curve,
+    ``surface_normal``, and ``transverse = normal x tangent`` -- together with
+    the normal curvature in the direction of travel and in the transverse
+    direction.
+
+    The two normal curvatures answer different questions and are both called
+    ``kappa_n``. ``along`` is the bending a tool travelling the path feels.
+    ``transverse`` is the one that sets how far an ambient chord falls short of
+    an in-surface separation, so it is the one a comparison against
+    reconstructed 3-D points needs -- and the one this repository's own
+    ``(cn_K^2 + kappa_n^2 sn_K^2)/6`` coefficient is written in terms of.
+
+    ``du, dv`` are the parameter velocities; they are normalised here, so a
+    caller need not have kept unit speed exactly.
+    """
+    jet = surface.jet_at(u, v)
+    E, F, G = first_fundamental_form(jet)
+    du = np.asarray(du, dtype=float)
+    dv = np.asarray(dv, dtype=float)
+    speed = np.sqrt(np.clip(E * du * du + 2.0 * F * du * dv + G * dv * dv, 0.0, None))
+    if np.any(speed <= 0.0):
+        raise ValueError("a path with zero speed has no tangent direction")
+    du, dv = du / speed, dv / speed
+
+    normal = unit_normal(jet)
+    tangent = jet.ru * du[..., None] + jet.rv * dv[..., None]
+    tangent = tangent / np.sqrt(_dot(tangent, tangent))[..., None]
+    transverse = _cross(normal, tangent)
+
+    # The transverse direction in parameter coordinates, from the same
+    # orthonormalisation the heading uses, so that the ambient vector above and
+    # the parameter velocities below describe one direction and not two.
+    W = np.sqrt(np.clip(E * G - F * F, 0.0, None))
+    tu, tv = -(F * du + G * dv) / W, (E * du + F * dv) / W
+
+    L, M, N = second_fundamental_form(jet)
+    return {
+        "tangent": tangent,
+        "surface_normal": normal,
+        "transverse": transverse,
+        "normal_curvature_along": L * du * du + 2.0 * M * du * dv + N * dv * dv,
+        "normal_curvature_transverse": L * tu * tu + 2.0 * M * tu * tv + N * tv * tv,
+    }

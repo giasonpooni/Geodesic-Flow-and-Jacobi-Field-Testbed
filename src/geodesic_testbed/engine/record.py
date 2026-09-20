@@ -58,7 +58,12 @@ import numpy as np
 from .contract import (
     BOUNDARY_CONTRACT,
     DEFAULT_FRAME,
+    PATH_TYPES,
     CalibrationBinding,
+    ChartValidity,
+    ConvergenceEstimate,
+    GeometryUncertainty,
+    PathGeometry,
     Provenance,
     StartingCovariance,
     Units,
@@ -82,10 +87,15 @@ SUPPORTED_RECORD_SCHEMAS: tuple[str, ...] = (
 
 __all__ = [
     "BOUNDARY_CONTRACT",
+    "PATH_TYPES",
     "RECORD_SCHEMA",
     "SUPPORTED_RECORD_SCHEMAS",
     "CalibrationBinding",
+    "ChartValidity",
+    "ConvergenceEstimate",
     "FirstOrderValidity",
+    "GeometryUncertainty",
+    "PathGeometry",
     "Provenance",
     "Resolution",
     "StartingCovariance",
@@ -100,15 +110,27 @@ __all__ = [
 
 @dataclass(frozen=True)
 class Resolution:
-    """How the record was computed, in enough detail to judge what it resolves."""
+    """How the record was computed, in enough detail to judge what it resolves.
+
+    The method and the step say what was run; ``convergence`` says what it
+    cost. Both are needed and neither substitutes for the other: "rk4 at
+    h = 0.005" is a recipe, and a consumer deciding whether a focus at
+    ``s = 3.1416`` is located well enough to plan against needs the error, not
+    the recipe.
+    """
 
     method: str
     samples: int
     max_step: float
     uniform: bool
+    convergence: ConvergenceEstimate = field(
+        default_factory=lambda: ConvergenceEstimate.not_established(
+            "no step-doubling comparison was run"
+        )
+    )
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return asdict(self) | {"convergence": self.convergence.to_dict()}
 
 
 @dataclass(frozen=True)
@@ -168,6 +190,17 @@ class TransferRecord:
     covariance: StartingCovariance = field(default_factory=StartingCovariance.not_declared)
     provenance: Provenance = field(default_factory=Provenance)
     calibration: CalibrationBinding = field(default_factory=CalibrationBinding.unbound)
+    #: The path itself: positions, the frame as vectors, and the two normal
+    #: curvatures. ``None`` where there is no embedding to sample -- a declared
+    #: curvature profile is not a surface and has no points.
+    geometry: PathGeometry | None = None
+    #: What kind of curve this is. The transfer map's equation assumes a
+    #: geodesic, so a consumer is entitled to be told.
+    path_type: str = "geodesic"
+    path_type_basis: str = "declared by the producer"
+    #: How much of the requested path the chart could carry. ``None`` where the
+    #: producer has no chart -- again, a declared curvature profile.
+    chart: ChartValidity | None = None
 
     def __post_init__(self) -> None:
         arrays = ("arclength", "gaussian_curvature", "a", "a_rate", "b", "b_rate")
@@ -191,6 +224,19 @@ class TransferRecord:
         # trusts to decide whether two numbers are comparable at all.
         require_available(self.observation_mode, self.domain)
         declared_frame(self.frame)
+        if self.path_type not in PATH_TYPES:
+            raise ValueError(f"path_type must be one of {PATH_TYPES}")
+        if self.geometry is not None and self.geometry.samples != size:
+            raise ValueError(
+                f"the geometry carries {self.geometry.samples} samples but the "
+                f"transfer map has {size}; they are the same path or they are not "
+                "the same record"
+            )
+        if self.chart is not None and int(self.chart.samples) != size:
+            raise ValueError(
+                f"the chart record says {self.chart.samples} samples are valid but "
+                f"the record carries {size}; a record holds only valid samples"
+            )
         if self.covariance.declared:
             if self.covariance.frame != self.frame:
                 raise ValueError(
@@ -369,6 +415,24 @@ class TransferRecord:
         """The same record, with its provenance replaced."""
         return replace(self, provenance=provenance)
 
+    def with_geometry_uncertainty(
+        self, uncertainty: GeometryUncertainty
+    ) -> TransferRecord:
+        """The same record, declaring how well its own geometry is known.
+
+        Usually filled in later and elsewhere: how well the surface is known is
+        a property of the scan or the CAD model it came from, and the runtime
+        that flowed a path along it is not the thing that measured it.
+        """
+        if self.geometry is None:
+            raise ValueError(
+                "this record carries no geometry, so there is nothing for a "
+                "geometry uncertainty to describe"
+            )
+        return replace(
+            self, geometry=replace(self.geometry, uncertainty=uncertainty)
+        )
+
     # -- serialisation -----------------------------------------------------
     def to_dict(self, *, include_samples: bool = True) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -386,6 +450,14 @@ class TransferRecord:
             "covariance": self.covariance.to_dict(),
             "provenance": self.provenance.to_dict(),
             "calibration": self.calibration.to_dict(),
+            "path_type": self.path_type,
+            "path_type_basis": self.path_type_basis,
+            "chart": None if self.chart is None else self.chart.to_dict(),
+            "geometry": (
+                None
+                if self.geometry is None
+                else self.geometry.to_dict(include_samples=include_samples)
+            ),
         }
         if include_samples:
             payload |= {
@@ -430,6 +502,7 @@ class TransferRecord:
                 samples=int(resolution.get("samples", 0)),
                 max_step=float(resolution.get("max_step", float("nan"))),
                 uniform=bool(resolution.get("uniform", False)),
+                convergence=ConvergenceEstimate.from_dict(resolution.get("convergence")),
             ),
             validity=FirstOrderValidity(
                 basis=str(validity.get("basis", "not-established: no declaration supplied")),
@@ -442,6 +515,10 @@ class TransferRecord:
             covariance=StartingCovariance.from_dict(payload.get("covariance")),
             provenance=Provenance.from_dict(payload.get("provenance")),
             calibration=CalibrationBinding.from_dict(payload.get("calibration")),
+            geometry=PathGeometry.from_dict(payload.get("geometry")),
+            path_type=str(payload.get("path_type", "geodesic")),
+            path_type_basis=str(payload.get("path_type_basis", "declared by the producer")),
+            chart=ChartValidity.from_dict(payload.get("chart")),
         )
 
     def as_transfer_record(self) -> TransferRecord:

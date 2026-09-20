@@ -513,3 +513,435 @@ class CalibrationBinding:
             instrument_id=str(payload.get("instrument_id", "")),
             note=str(payload.get("note", "")),
         )
+
+
+# -- the path itself -------------------------------------------------------
+
+#: What kind of curve the transfer map was computed along.
+#:
+#: This is not decorative. ``j'' + K j = 0`` has no first-derivative term
+#: *because* the curve is a geodesic; along a curve with geodesic curvature the
+#: variation equation is a different equation, ``det Phi = 1`` is no longer the
+#: free invariant it is here, and every guarantee in this repository is about
+#: the geodesic case. A record that says ``non-geodesic`` is telling a consumer
+#: that its transfer map was computed under an assumption the path does not
+#: satisfy, and that is worth one field.
+PATH_TYPES: tuple[str, ...] = ("geodesic", "non-geodesic")
+
+#: What an upstream artefact is, so that "which geometry" has a vocabulary
+#: rather than a free-text convention that drifts between producers.
+ARTEFACT_KINDS: tuple[str, ...] = (
+    "analytic-surface",
+    "cad-model",
+    "as-built-scan",
+    "mesh",
+    "path-artefact",
+    "other",
+)
+
+#: Where a geometry uncertainty came from. ``analytic`` is not a synonym for
+#: ``not-declared``: a surface given by a formula has *zero* geometry
+#: uncertainty, which is a stronger statement than not knowing.
+GEOMETRY_UNCERTAINTY_BASES: tuple[str, ...] = (
+    "not-declared",
+    "analytic",
+    "as-built-scan",
+    "cad-nominal",
+    "assumed",
+)
+
+
+@dataclass(frozen=True)
+class GeometryUncertainty:
+    """How well the surface and the path along it are actually known.
+
+    Separate from the starting-pose covariance, and combining with it rather
+    than replacing it: ``C0`` says where the tool started relative to the
+    nominal path, and this says how well the nominal path itself is known. A
+    campaign that propagates only the first is reporting a bound on one of two
+    terms and calling it the total.
+
+    Nothing here propagates these yet, which is exactly why they are carried:
+    the number a downstream uncertainty budget needs must survive the crossing
+    even while the crossing is the only thing that happens to it.
+    """
+
+    position: float | None = None
+    normal: float | None = None
+    curvature: float | None = None
+    basis: str = "not-declared"
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        if self.basis not in GEOMETRY_UNCERTAINTY_BASES:
+            raise ValueError(f"basis must be one of {GEOMETRY_UNCERTAINTY_BASES}")
+        for name in ("position", "normal", "curvature"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            number = float(value)
+            if not np.isfinite(number) or number < 0.0:
+                raise ValueError(f"{name} uncertainty must be finite and nonnegative")
+            object.__setattr__(self, name, number)
+        if self.basis == "not-declared" and any(
+            getattr(self, name) is not None for name in ("position", "normal", "curvature")
+        ):
+            raise ValueError("an uncertainty was given but its basis says not-declared")
+
+    @property
+    def declared(self) -> bool:
+        return self.basis != "not-declared"
+
+    @classmethod
+    def not_declared(cls, why: str = "") -> GeometryUncertainty:
+        return cls(note=why)
+
+    @classmethod
+    def analytic(cls, why: str = "surface given in closed form") -> GeometryUncertainty:
+        """Zero, and meant: a formula has no reconstruction error."""
+        return cls(position=0.0, normal=0.0, curvature=0.0, basis="analytic", note=why)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "declared": self.declared,
+            "position": self.position,
+            "normal": self.normal,
+            "curvature": self.curvature,
+            "basis": self.basis,
+            "note": self.note,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> GeometryUncertainty:
+        if not payload:
+            return cls.not_declared()
+        return cls(
+            position=payload.get("position"),
+            normal=payload.get("normal"),
+            curvature=payload.get("curvature"),
+            basis=str(payload.get("basis", "not-declared")),
+            note=str(payload.get("note", "")),
+        )
+
+
+@dataclass(frozen=True)
+class ChartValidity:
+    """How much of the requested path the parameterisation could actually carry.
+
+    A record never holds an invalid sample -- integration stops at the chart
+    edge and the envelope is truncated there -- so this is not a mask over the
+    samples in hand. It is the other half of the story: that the path in the
+    record is *shorter than the one that was asked for*, and why.
+
+    A consumer asking whether a route covers a part has to be able to tell a
+    route that ends because it is finished from one that ends because the
+    parameterisation ran out. Both look like a path of some length.
+    """
+
+    samples: int
+    requested_samples: int
+    truncated: bool = False
+    reason: str = ""
+    truncated_at: float | None = None
+    requested_length: float | None = None
+    min_conditioning: float | None = None
+    declared_domain: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if int(self.samples) < 2:
+            raise ValueError("a chart record needs at least two valid samples")
+        if int(self.requested_samples) < int(self.samples):
+            raise ValueError("more samples are valid than were requested")
+        if self.truncated and not self.reason:
+            raise ValueError("a truncated path must say why it was truncated")
+
+    @property
+    def complete(self) -> bool:
+        """Whether the path in the record is the path that was requested."""
+        return not self.truncated
+
+    def mask(self) -> Array:
+        """The valid prefix as a boolean mask, for a consumer that wants one."""
+        return np.arange(int(self.requested_samples)) < int(self.samples)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "samples": int(self.samples),
+            "requested_samples": int(self.requested_samples),
+            "complete": self.complete,
+            "truncated": bool(self.truncated),
+            "reason": self.reason,
+            "truncated_at": self.truncated_at,
+            "requested_length": self.requested_length,
+            "min_conditioning": self.min_conditioning,
+            "declared_domain": dict(self.declared_domain),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> ChartValidity | None:
+        if not payload:
+            return None
+        return cls(
+            samples=int(payload["samples"]),
+            requested_samples=int(payload["requested_samples"]),
+            truncated=bool(payload.get("truncated", False)),
+            reason=str(payload.get("reason", "")),
+            truncated_at=payload.get("truncated_at"),
+            requested_length=payload.get("requested_length"),
+            min_conditioning=payload.get("min_conditioning"),
+            declared_domain=dict(payload.get("declared_domain", {})),
+        )
+
+
+def _unit_vectors(values: Any, name: str, size: int) -> Array:
+    array = np.asarray(values, dtype=float)
+    if array.shape != (size, 3):
+        raise ValueError(f"{name} must be ({size}, 3) ambient vectors, not {array.shape}")
+    if not np.all(np.isfinite(array)):
+        raise ValueError(f"{name} must be finite")
+    norms = np.linalg.norm(array, axis=-1)
+    if not np.allclose(norms, 1.0, rtol=0.0, atol=1e-9):
+        raise ValueError(
+            f"{name} must be unit vectors; the worst norm is "
+            f"{float(np.max(np.abs(norms - 1.0))):.3e} from 1"
+        )
+    array.setflags(write=False)
+    return array
+
+
+@dataclass(frozen=True)
+class PathGeometry:
+    """Where the path is, how it is oriented, and how the surface bends there.
+
+    The transfer map alone says how an error grows; it does not say where the
+    error is. A consumer that has to point an instrument at the path, register
+    a measurement to it, or turn a transverse deviation into a coordinate,
+    needs the path itself -- and cannot recompute it, because recomputing it
+    would mean carrying this runtime's solver.
+
+    The frame is carried as *vectors*, not only as a name. ``frame`` on the
+    record says the transverse direction is parallel-transported; these three
+    columns are what that direction actually is at every sample, so a consumer
+    can check the claim instead of trusting it. ``transverse`` is the direction
+    ``a`` and ``b`` are measured along, and ``normal x tangent`` is how it is
+    built, which fixes its sign -- a frame that is right in every respect but
+    orientation flips the sign of every heading error it carries.
+
+    Two normal curvatures, because they answer different questions and the
+    literature calls both of them ``kappa_n``. ``normal_curvature_along`` is
+    how the surface bends in the direction of travel. It is
+    ``normal_curvature_transverse`` that sets how far an ambient chord falls
+    short of an in-surface separation -- the ``kappa_n^2 sn_K(s)^2`` term -- so
+    it is the one a comparison against reconstructed 3-D points needs.
+    """
+
+    position: Array
+    tangent: Array
+    transverse: Array
+    surface_normal: Array
+    normal_curvature_along: Array
+    normal_curvature_transverse: Array
+    coordinate_frame: str = "surface-parameterisation-ambient"
+    datum_frame: str = "not-declared"
+    geodesic_curvature: Array | None = None
+    uncertainty: GeometryUncertainty = field(default_factory=GeometryUncertainty.not_declared)
+
+    def __post_init__(self) -> None:
+        size = np.asarray(self.position).shape[0]
+        for name in ("position",):
+            array = np.asarray(getattr(self, name), dtype=float)
+            if array.shape != (size, 3):
+                raise ValueError(f"{name} must be ({size}, 3) ambient points")
+            if not np.all(np.isfinite(array)):
+                raise ValueError(f"{name} must be finite")
+            array.setflags(write=False)
+            object.__setattr__(self, name, array)
+        for name in ("tangent", "transverse", "surface_normal"):
+            object.__setattr__(self, name, _unit_vectors(getattr(self, name), name, size))
+        for name in ("normal_curvature_along", "normal_curvature_transverse"):
+            array = np.asarray(getattr(self, name), dtype=float)
+            if array.shape != (size,):
+                raise ValueError(f"{name} must be one value per sample")
+            if not np.all(np.isfinite(array)):
+                raise ValueError(f"{name} must be finite")
+            array.setflags(write=False)
+            object.__setattr__(self, name, array)
+        if self.geodesic_curvature is not None:
+            array = np.asarray(self.geodesic_curvature, dtype=float)
+            if array.shape != (size,) or not np.all(np.isfinite(array)):
+                raise ValueError("geodesic_curvature must be one finite value per sample")
+            array.setflags(write=False)
+            object.__setattr__(self, "geodesic_curvature", array)
+        # The triad is what makes the frame checkable, so it is checked here.
+        # A transverse direction that has drifted out of the tangent plane is
+        # measuring something other than an in-surface deviation.
+        for left, right in (
+            ("tangent", "surface_normal"),
+            ("tangent", "transverse"),
+            ("transverse", "surface_normal"),
+        ):
+            products = np.einsum(
+                "ij,ij->i", getattr(self, left), getattr(self, right)
+            )
+            if not np.allclose(products, 0.0, rtol=0.0, atol=1e-9):
+                raise ValueError(
+                    f"{left} and {right} must be orthogonal at every sample; the "
+                    f"worst inner product is {float(np.max(np.abs(products))):.3e}"
+                )
+
+    @property
+    def samples(self) -> int:
+        return int(self.position.shape[0])
+
+    def orientation_residual(self) -> float:
+        """How far ``normal x tangent`` is from the carried transverse direction.
+
+        Zero for a right-handed Darboux frame. A consumer can call this rather
+        than assume the handedness, which is the point of carrying the vectors.
+        """
+        expected = np.cross(self.surface_normal, self.tangent)
+        return float(np.max(np.linalg.norm(expected - self.transverse, axis=-1)))
+
+    def to_dict(self, *, include_samples: bool = True) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "samples": self.samples,
+            "coordinate_frame": self.coordinate_frame,
+            "datum_frame": self.datum_frame,
+            "uncertainty": self.uncertainty.to_dict(),
+            "orientation_residual": self.orientation_residual(),
+            "has_geodesic_curvature": self.geodesic_curvature is not None,
+        }
+        if include_samples:
+            payload |= {
+                name: np.asarray(getattr(self, name)).tolist()
+                for name in (
+                    "position",
+                    "tangent",
+                    "transverse",
+                    "surface_normal",
+                    "normal_curvature_along",
+                    "normal_curvature_transverse",
+                )
+            }
+            payload["geodesic_curvature"] = (
+                None
+                if self.geodesic_curvature is None
+                else np.asarray(self.geodesic_curvature).tolist()
+            )
+        return payload
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> PathGeometry | None:
+        if not payload:
+            return None
+        required = (
+            "position",
+            "tangent",
+            "transverse",
+            "surface_normal",
+            "normal_curvature_along",
+            "normal_curvature_transverse",
+        )
+        missing = [name for name in required if name not in payload]
+        if missing:
+            raise ValueError(
+                "this geometry payload carries no samples "
+                f"(missing {', '.join(missing)}); it is a summary, not a geometry"
+            )
+        geodesic = payload.get("geodesic_curvature")
+        return cls(
+            **{name: np.asarray(payload[name], dtype=float) for name in required},
+            coordinate_frame=str(
+                payload.get("coordinate_frame", "surface-parameterisation-ambient")
+            ),
+            datum_frame=str(payload.get("datum_frame", "not-declared")),
+            geodesic_curvature=(
+                None if geodesic is None else np.asarray(geodesic, dtype=float)
+            ),
+            uncertainty=GeometryUncertainty.from_dict(payload.get("uncertainty")),
+        )
+
+
+# -- how well it was solved ------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ConvergenceEstimate:
+    """What the numerics cost, per quantity, from a step-doubling comparison.
+
+    A single "the method is fourth order" is a statement about the limit, not
+    about this run. What a consumer needs is the size of the error *here*, and
+    it needs it separately per quantity, because they do not converge together:
+    a focus location is a root of ``b``, so its error is the error in ``b``
+    divided by a slope that is small precisely where the focus is, and a
+    propagated covariance is quadratic in ``Phi`` so its relative error is
+    roughly twice the transfer map's.
+
+    Every entry is an absolute error estimate in the record's own units, from
+    ``run(h)`` against ``run(h/2)`` Richardson-extrapolated at the method's
+    order. ``not-established`` is the honest default and stays the default:
+    the estimate costs a second integration, and a producer that did not pay
+    for it must not appear to have.
+    """
+
+    basis: str = "not-established"
+    order: int | None = None
+    refinement: int | None = None
+    position: float | None = None
+    transfer: float | None = None
+    curvature: float | None = None
+    focus: float | None = None
+    covariance: float | None = None
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        for name in ("position", "transfer", "curvature", "focus", "covariance"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            number = float(value)
+            if not np.isfinite(number) or number < 0.0:
+                raise ValueError(f"the {name} error estimate must be finite and nonnegative")
+            object.__setattr__(self, name, number)
+        if not self.established and any(
+            getattr(self, name) is not None
+            for name in ("position", "transfer", "curvature", "focus", "covariance")
+        ):
+            raise ValueError("an error estimate was given but the basis says not-established")
+
+    @property
+    def established(self) -> bool:
+        return not self.basis.startswith("not-established")
+
+    @classmethod
+    def not_established(cls, why: str = "") -> ConvergenceEstimate:
+        return cls(basis=f"not-established: {why}" if why else "not-established", note=why)
+
+    @property
+    def worst(self) -> float | None:
+        """The largest of the declared estimates, or ``None`` if none are."""
+        values = [
+            getattr(self, name)
+            for name in ("position", "transfer", "curvature", "focus", "covariance")
+            if getattr(self, name) is not None
+        ]
+        return max(values) if values else None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self) | {"established": self.established, "worst": self.worst}
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> ConvergenceEstimate:
+        if not payload:
+            return cls.not_established()
+        return cls(
+            basis=str(payload.get("basis", "not-established")),
+            order=payload.get("order"),
+            refinement=payload.get("refinement"),
+            position=payload.get("position"),
+            transfer=payload.get("transfer"),
+            curvature=payload.get("curvature"),
+            focus=payload.get("focus"),
+            covariance=payload.get("covariance"),
+            note=str(payload.get("note", "")),
+        )

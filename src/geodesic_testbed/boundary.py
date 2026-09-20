@@ -63,20 +63,28 @@ from pathlib import Path
 from typing import Any
 
 from .engine.contract import (
+    ARTEFACT_KINDS,
     BOUNDARY_CONTRACT,
     COVARIANCE_BASES,
     DEFAULT_FRAME,
     FRAMES,
+    GEOMETRY_UNCERTAINTY_BASES,
+    PATH_TYPES,
     PRODUCER,
     RUNTIME_VERSION,
     CalibrationBinding,
+    ChartValidity,
+    ConvergenceEstimate,
     Frame,
+    GeometryUncertainty,
+    PathGeometry,
     Provenance,
     StartingCovariance,
     Units,
     UpstreamArtefact,
     frame,
     frame_catalogue,
+    validated_covariance,
 )
 from .engine.observation import DOMAINS, MODES
 from .engine.observation import catalogue as observation_catalogue
@@ -183,7 +191,15 @@ def read_record(path: str | Path) -> TransferRecord:
 
 
 __all__ = [
+    "ARTEFACT_KINDS",
     "BOUNDARY_CONTRACT",
+    "GEOMETRY_UNCERTAINTY_BASES",
+    "PATH_TYPES",
+    "ChartValidity",
+    "ConvergenceEstimate",
+    "GeometryUncertainty",
+    "PathGeometry",
+    "validated_covariance",
     "CONSUMERS",
     "CONTRACT",
     "HARNESS",

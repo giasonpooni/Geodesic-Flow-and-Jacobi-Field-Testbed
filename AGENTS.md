@@ -36,13 +36,31 @@
   produces a transfer map presents one, and anything that consumes a path takes
   one. New consumers accept `to_transfer_record(source)`, never a concrete
   producer type.
+- **A number the record carries is a number something checks.** The path
+  geometry is not decoration: the Darboux triad is validated on construction
+  (unit, orthogonal, `transverse = normal x tangent`) and the two normal
+  curvatures are held to Euler's theorem, `kappa_n(along) + kappa_n(across) =
+  2H`, against a mean curvature computed from the second fundamental form -- on
+  every surface, with no closed form required. Adding a field to the contract
+  without a declared check on it is how a contract starts lying.
+- **An error estimate that understates the error is worse than none**, because
+  it is acted on. `estimate_convergence` halves the step and Richardson
+  -extrapolates per quantity -- position, transfer, curvature, focus,
+  covariance, which do not converge together -- and the surfaces experiment
+  checks it against the closed forms where one exists rather than trusting it.
+  It costs a second integration, so it is never the default: a record whose
+  convergence says `not-established` has not paid for one, which is a true
+  statement and not a missing feature.
 - **The record is the whole of the outward interface.** This runtime is a
   parallel computational substrate that an instrument may consume, not a module
   inside an instrument workbench. `geodesic_testbed.boundary` presents the
   contract on its own, `docs/BOUNDARY.md` states it, and the record carries the
   seven things a consumer cannot reconstruct: units, frame, arclength grid,
-  covariance, provenance, calibration IDs and observation mode. Anything a
-  downstream system needs goes in the record; nothing else is public.
+  covariance, provenance, calibration IDs and observation mode -- and, for a
+  record built from a surface, the path itself: positions, the frame as
+  vectors, both normal curvatures, the chart validity, the path type and the
+  convergence estimate. Anything a downstream system needs goes in the record;
+  nothing else is public.
 - **The one-way rule is checked, not intended.** `boundary.SUBSTRATE` may not
   import `boundary.INSTRUMENT_FACING`, and `boundary.CONTRACT` may import
   neither -- `record` reaches `transfer` for the map it wraps and nothing else,

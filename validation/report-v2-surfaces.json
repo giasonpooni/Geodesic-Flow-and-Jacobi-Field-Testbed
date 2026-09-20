@@ -2,6 +2,10 @@
   "schema": "geodesic-jacobi-surfaces-v3",
   "supersedes": "geodesic-jacobi-surfaces-v2",
   "schema_changes": [
+    "adds results.error_budget: a per-quantity step-doubling error estimate, checked against the closed forms where one exists",
+    "adds results.jet_step_sensitivity: what the finite-difference jet's relative step costs along a whole path, not at one point",
+    "envelopes: adds the path geometry the record now carries -- the Darboux frame as vectors and both normal curvatures -- checked against Euler's theorem on every surface",
+    "envelopes.record: now the full v2 contract, carrying the path geometry, the chart validity, the path type and the convergence estimate alongside the transfer map",
     "heading_scan.route_selection: routes are chosen by declared process limits and a sensor acquisition schedule, not by a threshold on |b|",
     "envelopes: adds chart validity, the transfer record, and the scaled-transfer singular values",
     "adds results.lateral_route: the a column checked by moving the start point",
@@ -171,6 +175,19 @@
     "two_route_steps": 1000,
     "fit_floor": 1e-08,
     "fit_ceiling": 0.001,
+    "budget_step_counts": [
+      160,
+      640
+    ],
+    "budget_roundoff_floor": 1e-12,
+    "jet_sensitivity_steps": 400,
+    "jet_relative_steps": [
+      0.01,
+      0.001,
+      0.0001,
+      1e-05,
+      1e-06
+    ],
     "transverse_tolerances": [
       0.001,
       0.01
@@ -1692,6 +1709,664 @@
         "max_curvature_difference": 1.51669273252e-08
       }
     ],
+    "error_budget": [
+      {
+        "case": "plate",
+        "surface": "plane",
+        "reference": "s",
+        "method": "rk4",
+        "declared_order": 4,
+        "refinement_between_levels": 4.0,
+        "observed_order": null,
+        "any_resolved": false,
+        "worst_estimate_over_truth": null,
+        "levels": [
+          {
+            "n_steps": 160,
+            "step": 0.0125,
+            "estimate": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 1.12596053479e-14,
+              "transfer": 1.7763568394e-14,
+              "curvature": 0.0,
+              "focus": null,
+              "covariance": 7.1054273576e-14,
+              "note": "",
+              "established": true,
+              "worst": 7.1054273576e-14
+            },
+            "true_transfer_error": 5.10702591328e-15,
+            "resolved": false,
+            "estimate_over_truth": null
+          },
+          {
+            "n_steps": 640,
+            "step": 0.003125,
+            "estimate": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 6.06278913825e-14,
+              "transfer": 7.12911211546e-14,
+              "curvature": 0.0,
+              "focus": null,
+              "covariance": 2.85164484618e-13,
+              "note": "",
+              "established": true,
+              "worst": 2.85164484618e-13
+            },
+            "true_transfer_error": 1.99840144433e-14,
+            "resolved": false,
+            "estimate_over_truth": null
+          }
+        ]
+      },
+      {
+        "case": "rolled-sheet",
+        "surface": "cylinder(R=1)",
+        "reference": "s",
+        "method": "rk4",
+        "declared_order": 4,
+        "refinement_between_levels": 4.0,
+        "observed_order": null,
+        "any_resolved": false,
+        "worst_estimate_over_truth": null,
+        "levels": [
+          {
+            "n_steps": 160,
+            "step": 0.0125,
+            "estimate": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 1.12627576584e-14,
+              "transfer": 1.7763568394e-14,
+              "curvature": 0.0,
+              "focus": null,
+              "covariance": 7.1054273576e-14,
+              "note": "",
+              "established": true,
+              "worst": 7.1054273576e-14
+            },
+            "true_transfer_error": 5.10702591328e-15,
+            "resolved": false,
+            "estimate_over_truth": null
+          },
+          {
+            "n_steps": 640,
+            "step": 0.003125,
+            "estimate": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 6.06382292365e-14,
+              "transfer": 7.12911211546e-14,
+              "curvature": 0.0,
+              "focus": null,
+              "covariance": 2.85164484618e-13,
+              "note": "",
+              "established": true,
+              "worst": 2.85164484618e-13
+            },
+            "true_transfer_error": 1.99840144433e-14,
+            "resolved": false,
+            "estimate_over_truth": null
+          }
+        ]
+      },
+      {
+        "case": "spherical-cap",
+        "surface": "sphere(R=1)",
+        "reference": "sin(s)",
+        "method": "rk4",
+        "declared_order": 4,
+        "refinement_between_levels": 4.0,
+        "observed_order": 4.00335189515,
+        "any_resolved": true,
+        "worst_estimate_over_truth": 0.000208779996566,
+        "levels": [
+          {
+            "n_steps": 160,
+            "step": 0.025,
+            "estimate": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 3.25405443682e-08,
+              "transfer": 1.07714686356e-08,
+              "curvature": 1.18423789293e-15,
+              "focus": 1.02277728805e-08,
+              "covariance": 5.60576414917e-10,
+              "note": "",
+              "established": true,
+              "worst": 3.25405443682e-08
+            },
+            "true_transfer_error": 1.07692202378e-08,
+            "resolved": true,
+            "estimate_over_truth": 1.00020878
+          },
+          {
+            "n_steps": 640,
+            "step": 0.00625,
+            "estimate": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 1.26813279426e-10,
+              "transfer": 4.18809875669e-11,
+              "curvature": 1.30266168223e-15,
+              "focus": 3.99505021657e-11,
+              "covariance": 5.52565400843e-13,
+              "note": "",
+              "established": true,
+              "worst": 1.26813279426e-10
+            },
+            "true_transfer_error": 4.18775569777e-11,
+            "resolved": true,
+            "estimate_over_truth": 1.00008191951
+          }
+        ]
+      },
+      {
+        "case": "pseudosphere",
+        "surface": "pseudosphere",
+        "reference": "sinh(s)",
+        "method": "rk4",
+        "declared_order": 4,
+        "refinement_between_levels": 4.0,
+        "observed_order": 4.00137265662,
+        "any_resolved": true,
+        "worst_estimate_over_truth": 0.000234168674952,
+        "levels": [
+          {
+            "n_steps": 160,
+            "step": 0.009375,
+            "estimate": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 3.49496081041e-10,
+              "transfer": 2.25498316316e-10,
+              "curvature": 1.30266168223e-15,
+              "focus": null,
+              "covariance": 1.92871614975e-09,
+              "note": "",
+              "established": true,
+              "worst": 1.92871614975e-09
+            },
+            "true_transfer_error": 2.25551133326e-10,
+            "resolved": true,
+            "estimate_over_truth": 0.999765831325
+          },
+          {
+            "n_steps": 640,
+            "step": 0.00234375,
+            "estimate": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 1.36662830857e-12,
+              "transfer": 8.79178211714e-13,
+              "curvature": 1.30266168223e-15,
+              "focus": null,
+              "covariance": 7.49954172837e-12,
+              "note": "",
+              "established": true,
+              "worst": 7.49954172837e-12
+            },
+            "true_transfer_error": 8.85069795231e-13,
+            "resolved": false,
+            "estimate_over_truth": null
+          }
+        ]
+      },
+      {
+        "case": "saddle",
+        "surface": "hyperbolic-paraboloid(a=1)",
+        "reference": null,
+        "method": "rk4",
+        "declared_order": 4,
+        "refinement_between_levels": 4.0,
+        "observed_order": 3.99861277384,
+        "any_resolved": false,
+        "worst_estimate_over_truth": null,
+        "levels": [
+          {
+            "n_steps": 160,
+            "step": 0.0125,
+            "estimate": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 1.87343095081e-11,
+              "transfer": 1.5576944179e-10,
+              "curvature": 1.51996933558e-12,
+              "focus": null,
+              "covariance": 6.52930035964e-10,
+              "note": "",
+              "established": true,
+              "worst": 6.52930035964e-10
+            },
+            "true_transfer_error": null,
+            "resolved": false,
+            "estimate_over_truth": null
+          },
+          {
+            "n_steps": 640,
+            "step": 0.003125,
+            "estimate": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 7.44281974717e-14,
+              "transfer": 6.09645667282e-13,
+              "curvature": 6.98700356831e-15,
+              "focus": null,
+              "covariance": 2.56553297125e-12,
+              "note": "",
+              "established": true,
+              "worst": 2.56553297125e-12
+            },
+            "true_transfer_error": null,
+            "resolved": false,
+            "estimate_over_truth": null
+          }
+        ]
+      },
+      {
+        "case": "torus",
+        "surface": "torus(R=2, r=1)",
+        "reference": null,
+        "method": "rk4",
+        "declared_order": 4,
+        "refinement_between_levels": 4.0,
+        "observed_order": 3.9893595198,
+        "any_resolved": false,
+        "worst_estimate_over_truth": null,
+        "levels": [
+          {
+            "n_steps": 160,
+            "step": 0.0125,
+            "estimate": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 6.68699580819e-11,
+              "transfer": 5.47564364221e-11,
+              "curvature": 2.50754380223e-11,
+              "focus": null,
+              "covariance": 7.51143147681e-11,
+              "note": "",
+              "established": true,
+              "worst": 7.51143147681e-11
+            },
+            "true_transfer_error": null,
+            "resolved": false,
+            "estimate_over_truth": null
+          },
+          {
+            "n_steps": 640,
+            "step": 0.003125,
+            "estimate": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 2.65323234084e-13,
+              "transfer": 2.17070805775e-13,
+              "curvature": 1.00482585215e-13,
+              "focus": null,
+              "covariance": 3.18796840778e-13,
+              "note": "",
+              "established": true,
+              "worst": 3.18796840778e-13
+            },
+            "true_transfer_error": null,
+            "resolved": false,
+            "estimate_over_truth": null
+          }
+        ]
+      }
+    ],
+    "jet_step_sensitivity": [
+      {
+        "case": "plate",
+        "surface": "plane",
+        "n_steps": 400,
+        "default_relative_step": 0.0001,
+        "best_relative_step": 0.01,
+        "best_transfer_error": 0.0,
+        "worst_transfer_error": 0.0,
+        "default_transfer_error": 0.0,
+        "default_over_best": null,
+        "default_over_worst": null,
+        "spread_factor": null,
+        "every_step_found_the_same_foci": true,
+        "levels": [
+          {
+            "fd_relative_step": 0.01,
+            "position": 2.22044604925e-16,
+            "transfer": 0.0,
+            "curvature": 0.0,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 0.001,
+            "position": 2.20069392588e-13,
+            "transfer": 0.0,
+            "curvature": 0.0,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 0.0001,
+            "position": 0.0,
+            "transfer": 0.0,
+            "curvature": 0.0,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 1e-05,
+            "position": 0.0,
+            "transfer": 0.0,
+            "curvature": 0.0,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 1e-06,
+            "position": 0.0,
+            "transfer": 0.0,
+            "curvature": 0.0,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          }
+        ]
+      },
+      {
+        "case": "rolled-sheet",
+        "surface": "cylinder(R=1)",
+        "n_steps": 400,
+        "default_relative_step": 0.0001,
+        "best_relative_step": 0.01,
+        "best_transfer_error": 0.0,
+        "worst_transfer_error": 0.0,
+        "default_transfer_error": 0.0,
+        "default_over_best": null,
+        "default_over_worst": null,
+        "spread_factor": null,
+        "every_step_found_the_same_foci": true,
+        "levels": [
+          {
+            "fd_relative_step": 0.01,
+            "position": 2.75115081472e-05,
+            "transfer": 0.0,
+            "curvature": 0.0,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 0.001,
+            "position": 2.75115922929e-07,
+            "transfer": 0.0,
+            "curvature": 0.0,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 0.0001,
+            "position": 2.90946643487e-09,
+            "transfer": 0.0,
+            "curvature": 0.0,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 1e-05,
+            "position": 2.96001865105e-08,
+            "transfer": 0.0,
+            "curvature": 0.0,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 1e-06,
+            "position": 4.6969543499e-06,
+            "transfer": 0.0,
+            "curvature": 0.0,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          }
+        ]
+      },
+      {
+        "case": "spherical-cap",
+        "surface": "sphere(R=1)",
+        "n_steps": 400,
+        "default_relative_step": 0.0001,
+        "best_relative_step": 1e-05,
+        "best_transfer_error": 2.53934680505e-08,
+        "worst_transfer_error": 0.000654623837782,
+        "default_transfer_error": 6.55415401951e-08,
+        "default_over_best": 2.581039347,
+        "default_over_worst": 0.000100120918934,
+        "spread_factor": 25779.22151,
+        "every_step_found_the_same_foci": true,
+        "levels": [
+          {
+            "fd_relative_step": 0.01,
+            "position": 9.66103120257e-05,
+            "transfer": 0.000654623837782,
+            "curvature": 0.000692457354075,
+            "focus": 0.000474701613367,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 0.001,
+            "position": 9.66114308088e-07,
+            "transfer": 6.54570633762e-06,
+            "curvature": 6.92151337878e-06,
+            "focus": 4.74742689027e-06,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 0.0001,
+            "position": 9.40573649611e-09,
+            "transfer": 6.55415401951e-08,
+            "curvature": 7.25616537967e-08,
+            "focus": 4.74826045149e-08,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 1e-05,
+            "position": 9.89305559554e-09,
+            "transfer": 2.53934680505e-08,
+            "curvature": 3.35584046773e-07,
+            "focus": 1.6940939318e-08,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 1e-06,
+            "position": 1.79920766155e-06,
+            "transfer": 2.58903772887e-06,
+            "curvature": 4.57733347803e-05,
+            "focus": 4.12796762106e-07,
+            "found_the_same_number_of_foci": true
+          }
+        ]
+      },
+      {
+        "case": "pseudosphere",
+        "surface": "pseudosphere",
+        "n_steps": 400,
+        "default_relative_step": 0.0001,
+        "best_relative_step": 0.0001,
+        "best_transfer_error": 4.328787373e-08,
+        "worst_transfer_error": 0.000443458851459,
+        "default_transfer_error": 4.328787373e-08,
+        "default_over_best": 1.0,
+        "default_over_worst": 9.76141835653e-05,
+        "spread_factor": 10244.4128863,
+        "every_step_found_the_same_foci": true,
+        "levels": [
+          {
+            "fd_relative_step": 0.01,
+            "position": 3.2984489544e-05,
+            "transfer": 0.000443458851459,
+            "curvature": 0.00044625285854,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 0.001,
+            "position": 3.29871106478e-07,
+            "transfer": 4.43377589887e-06,
+            "curvature": 4.46146340638e-06,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 0.0001,
+            "position": 3.45717078065e-09,
+            "transfer": 4.328787373e-08,
+            "curvature": 4.89701923456e-08,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 1e-05,
+            "position": 4.08456579583e-08,
+            "transfer": 1.37699755154e-07,
+            "curvature": 4.40480728336e-07,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 1e-06,
+            "position": 2.22163798271e-06,
+            "transfer": 4.3534402685e-06,
+            "curvature": 4.75275038441e-05,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          }
+        ]
+      },
+      {
+        "case": "saddle",
+        "surface": "hyperbolic-paraboloid(a=1)",
+        "n_steps": 400,
+        "default_relative_step": 0.0001,
+        "best_relative_step": 0.01,
+        "best_transfer_error": 3.99680288865e-15,
+        "worst_transfer_error": 9.82082118517e-07,
+        "default_transfer_error": 7.43753947319e-11,
+        "default_over_best": 18608.7222222,
+        "default_over_worst": 7.57323581496e-05,
+        "spread_factor": 245716925.722,
+        "every_step_found_the_same_foci": true,
+        "levels": [
+          {
+            "fd_relative_step": 0.01,
+            "position": 7.04007468432e-15,
+            "transfer": 3.99680288865e-15,
+            "curvature": 1.0097478409e-13,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 0.001,
+            "position": 1.33524600784e-12,
+            "transfer": 8.13904499353e-13,
+            "curvature": 8.54961934582e-12,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 0.0001,
+            "position": 9.53626114696e-11,
+            "transfer": 7.43753947319e-11,
+            "curvature": 8.11759215402e-10,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 1e-05,
+            "position": 2.55432866984e-09,
+            "transfer": 4.49557346904e-09,
+            "curvature": 8.95824349145e-08,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 1e-06,
+            "position": 7.39015611302e-07,
+            "transfer": 9.82082118517e-07,
+            "curvature": 8.55698063112e-06,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          }
+        ]
+      },
+      {
+        "case": "torus",
+        "surface": "torus(R=2, r=1)",
+        "n_steps": 400,
+        "default_relative_step": 0.0001,
+        "best_relative_step": 0.0001,
+        "best_transfer_error": 1.62898217138e-09,
+        "worst_transfer_error": 1.84301344661e-05,
+        "default_transfer_error": 1.62898217138e-09,
+        "default_over_best": 1.0,
+        "default_over_worst": 8.83868847713e-05,
+        "spread_factor": 11313.8957503,
+        "every_step_found_the_same_foci": true,
+        "levels": [
+          {
+            "fd_relative_step": 0.01,
+            "position": 2.40008244069e-05,
+            "transfer": 1.84301344661e-05,
+            "curvature": 4.69740470695e-05,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 0.001,
+            "position": 2.40022319311e-07,
+            "transfer": 1.84289191241e-07,
+            "curvature": 4.69612925769e-07,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 0.0001,
+            "position": 3.11805510938e-09,
+            "transfer": 1.62898217138e-09,
+            "curvature": 1.67749426017e-08,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 1e-05,
+            "position": 5.1401869055e-08,
+            "transfer": 5.36753317071e-08,
+            "curvature": 1.22930279439e-06,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          },
+          {
+            "fd_relative_step": 1e-06,
+            "position": 1.58126795237e-05,
+            "transfer": 9.47830244691e-06,
+            "curvature": 0.000133224766747,
+            "focus": null,
+            "found_the_same_number_of_foci": true
+          }
+        ]
+      }
+    ],
     "envelopes": [
       {
         "surface": "plane",
@@ -1748,6 +2423,21 @@
         "lateral_focus_points": [],
         "scaled_determinant_error": 0.0,
         "scaled_singular_value_product_error": 2.22044604925e-16,
+        "geometry": {
+          "euler_identity": "kappa_n(along) + kappa_n(across) = 2H",
+          "euler_residual": 0.0,
+          "frame_orientation_residual": 0.0,
+          "max_tangent_norm_error": 0.0,
+          "max_frame_inner_product": 0.0,
+          "normal_curvature_along": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "normal_curvature_transverse": {
+            "min": 0.0,
+            "max": 0.0
+          }
+        },
         "min_scaled_singular_value_max": 1.0,
         "amplification_score": 2.41421356237,
         "record": {
@@ -1763,7 +2453,20 @@
             "method": "rk4",
             "samples": 2001,
             "max_step": 0.001,
-            "uniform": true
+            "uniform": true,
+            "convergence": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 1.78152522965e-13,
+              "transfer": 5.90934708574e-14,
+              "curvature": 0.0,
+              "focus": null,
+              "covariance": 2.35900188272e-13,
+              "note": "",
+              "established": true,
+              "worst": 2.35900188272e-13
+            }
           },
           "validity": {
             "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
@@ -1809,6 +2512,49 @@
             "reconstruction_version": "",
             "instrument_id": "",
             "note": "no instrument took part in this computation"
+          },
+          "path_type": "geodesic",
+          "path_type_basis": "by construction: the geodesic equation was integrated, and the unit-speed and det Phi = 1 invariants are never re-imposed",
+          "chart": {
+            "samples": 2001,
+            "requested_samples": 2001,
+            "complete": true,
+            "truncated": false,
+            "reason": "",
+            "truncated_at": null,
+            "requested_length": 2.0,
+            "min_conditioning": 1.0,
+            "declared_domain": {
+              "u": [
+                null,
+                null
+              ],
+              "v": [
+                null,
+                null
+              ],
+              "u_period": null,
+              "v_period": null,
+              "u_scale": 1.0,
+              "v_scale": 1.0,
+              "reference_length": 1.0,
+              "note": "global: the identity chart covers the plane"
+            }
+          },
+          "geometry": {
+            "samples": 2001,
+            "coordinate_frame": "surface-parameterisation-ambient",
+            "datum_frame": "not-declared",
+            "uncertainty": {
+              "declared": true,
+              "position": 0.0,
+              "normal": 0.0,
+              "curvature": 0.0,
+              "basis": "analytic",
+              "note": "plane is given in closed form; its geometry carries no reconstruction error"
+            },
+            "orientation_residual": 0.0,
+            "has_geodesic_curvature": false
           },
           "round_trip_error": 0.0
         },
@@ -2936,6 +3682,21 @@
         "lateral_focus_points": [],
         "scaled_determinant_error": 0.0,
         "scaled_singular_value_product_error": 2.22044604925e-16,
+        "geometry": {
+          "euler_identity": "kappa_n(along) + kappa_n(across) = 2H",
+          "euler_residual": 4.4408920985e-16,
+          "frame_orientation_residual": 0.0,
+          "max_tangent_norm_error": 0.0,
+          "max_frame_inner_product": 1.11022302463e-16,
+          "normal_curvature_along": {
+            "min": -0.681178877238,
+            "max": -0.681178877238
+          },
+          "normal_curvature_transverse": {
+            "min": -0.318821122762,
+            "max": -0.318821122762
+          }
+        },
         "min_scaled_singular_value_max": 1.0,
         "amplification_score": 2.41421356237,
         "record": {
@@ -2951,7 +3712,20 @@
             "method": "rk4",
             "samples": 2001,
             "max_step": 0.001,
-            "uniform": true
+            "uniform": true,
+            "convergence": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 1.78153620739e-13,
+              "transfer": 5.90934708574e-14,
+              "curvature": 0.0,
+              "focus": null,
+              "covariance": 2.35900188272e-13,
+              "note": "",
+              "established": true,
+              "worst": 2.35900188272e-13
+            }
           },
           "validity": {
             "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
@@ -2997,6 +3771,49 @@
             "reconstruction_version": "",
             "instrument_id": "",
             "note": "no instrument took part in this computation"
+          },
+          "path_type": "geodesic",
+          "path_type_basis": "by construction: the geodesic equation was integrated, and the unit-speed and det Phi = 1 invariants are never re-imposed",
+          "chart": {
+            "samples": 2001,
+            "requested_samples": 2001,
+            "complete": true,
+            "truncated": false,
+            "reason": "",
+            "truncated_at": null,
+            "requested_length": 2.0,
+            "min_conditioning": 1.0,
+            "declared_domain": {
+              "u": [
+                null,
+                null
+              ],
+              "v": [
+                null,
+                null
+              ],
+              "u_period": 6.28318530718,
+              "v_period": null,
+              "u_scale": 1.0,
+              "v_scale": 1.0,
+              "reference_length": 1.0,
+              "note": "u wraps around the axis; v runs along it without bound"
+            }
+          },
+          "geometry": {
+            "samples": 2001,
+            "coordinate_frame": "surface-parameterisation-ambient",
+            "datum_frame": "not-declared",
+            "uncertainty": {
+              "declared": true,
+              "position": 0.0,
+              "normal": 0.0,
+              "curvature": 0.0,
+              "basis": "analytic",
+              "note": "cylinder(R=1) is given in closed form; its geometry carries no reconstruction error"
+            },
+            "orientation_residual": 0.0,
+            "has_geodesic_curvature": false
           },
           "round_trip_error": 0.0
         },
@@ -4141,6 +4958,21 @@
         ],
         "scaled_determinant_error": 3.10862446895e-15,
         "scaled_singular_value_product_error": 3.33066907388e-15,
+        "geometry": {
+          "euler_identity": "kappa_n(along) + kappa_n(across) = 2H",
+          "euler_residual": 1.11022302463e-15,
+          "frame_orientation_residual": 0.0,
+          "max_tangent_norm_error": 2.22044604925e-16,
+          "max_frame_inner_product": 2.22044604925e-16,
+          "normal_curvature_along": {
+            "min": -1.0,
+            "max": -1.0
+          },
+          "normal_curvature_transverse": {
+            "min": -1.0,
+            "max": -1.0
+          }
+        },
         "min_scaled_singular_value_max": 1.0,
         "amplification_score": 1.0,
         "record": {
@@ -4156,7 +4988,20 @@
             "method": "rk4",
             "samples": 2001,
             "max_step": 0.002,
-            "uniform": true
+            "uniform": true,
+            "convergence": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 1.33048956851e-12,
+              "transfer": 4.39529893962e-13,
+              "curvature": 1.30266168223e-15,
+              "focus": 4.19693909256e-13,
+              "covariance": 6.63173220043e-15,
+              "note": "",
+              "established": true,
+              "worst": 1.33048956851e-12
+            }
           },
           "validity": {
             "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
@@ -4202,6 +5047,49 @@
             "reconstruction_version": "",
             "instrument_id": "",
             "note": "no instrument took part in this computation"
+          },
+          "path_type": "geodesic",
+          "path_type_basis": "by construction: the geodesic equation was integrated, and the unit-speed and det Phi = 1 invariants are never re-imposed",
+          "chart": {
+            "samples": 2001,
+            "requested_samples": 2001,
+            "complete": true,
+            "truncated": false,
+            "reason": "",
+            "truncated_at": null,
+            "requested_length": 4.0,
+            "min_conditioning": 0.564642855903,
+            "declared_domain": {
+              "u": [
+                0.0,
+                3.14159265359
+              ],
+              "v": [
+                null,
+                null
+              ],
+              "u_period": null,
+              "v_period": 6.28318530718,
+              "u_scale": 1.0,
+              "v_scale": 1.0,
+              "reference_length": 1.0,
+              "note": "colatitude and longitude; the poles u = 0, pi are chart singularities where the longitude direction collapses"
+            }
+          },
+          "geometry": {
+            "samples": 2001,
+            "coordinate_frame": "surface-parameterisation-ambient",
+            "datum_frame": "not-declared",
+            "uncertainty": {
+              "declared": true,
+              "position": 0.0,
+              "normal": 0.0,
+              "curvature": 0.0,
+              "basis": "analytic",
+              "note": "sphere(R=1) is given in closed form; its geometry carries no reconstruction error"
+            },
+            "orientation_residual": 0.0,
+            "has_geodesic_curvature": false
           },
           "round_trip_error": 0.0
         },
@@ -5329,6 +6217,21 @@
         "lateral_focus_points": [],
         "scaled_determinant_error": 1.95399252334e-14,
         "scaled_singular_value_product_error": 2.16493489802e-14,
+        "geometry": {
+          "euler_identity": "kappa_n(along) + kappa_n(across) = 2H",
+          "euler_residual": 1.33226762955e-15,
+          "frame_orientation_residual": 0.0,
+          "max_tangent_norm_error": 2.22044604925e-16,
+          "max_frame_inner_product": 2.22044604925e-16,
+          "normal_curvature_along": {
+            "min": 0.0299753476087,
+            "max": 3.04681958124
+          },
+          "normal_curvature_transverse": {
+            "min": -0.328210699629,
+            "max": 0.834390730492
+          }
+        },
         "min_scaled_singular_value_max": 1.0,
         "amplification_score": 4.48168907034,
         "record": {
@@ -5344,7 +6247,20 @@
             "method": "rk4",
             "samples": 2001,
             "max_step": 0.00075,
-            "uniform": true
+            "uniform": true,
+            "convergence": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 7.82170134077e-15,
+              "transfer": 8.05281767195e-15,
+              "curvature": 1.42108547152e-15,
+              "focus": null,
+              "covariance": 4.54747350886e-14,
+              "note": "",
+              "established": true,
+              "worst": 4.54747350886e-14
+            }
           },
           "validity": {
             "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
@@ -5390,6 +6306,49 @@
             "reconstruction_version": "",
             "instrument_id": "",
             "note": "no instrument took part in this computation"
+          },
+          "path_type": "geodesic",
+          "path_type_basis": "by construction: the geodesic equation was integrated, and the unit-speed and det Phi = 1 invariants are never re-imposed",
+          "chart": {
+            "samples": 2001,
+            "requested_samples": 2001,
+            "complete": true,
+            "truncated": false,
+            "reason": "",
+            "truncated_at": null,
+            "requested_length": 1.5,
+            "min_conditioning": 0.311844236786,
+            "declared_domain": {
+              "u": [
+                0.05,
+                6.0
+              ],
+              "v": [
+                null,
+                null
+              ],
+              "u_period": null,
+              "v_period": 6.28318530718,
+              "u_scale": 1.0,
+              "v_scale": 1.0,
+              "reference_length": 1.0,
+              "note": "u > 0 strictly: the cusp circle u = 0 is an edge of the surface, and the chart also degenerates as u grows and the tube closes on the axis"
+            }
+          },
+          "geometry": {
+            "samples": 2001,
+            "coordinate_frame": "surface-parameterisation-ambient",
+            "datum_frame": "not-declared",
+            "uncertainty": {
+              "declared": true,
+              "position": 0.0,
+              "normal": 0.0,
+              "curvature": 0.0,
+              "basis": "analytic",
+              "note": "pseudosphere is given in closed form; its geometry carries no reconstruction error"
+            },
+            "orientation_residual": 0.0,
+            "has_geodesic_curvature": false
           },
           "round_trip_error": 0.0
         },
@@ -6517,6 +7476,21 @@
         "lateral_focus_points": [],
         "scaled_determinant_error": 3.33066907388e-15,
         "scaled_singular_value_product_error": 3.5527136788e-15,
+        "geometry": {
+          "euler_identity": "kappa_n(along) + kappa_n(across) = 2H",
+          "euler_residual": 4.02455846427e-16,
+          "frame_orientation_residual": 0.0,
+          "max_tangent_norm_error": 2.22044604925e-16,
+          "max_frame_inner_product": 1.11022302463e-16,
+          "normal_curvature_along": {
+            "min": 0.0268913814524,
+            "max": 0.344863351511
+          },
+          "normal_curvature_transverse": {
+            "min": -0.386488168696,
+            "max": -0.1010183039
+          }
+        },
         "min_scaled_singular_value_max": 1.0,
         "amplification_score": 3.10764131024,
         "record": {
@@ -6532,7 +7506,20 @@
             "method": "rk4",
             "samples": 2001,
             "max_step": 0.001,
-            "uniform": true
+            "uniform": true,
+            "convergence": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 1.31124603661e-14,
+              "transfer": 1.0894988615e-14,
+              "curvature": 1.18423789293e-15,
+              "focus": null,
+              "covariance": 5.30538576034e-14,
+              "note": "",
+              "established": true,
+              "worst": 5.30538576034e-14
+            }
           },
           "validity": {
             "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
@@ -6578,6 +7565,49 @@
             "reconstruction_version": "",
             "instrument_id": "",
             "note": "no instrument took part in this computation"
+          },
+          "path_type": "geodesic",
+          "path_type_basis": "by construction: the geodesic equation was integrated, and the unit-speed and det Phi = 1 invariants are never re-imposed",
+          "chart": {
+            "samples": 2001,
+            "requested_samples": 2001,
+            "complete": true,
+            "truncated": false,
+            "reason": "",
+            "truncated_at": null,
+            "requested_length": 2.0,
+            "min_conditioning": 0.409114053993,
+            "declared_domain": {
+              "u": [
+                null,
+                null
+              ],
+              "v": [
+                null,
+                null
+              ],
+              "u_period": null,
+              "v_period": null,
+              "u_scale": 1.0,
+              "v_scale": 1.0,
+              "reference_length": 1.0,
+              "note": "global: a graph over the whole (u, v) plane"
+            }
+          },
+          "geometry": {
+            "samples": 2001,
+            "coordinate_frame": "surface-parameterisation-ambient",
+            "datum_frame": "not-declared",
+            "uncertainty": {
+              "declared": true,
+              "position": 0.0,
+              "normal": 0.0,
+              "curvature": 0.0,
+              "basis": "analytic",
+              "note": "hyperbolic-paraboloid(a=1) is given in closed form; its geometry carries no reconstruction error"
+            },
+            "orientation_residual": 0.0,
+            "has_geodesic_curvature": false
           },
           "round_trip_error": 0.0
         },
@@ -7705,6 +8735,21 @@
         "lateral_focus_points": [],
         "scaled_determinant_error": 1.11022302463e-15,
         "scaled_singular_value_product_error": 1.44328993201e-15,
+        "geometry": {
+          "euler_identity": "kappa_n(along) + kappa_n(across) = 2H",
+          "euler_residual": 8.881784197e-16,
+          "frame_orientation_residual": 0.0,
+          "max_tangent_norm_error": 2.22044604925e-16,
+          "max_frame_inner_product": 2.08166817117e-16,
+          "normal_curvature_along": {
+            "min": 0.143540768274,
+            "max": 0.784240390944
+          },
+          "normal_curvature_transverse": {
+            "min": 0.538684945181,
+            "max": 0.78493521611
+          }
+        },
         "min_scaled_singular_value_max": 1.0,
         "amplification_score": 1.99166792751,
         "record": {
@@ -7720,7 +8765,20 @@
             "method": "rk4",
             "samples": 2001,
             "max_step": 0.001,
-            "uniform": true
+            "uniform": true,
+            "convergence": {
+              "basis": "step-doubling: rk4 at h and h/2, Richardson-extrapolated at order 4",
+              "order": 4,
+              "refinement": 2,
+              "position": 6.25407680678e-15,
+              "transfer": 7.22385114689e-15,
+              "curvature": 1.53950926081e-15,
+              "focus": null,
+              "covariance": 2.70006239589e-14,
+              "note": "",
+              "established": true,
+              "worst": 2.70006239589e-14
+            }
           },
           "validity": {
             "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
@@ -7766,6 +8824,49 @@
             "reconstruction_version": "",
             "instrument_id": "",
             "note": "no instrument took part in this computation"
+          },
+          "path_type": "geodesic",
+          "path_type_basis": "by construction: the geodesic equation was integrated, and the unit-speed and det Phi = 1 invariants are never re-imposed",
+          "chart": {
+            "samples": 2001,
+            "requested_samples": 2001,
+            "complete": true,
+            "truncated": false,
+            "reason": "",
+            "truncated_at": null,
+            "requested_length": 2.0,
+            "min_conditioning": 1.0,
+            "declared_domain": {
+              "u": [
+                null,
+                null
+              ],
+              "v": [
+                null,
+                null
+              ],
+              "u_period": 6.28318530718,
+              "v_period": 6.28318530718,
+              "u_scale": 1.0,
+              "v_scale": 1.0,
+              "reference_length": 1.0,
+              "note": "both angles wrap; the chart is regular everywhere for R > r"
+            }
+          },
+          "geometry": {
+            "samples": 2001,
+            "coordinate_frame": "surface-parameterisation-ambient",
+            "datum_frame": "not-declared",
+            "uncertainty": {
+              "declared": true,
+              "position": 0.0,
+              "normal": 0.0,
+              "curvature": 0.0,
+              "basis": "analytic",
+              "note": "torus(R=2, r=1) is given in closed form; its geometry carries no reconstruction error"
+            },
+            "orientation_residual": 0.0,
+            "has_geodesic_curvature": false
           },
           "round_trip_error": 0.0
         },
@@ -12570,6 +13671,150 @@
       "passed": true
     },
     {
+      "id": "budget-order/spherical-cap",
+      "statement": "the step-doubling error budget itself falls as h^4, so it is measuring the truncation error of a fourth-order method rather than something else",
+      "value": 0.00335189514675,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-estimate-matches-the-truth/spherical-cap",
+      "statement": "where a closed form leaves a truncation error to resolve, the estimate reproduces the actual error -- an error estimate that understates the error is worse than none, because it is acted on",
+      "value": 0.000208779996566,
+      "threshold": 0.02,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-order/pseudosphere",
+      "statement": "the step-doubling error budget itself falls as h^4, so it is measuring the truncation error of a fourth-order method rather than something else",
+      "value": 0.00137265662015,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-estimate-matches-the-truth/pseudosphere",
+      "statement": "where a closed form leaves a truncation error to resolve, the estimate reproduces the actual error -- an error estimate that understates the error is worse than none, because it is acted on",
+      "value": 0.000234168674952,
+      "threshold": 0.02,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-order/saddle",
+      "statement": "the step-doubling error budget itself falls as h^4, so it is measuring the truncation error of a fourth-order method rather than something else",
+      "value": 0.00138722616261,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "budget-order/torus",
+      "statement": "the step-doubling error budget itself falls as h^4, so it is measuring the truncation error of a fourth-order method rather than something else",
+      "value": 0.0106404801997,
+      "threshold": 0.15,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "jet-step-foci-are-stable/plate",
+      "statement": "every differencing step in the sweep finds the same number of foci: the jet's step may cost accuracy, and it may not invent or erase a conjugate point",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "jet-step-foci-are-stable/rolled-sheet",
+      "statement": "every differencing step in the sweep finds the same number of foci: the jet's step may cost accuracy, and it may not invent or erase a conjugate point",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "jet-step-foci-are-stable/spherical-cap",
+      "statement": "every differencing step in the sweep finds the same number of foci: the jet's step may cost accuracy, and it may not invent or erase a conjugate point",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "jet-step-default-is-at-the-good-end/spherical-cap",
+      "statement": "the declared relative step is within 1e-3 of the worst step in the sweep, on every surface -- a default cannot be optimal everywhere, but it must not be arbitrary",
+      "value": 0.000100120918934,
+      "threshold": 0.001,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "jet-step-foci-are-stable/pseudosphere",
+      "statement": "every differencing step in the sweep finds the same number of foci: the jet's step may cost accuracy, and it may not invent or erase a conjugate point",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "jet-step-default-is-at-the-good-end/pseudosphere",
+      "statement": "the declared relative step is within 1e-3 of the worst step in the sweep, on every surface -- a default cannot be optimal everywhere, but it must not be arbitrary",
+      "value": 9.76141835653e-05,
+      "threshold": 0.001,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "jet-step-foci-are-stable/saddle",
+      "statement": "every differencing step in the sweep finds the same number of foci: the jet's step may cost accuracy, and it may not invent or erase a conjugate point",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "jet-step-default-is-at-the-good-end/saddle",
+      "statement": "the declared relative step is within 1e-3 of the worst step in the sweep, on every surface -- a default cannot be optimal everywhere, but it must not be arbitrary",
+      "value": 7.57323581496e-05,
+      "threshold": 0.001,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "jet-step-foci-are-stable/torus",
+      "statement": "every differencing step in the sweep finds the same number of foci: the jet's step may cost accuracy, and it may not invent or erase a conjugate point",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "jet-step-default-is-at-the-good-end/torus",
+      "statement": "the declared relative step is within 1e-3 of the worst step in the sweep, on every surface -- a default cannot be optimal everywhere, but it must not be arbitrary",
+      "value": 8.83868847713e-05,
+      "threshold": 0.001,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-euler-identity/plate",
+      "statement": "the two normal curvatures the record carries sum to 2H, tying the frame it publishes to the surface it claims to be on",
+      "value": 0.0,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-frame-is-orthonormal/plate",
+      "statement": "the carried frame is a right-handed Darboux triad: transverse = normal x tangent, and the three are orthonormal",
+      "value": 0.0,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
       "id": "surface-no-free-robustness/plate",
       "statement": "conjugating by the tolerance box leaves det Phi = 1, so no path contracts every starting-pose error at once -- checked as the determinant itself, not as a product of singular values",
       "value": 0.0,
@@ -12590,6 +13835,22 @@
       "statement": "the path presents itself as a transfer record that reproduces its own arrays and declares units, resolution and observation mode",
       "value": 0.0,
       "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-euler-identity/rolled-sheet",
+      "statement": "the two normal curvatures the record carries sum to 2H, tying the frame it publishes to the surface it claims to be on",
+      "value": 4.4408920985e-16,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-frame-is-orthonormal/rolled-sheet",
+      "statement": "the carried frame is a right-handed Darboux triad: transverse = normal x tangent, and the three are orthonormal",
+      "value": 1.11022302463e-16,
+      "threshold": 1e-12,
       "comparison": "<=",
       "passed": true
     },
@@ -12618,6 +13879,22 @@
       "passed": true
     },
     {
+      "id": "surface-euler-identity/spherical-cap",
+      "statement": "the two normal curvatures the record carries sum to 2H, tying the frame it publishes to the surface it claims to be on",
+      "value": 1.11022302463e-15,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-frame-is-orthonormal/spherical-cap",
+      "statement": "the carried frame is a right-handed Darboux triad: transverse = normal x tangent, and the three are orthonormal",
+      "value": 2.22044604925e-16,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
       "id": "surface-no-free-robustness/spherical-cap",
       "statement": "conjugating by the tolerance box leaves det Phi = 1, so no path contracts every starting-pose error at once -- checked as the determinant itself, not as a product of singular values",
       "value": 3.10862446895e-15,
@@ -12638,6 +13915,22 @@
       "statement": "the path presents itself as a transfer record that reproduces its own arrays and declares units, resolution and observation mode",
       "value": 0.0,
       "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-euler-identity/pseudosphere",
+      "statement": "the two normal curvatures the record carries sum to 2H, tying the frame it publishes to the surface it claims to be on",
+      "value": 1.33226762955e-15,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-frame-is-orthonormal/pseudosphere",
+      "statement": "the carried frame is a right-handed Darboux triad: transverse = normal x tangent, and the three are orthonormal",
+      "value": 2.22044604925e-16,
+      "threshold": 1e-12,
       "comparison": "<=",
       "passed": true
     },
@@ -12666,6 +13959,22 @@
       "passed": true
     },
     {
+      "id": "surface-euler-identity/saddle",
+      "statement": "the two normal curvatures the record carries sum to 2H, tying the frame it publishes to the surface it claims to be on",
+      "value": 4.02455846427e-16,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-frame-is-orthonormal/saddle",
+      "statement": "the carried frame is a right-handed Darboux triad: transverse = normal x tangent, and the three are orthonormal",
+      "value": 2.22044604925e-16,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
       "id": "surface-no-free-robustness/saddle",
       "statement": "conjugating by the tolerance box leaves det Phi = 1, so no path contracts every starting-pose error at once -- checked as the determinant itself, not as a product of singular values",
       "value": 3.33066907388e-15,
@@ -12686,6 +13995,22 @@
       "statement": "the path presents itself as a transfer record that reproduces its own arrays and declares units, resolution and observation mode",
       "value": 0.0,
       "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-euler-identity/torus",
+      "statement": "the two normal curvatures the record carries sum to 2H, tying the frame it publishes to the surface it claims to be on",
+      "value": 8.881784197e-16,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-frame-is-orthonormal/torus",
+      "statement": "the carried frame is a right-handed Darboux triad: transverse = normal x tangent, and the three are orthonormal",
+      "value": 2.22044604925e-16,
+      "threshold": 1e-12,
       "comparison": "<=",
       "passed": true
     },
@@ -12891,12 +14216,12 @@
     }
   ],
   "summary": {
-    "n_checks": 101,
+    "n_checks": 129,
     "n_failed": 0,
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "ca79785d70bf8c8c1b86f3f99fae11369c691d6533a21f636ce36166310bbdb5",
+  "content_hash": "ac49f53d2e166825d7b0a690d07dcf7dc76647cf6130786cd97c9948f4ee5c0a",
   "environment": {
     "package_version": "0.2.0",
     "python": "3.11.15",

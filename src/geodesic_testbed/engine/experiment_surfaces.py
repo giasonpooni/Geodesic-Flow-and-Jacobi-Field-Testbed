@@ -49,6 +49,7 @@ from .. import __version__
 from .analysis import fit_power_law, successive_orders
 from .envelope import (
     PathEnvelope,
+    estimate_convergence,
     finite_difference_jacobi,
     finite_difference_lateral,
     integrate_path,
@@ -141,6 +142,16 @@ class SurfaceConfig:
     two_route_steps: int = 1000
     fit_floor: float = 1e-8
     fit_ceiling: float = 1e-3
+
+    #: Two resolutions, four times apart, so that the error budget's own order
+    #: can be read off it: a budget that does not fall as h^4 is not measuring
+    #: the truncation error of a fourth-order method.
+    budget_step_counts: tuple[int, ...] = (160, 640)
+    #: Below this a "true error" is the reference's own accumulated rounding,
+    #: and comparing an estimate against it compares two pieces of noise.
+    budget_roundoff_floor: float = 1e-12
+    jet_sensitivity_steps: int = 400
+    jet_relative_steps: tuple[float, ...] = (1e-2, 1e-3, 1e-4, 1e-5, 1e-6)
 
     transverse_tolerances: tuple[float, ...] = (1e-3, 1e-2)
     heading_scan_count: int = 24
@@ -452,6 +463,201 @@ def measure_self_convergence(config: SurfaceConfig, cases) -> list[dict[str, Any
 # ---------------------------------------------------------------------------
 # 4. the cost of not supplying analytic derivatives
 # ---------------------------------------------------------------------------
+def measure_error_budget(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
+    """A path-level error budget: what the step costs, per quantity, per case.
+
+    Two things are measured, and the second is what makes the first evidence.
+
+    **The budget.** ``estimate_convergence`` halves the step and Richardson
+    -extrapolates at the method's order, giving an absolute error estimate for
+    position, the transfer map, the curvature, the focus location and the
+    propagated covariance -- separately, because they do not converge together.
+
+    **Whether the budget is true.** Three of these cases have a closed form for
+    ``b(s)``, so the actual error is available and the estimate can be checked
+    against it rather than trusted. An error estimate that understates the
+    error is worse than no estimate, because it is acted on.
+
+    The comparison is only meaningful where there is a truncation error to
+    resolve: on the plate and the rolled sheet, ``b(s) = s`` is reproduced to
+    roundoff at every step size, so both the estimate and the truth are
+    1e-14-sized and their ratio is a ratio of noise. Those cases are reported
+    with ``resolved: false`` and carry no check, which is the same discipline
+    the convergence sweeps use for an exact method.
+    """
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        entries = []
+        for n_steps in config.budget_step_counts:
+            envelope = integrate_path(
+                case.surface,
+                u0=case.u0,
+                v0=case.v0,
+                heading=case.heading,
+                length=case.length,
+                n_steps=n_steps,
+            )
+            estimate = estimate_convergence(envelope)
+            exact = case.closed_form(envelope.arc_length)
+            truth = (
+                None
+                if exact is None
+                else float(np.max(np.abs(envelope.jacobi_field - exact)))
+            )
+            # Below this the "true error" is the accumulated rounding of the
+            # reference itself, so the ratio compares two pieces of noise.
+            resolved = truth is not None and truth > config.budget_roundoff_floor
+            entries.append(
+                {
+                    "n_steps": int(n_steps),
+                    "step": float(case.length) / n_steps,
+                    "estimate": estimate.to_dict(),
+                    "true_transfer_error": truth,
+                    "resolved": bool(resolved),
+                    "estimate_over_truth": (
+                        float(estimate.transfer / truth) if resolved else None
+                    ),
+                }
+            )
+        coarse, fine = entries[0], entries[-1]
+        refinement = fine["n_steps"] / coarse["n_steps"]
+        observed_order = None
+        if coarse["estimate"]["transfer"] and fine["estimate"]["transfer"]:
+            ratio = coarse["estimate"]["transfer"] / fine["estimate"]["transfer"]
+            if ratio > 1.0:
+                observed_order = float(np.log(ratio) / np.log(refinement))
+        rows.append(
+            {
+                "case": case.key,
+                "surface": case.surface.name,
+                "reference": case.reference,
+                "method": "rk4",
+                "declared_order": 4,
+                "refinement_between_levels": float(refinement),
+                "observed_order": observed_order,
+                "any_resolved": any(entry["resolved"] for entry in entries),
+                "worst_estimate_over_truth": max(
+                    (
+                        abs(entry["estimate_over_truth"] - 1.0)
+                        for entry in entries
+                        if entry["estimate_over_truth"] is not None
+                    ),
+                    default=None,
+                ),
+                "levels": entries,
+            }
+        )
+    return rows
+
+
+def measure_jet_step_sensitivity(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
+    """What the finite-difference jet's step size costs *along a whole path*.
+
+    ``derivative_convergence`` asks whether the jet at one point converges as
+    the differencing step shrinks. That is necessary and it is not the budget:
+    a jet error enters the geodesic equation at every step, and what a consumer
+    needs to know is what it does to the path, to ``Phi``, to the curvature and
+    to the focus after the whole integration.
+
+    So the same path is flowed with the analytic jet and with the fallback at a
+    range of relative steps, and the differences are reported per quantity. The
+    curve has the shape every finite difference has -- truncation falling as
+    the step shrinks, cancellation rising as it shrinks further -- and the
+    interesting number is the best any step achieves, because that is the floor
+    on a surface that has no analytic jet at all.
+    """
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        if _uses_finite_differences(case.surface):
+            continue
+        analytic = integrate_path(
+            case.surface, u0=case.u0, v0=case.v0, heading=case.heading,
+            length=case.length, n_steps=config.jet_sensitivity_steps,
+        )
+        focus = analytic.focus_points()
+        levels = []
+        for relative_step in config.jet_relative_steps:
+            numeric = integrate_path(
+                replace(case.surface, jet=None, fd_relative_step=float(relative_step)),
+                u0=case.u0, v0=case.v0, heading=case.heading,
+                length=case.length, n_steps=config.jet_sensitivity_steps,
+            )
+            numeric_focus = numeric.focus_points()
+            levels.append(
+                {
+                    "fd_relative_step": float(relative_step),
+                    "position": float(
+                        np.max(np.linalg.norm(analytic.points - numeric.points, axis=-1))
+                    ),
+                    "transfer": float(
+                        max(
+                            np.max(np.abs(analytic.lateral_basis - numeric.lateral_basis)),
+                            np.max(np.abs(analytic.lateral_rate - numeric.lateral_rate)),
+                            np.max(np.abs(analytic.jacobi_field - numeric.jacobi_field)),
+                            np.max(
+                                np.abs(
+                                    analytic.jacobi_derivative - numeric.jacobi_derivative
+                                )
+                            ),
+                        )
+                    ),
+                    "curvature": float(
+                        np.max(np.abs(analytic.curvature - numeric.curvature))
+                    ),
+                    "focus": (
+                        abs(focus[0] - numeric_focus[0])
+                        if focus and numeric_focus
+                        else None
+                    ),
+                    "found_the_same_number_of_foci": len(focus) == len(numeric_focus),
+                }
+            )
+        best = min(levels, key=lambda level: level["transfer"])
+        worst = max(levels, key=lambda level: level["transfer"])
+        default = min(
+            levels,
+            key=lambda level: abs(
+                level["fd_relative_step"] - float(case.surface.fd_relative_step)
+            ),
+        )
+        rows.append(
+            {
+                "case": case.key,
+                "surface": case.surface.name,
+                "n_steps": int(config.jet_sensitivity_steps),
+                "default_relative_step": float(case.surface.fd_relative_step),
+                "best_relative_step": best["fd_relative_step"],
+                "best_transfer_error": best["transfer"],
+                "worst_transfer_error": worst["transfer"],
+                "default_transfer_error": default["transfer"],
+                #: How much the declared default gives away against the best
+                #: step for this surface. A default cannot be optimal for every
+                #: surface; what it must not be is arbitrary, and this is the
+                #: number that says which.
+                "default_over_best": (
+                    float(default["transfer"] / best["transfer"])
+                    if best["transfer"] > 0.0
+                    else None
+                ),
+                "default_over_worst": (
+                    float(default["transfer"] / worst["transfer"])
+                    if worst["transfer"] > 0.0
+                    else None
+                ),
+                "spread_factor": (
+                    float(worst["transfer"] / best["transfer"])
+                    if best["transfer"] > 0.0
+                    else None
+                ),
+                "every_step_found_the_same_foci": all(
+                    level["found_the_same_number_of_foci"] for level in levels
+                ),
+                "levels": levels,
+            }
+        )
+    return rows
+
+
 def measure_finite_difference_cost(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for case in cases:
@@ -517,7 +723,12 @@ def build_envelopes(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
         )
         summary["max_lateral_amplification"] = float(np.max(np.abs(envelope.lateral_basis)))
         summary["lateral_focus_points"] = envelope.transfer_map.focus_points(component="a")
-        record = envelope.as_transfer_record()
+        # The record carries its own error budget, because a consumer deciding
+        # whether a focus at s = 3.1416 is located well enough to plan against
+        # needs the error and not the step size it came from.
+        record = envelope.as_transfer_record(
+            convergence=estimate_convergence(envelope)
+        )
         singular = record.scaled_singular_values(
             config.route_tolerance_lateral, config.route_tolerance_heading
         )
@@ -538,6 +749,47 @@ def build_envelopes(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
         summary["scaled_singular_value_product_error"] = float(
             np.max(np.abs(singular[:, 0] * singular[:, 1] - 1.0))
         )
+
+        # The path geometry the record now carries, checked rather than added.
+        # Euler's theorem: the normal curvatures in any two orthogonal tangent
+        # directions sum to twice the mean curvature. H comes from the second
+        # fundamental form directly and the two kappa_n from the Darboux frame
+        # along the flowed path, so the identity ties the frame the record
+        # publishes to the surface it claims to be on -- on every surface, with
+        # no closed form required.
+        geometry = envelope.path_geometry()
+        mean = np.asarray(case.surface.mean_curvature(envelope.u, envelope.v), dtype=float)
+        summary["geometry"] = {
+            "euler_identity": "kappa_n(along) + kappa_n(across) = 2H",
+            "euler_residual": float(
+                np.max(
+                    np.abs(
+                        geometry.normal_curvature_along
+                        + geometry.normal_curvature_transverse
+                        - 2.0 * mean
+                    )
+                )
+            ),
+            "frame_orientation_residual": geometry.orientation_residual(),
+            "max_tangent_norm_error": float(
+                np.max(np.abs(np.linalg.norm(geometry.tangent, axis=-1) - 1.0))
+            ),
+            "max_frame_inner_product": float(
+                np.max(
+                    np.abs(
+                        np.einsum("ij,ij->i", geometry.tangent, geometry.surface_normal)
+                    )
+                )
+            ),
+            "normal_curvature_along": {
+                "min": float(np.min(geometry.normal_curvature_along)),
+                "max": float(np.max(geometry.normal_curvature_along)),
+            },
+            "normal_curvature_transverse": {
+                "min": float(np.min(geometry.normal_curvature_transverse)),
+                "max": float(np.max(geometry.normal_curvature_transverse)),
+            },
+        }
         summary["min_scaled_singular_value_max"] = float(np.min(singular[:, 0]))
         summary["amplification_score"] = float(np.max(singular[:, 0]))
         summary["record"] = record.to_dict(include_samples=False) | {
@@ -1153,7 +1405,77 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
         )
     )
 
+    for row in results["error_budget"]:
+        if row["observed_order"] is not None:
+            checks.append(
+                _check(
+                    f"budget-order/{row['case']}",
+                    "the step-doubling error budget itself falls as h^4, so it is "
+                    "measuring the truncation error of a fourth-order method rather "
+                    "than something else",
+                    abs(row["observed_order"] - row["declared_order"]),
+                    0.15,
+                )
+            )
+        if row["worst_estimate_over_truth"] is not None:
+            checks.append(
+                _check(
+                    f"budget-estimate-matches-the-truth/{row['case']}",
+                    "where a closed form leaves a truncation error to resolve, the "
+                    "estimate reproduces the actual error -- an error estimate that "
+                    "understates the error is worse than none, because it is acted on",
+                    row["worst_estimate_over_truth"],
+                    0.02,
+                )
+            )
+
+    for row in results["jet_step_sensitivity"]:
+        checks.append(
+            _check(
+                f"jet-step-foci-are-stable/{row['case']}",
+                "every differencing step in the sweep finds the same number of foci: "
+                "the jet's step may cost accuracy, and it may not invent or erase a "
+                "conjugate point",
+                0.0 if row["every_step_found_the_same_foci"] else 1.0,
+                0.0,
+            )
+        )
+        if row["default_over_worst"] is not None:
+            checks.append(
+                _check(
+                    f"jet-step-default-is-at-the-good-end/{row['case']}",
+                    "the declared relative step is within 1e-3 of the worst step in "
+                    "the sweep, on every surface -- a default cannot be optimal "
+                    "everywhere, but it must not be arbitrary",
+                    row["default_over_worst"],
+                    1e-3,
+                )
+            )
+
     for row in results["envelopes"]:
+        geometry = row["geometry"]
+        checks.append(
+            _check(
+                f"surface-euler-identity/{row['case']}",
+                "the two normal curvatures the record carries sum to 2H, tying the "
+                "frame it publishes to the surface it claims to be on",
+                geometry["euler_residual"],
+                1e-12,
+            )
+        )
+        checks.append(
+            _check(
+                f"surface-frame-is-orthonormal/{row['case']}",
+                "the carried frame is a right-handed Darboux triad: "
+                "transverse = normal x tangent, and the three are orthonormal",
+                max(
+                    geometry["frame_orientation_residual"],
+                    geometry["max_tangent_norm_error"],
+                    geometry["max_frame_inner_product"],
+                ),
+                1e-12,
+            )
+        )
         checks.append(
             _check(
                 f"surface-no-free-robustness/{row['case']}",
@@ -1400,6 +1722,8 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
         "lateral_route": compare_lateral_route(config, cases),
         "self_convergence": measure_self_convergence(config, cases),
         "finite_difference_cost": measure_finite_difference_cost(config, cases),
+        "error_budget": measure_error_budget(config, cases),
+        "jet_step_sensitivity": measure_jet_step_sensitivity(config, cases),
         "envelopes": build_envelopes(config, cases),
         "chart_rescaling_invariance": measure_chart_rescaling_invariance(cases),
         "focus_versus_resolvability": measure_focus_versus_resolvability(config, cases),
@@ -1411,6 +1735,16 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
             "schema": REPORT_SCHEMA,
             "supersedes": SUPERSEDES,
             "schema_changes": [
+                "adds results.error_budget: a per-quantity step-doubling error "
+                "estimate, checked against the closed forms where one exists",
+                "adds results.jet_step_sensitivity: what the finite-difference "
+                "jet's relative step costs along a whole path, not at one point",
+                "envelopes: adds the path geometry the record now carries -- the "
+                "Darboux frame as vectors and both normal curvatures -- checked "
+                "against Euler's theorem on every surface",
+                "envelopes.record: now the full v2 contract, carrying the path "
+                "geometry, the chart validity, the path type and the convergence "
+                "estimate alongside the transfer map",
                 "heading_scan.route_selection: routes are chosen by declared process "
                 "limits and a sensor acquisition schedule, not by a threshold on |b|",
                 "envelopes: adds chart validity, the transfer record, and the "

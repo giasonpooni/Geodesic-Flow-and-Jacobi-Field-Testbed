@@ -27,6 +27,8 @@ from geodesic_testbed.boundary import (
     RUNTIME_VERSION,
     SUBSTRATE,
     CalibrationBinding,
+    ConvergenceEstimate,
+    GeometryUncertainty,
     Provenance,
     StartingCovariance,
     TransferRecord,
@@ -35,7 +37,7 @@ from geodesic_testbed.boundary import (
     read_record,
     write_record,
 )
-from geodesic_testbed.engine.envelope import integrate_path
+from geodesic_testbed.engine.envelope import estimate_convergence, integrate_path
 from geodesic_testbed.engine.record import RECORD_SCHEMA, SUPPORTED_RECORD_SCHEMAS
 from geodesic_testbed.engine.surfaces import torus
 
@@ -304,3 +306,149 @@ def test_a_record_from_geometry_alone_declares_no_instrument() -> None:
         assert not record.calibration.bound
         assert not record.covariance.declared
         assert record.provenance.producer_version == RUNTIME_VERSION
+
+
+# -- the path the record describes ----------------------------------------
+
+
+def test_the_record_carries_the_path_and_not_only_the_map() -> None:
+    """A consumer that must point at the path cannot recompute it."""
+    record = _surface_record()
+    geometry = record.geometry
+    assert geometry is not None
+    assert geometry.samples == record.arclength.size
+    assert geometry.position.shape == (record.arclength.size, 3)
+    for name in ("tangent", "transverse", "surface_normal"):
+        vectors = getattr(geometry, name)
+        assert np.allclose(np.linalg.norm(vectors, axis=-1), 1.0, atol=1e-12)
+
+
+def test_the_frame_is_carried_as_vectors_so_the_frame_name_can_be_checked() -> None:
+    """``frame`` says parallel-transported; these are what it actually is."""
+    geometry = _surface_record().geometry
+    assert geometry.orientation_residual() < 1e-12
+    for left, right in (
+        ("tangent", "surface_normal"),
+        ("tangent", "transverse"),
+        ("transverse", "surface_normal"),
+    ):
+        products = np.einsum(
+            "ij,ij->i", getattr(geometry, left), getattr(geometry, right)
+        )
+        assert np.max(np.abs(products)) < 1e-12
+
+
+def test_both_normal_curvatures_are_carried_and_satisfy_eulers_theorem() -> None:
+    """Two quantities both called kappa_n, and only one sets the chord shortfall."""
+    envelope = integrate_path(
+        torus(2.0, 1.0), u0=0.3, v0=0.2, heading=0.6, length=2.0, n_steps=400
+    )
+    geometry = envelope.as_transfer_record().geometry
+    mean = np.asarray(envelope.surface.mean_curvature(envelope.u, envelope.v), dtype=float)
+    assert np.allclose(
+        geometry.normal_curvature_along + geometry.normal_curvature_transverse,
+        2.0 * mean,
+        atol=1e-12,
+    )
+    assert not np.allclose(
+        geometry.normal_curvature_along, geometry.normal_curvature_transverse
+    )
+
+
+def test_a_curvature_profile_declares_no_geometry_and_no_chart() -> None:
+    """Both absences are the right answer: a profile is not an embedding."""
+    record = _record()
+    assert record.geometry is None
+    assert record.chart is None
+    assert record.path_type == "geodesic"
+    assert "K(s) is given as the curvature along a geodesic" in record.path_type_basis
+
+
+def test_a_truncated_path_says_it_is_shorter_than_the_one_requested() -> None:
+    """A route that ends because the chart ran out is not a route that finished."""
+    from geodesic_testbed.engine.surfaces import pseudosphere
+
+    record = integrate_path(
+        pseudosphere(), u0=0.6, v0=0.0, heading=1.2, length=6.0, n_steps=600
+    ).as_transfer_record()
+    chart = record.chart
+    assert chart.truncated is True
+    assert chart.complete is False
+    assert chart.samples < chart.requested_samples
+    assert chart.requested_length == 6.0
+    assert chart.reason
+    assert int(chart.mask().sum()) == chart.samples
+
+
+def test_the_geometry_and_the_transfer_map_must_be_the_same_path() -> None:
+    record = _surface_record()
+    fields = {
+        name: getattr(record, name)[:-1]
+        for name in ("arclength", "gaussian_curvature", "a", "a_rate", "b", "b_rate")
+    }
+    with pytest.raises(ValueError, match="the same record"):
+        TransferRecord(**fields, domain="parametric-surface",
+                       observation_mode="ambient-euclidean-chord",
+                       geometry=record.geometry)
+
+
+def test_geometry_from_a_formula_declares_zero_uncertainty_and_means_it() -> None:
+    """``analytic`` is a stronger statement than ``not-declared``, not a synonym."""
+    uncertainty = _surface_record().geometry.uncertainty
+    assert uncertainty.declared
+    assert uncertainty.basis == "analytic"
+    assert uncertainty.position == 0.0
+
+
+def test_a_geometry_uncertainty_can_be_attached_later() -> None:
+    """How well a surface is known belongs to whoever measured it."""
+    record = _surface_record().with_geometry_uncertainty(
+        GeometryUncertainty(
+            position=0.015, normal=1.0e-4, curvature=2.0e-3,
+            basis="as-built-scan", note="coupon 4, scan 2026-03-11",
+        )
+    )
+    assert record.geometry.uncertainty.basis == "as-built-scan"
+    assert record.geometry.uncertainty.position == 0.015
+    with pytest.raises(ValueError, match="carries no geometry"):
+        _record().with_geometry_uncertainty(GeometryUncertainty.analytic())
+
+
+def test_a_record_with_geometry_survives_the_round_trip(tmp_path) -> None:
+    record = _surface_record()
+    restored = read_record(write_record(record, tmp_path / "geometry.json"))
+    for name in (
+        "position", "tangent", "transverse", "surface_normal",
+        "normal_curvature_along", "normal_curvature_transverse",
+    ):
+        assert np.array_equal(
+            getattr(restored.geometry, name), getattr(record.geometry, name)
+        )
+    assert restored.chart.to_dict() == record.chart.to_dict()
+    assert restored.path_type == record.path_type
+
+
+def test_the_record_carries_what_the_solve_cost_per_quantity() -> None:
+    """An order is a statement about the limit; this is about the run in hand."""
+    envelope = integrate_path(
+        torus(2.0, 1.0), u0=0.3, v0=0.2, heading=0.6, length=2.0, n_steps=400
+    )
+    bare = envelope.as_transfer_record()
+    assert not bare.resolution.convergence.established
+
+    measured = envelope.as_transfer_record(convergence=estimate_convergence(envelope))
+    convergence = measured.resolution.convergence
+    assert convergence.established
+    assert convergence.order == 4
+    for name in ("position", "transfer", "curvature", "covariance"):
+        assert getattr(convergence, name) is not None
+        assert getattr(convergence, name) >= 0.0
+    assert convergence.worst == max(
+        convergence.position, convergence.transfer,
+        convergence.curvature, convergence.covariance,
+    )
+
+
+def test_an_unestablished_convergence_may_not_carry_numbers() -> None:
+    with pytest.raises(ValueError, match="not-established"):
+        ConvergenceEstimate(transfer=1e-9)

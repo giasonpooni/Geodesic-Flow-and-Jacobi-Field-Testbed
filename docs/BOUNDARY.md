@@ -37,31 +37,69 @@ it back.
 ## What the record carries
 
 A boundary is worth having only if it is **narrow** and **complete**. Complete
-means a consumer never has to infer anything about the numbers it received.
-These are the seven things that cannot be reconstructed from the samples, so
-they travel with them.
+means a consumer never has to infer anything about the numbers it received, and
+never has to reach back into the runtime to get something the runtime already
+knew.
+
+### What the map means
 
 | field | why it cannot be inferred |
 |---|---|
 | `units` | A tolerance in millimetres against a record in metres is a thousandfold error that agrees in shape. `PathTolerance` and `compare` both check it. |
 | `frame` | Two correct records in different frames differ by a rotation neither can see. Only registered frames are accepted; an unknown one is refused at construction. |
 | `arclength` | The grid itself, strictly increasing, carried as a vector rather than a start/stop/count triple: a non-uniform grid is legal, and a resampled one is a different record. `record.grid` summarises it; the vector stays authoritative. |
+| `observation_mode` | An in-surface distance and an ambient chord differ at the order the campaign is trying to resolve, so an untagged comparison is not evidence. Checked **against the domain**: the pair is what can be false. |
+| `path_type` | `j'' + K j = 0` has no first-derivative term *because* the curve is a geodesic. A record that says `non-geodesic` is telling a consumer its map was computed under an assumption the path does not satisfy. |
+
+### Where the path is
+
+`geometry` carries the path itself, and a consumer that must point an
+instrument at it, register a measurement to it, or turn a transverse deviation
+into a coordinate cannot recompute it without carrying this runtime's solver.
+
+| field | what it is |
+|---|---|
+| `position` | `(n, 3)` ambient points. |
+| `tangent`, `transverse`, `surface_normal` | The Darboux triad at every sample, as **vectors**. `frame` says the transverse direction is parallel-transported; these are what it actually is, so the claim can be checked rather than trusted. `transverse = normal × tangent` fixes the handedness — a frame right in every respect but orientation flips the sign of every heading error it carries. |
+| `normal_curvature_along` | How the surface bends in the direction of travel. |
+| `normal_curvature_transverse` | The one that sets how far an ambient chord falls short of an in-surface separation — the `kappa_n^2 sn_K(s)^2` term — so the one a comparison against reconstructed 3-D points needs. Both are called `kappa_n` in the literature, which is why both are named here. |
+| `coordinate_frame`, `datum_frame` | What the positions are expressed in, and what the part is fixtured against. |
+| `uncertainty` | How well the surface and the path are known: position, normal and curvature sigmas, with a basis. `analytic` — zero, and meant — is a stronger statement than `not-declared`. |
+
+The triad is checked on construction: unit norms, mutual orthogonality, and
+`normal × tangent` reproducing the carried transverse direction. The surfaces
+experiment checks it further, against **Euler's theorem** — the normal
+curvatures in any two orthogonal tangent directions sum to `2H` — on every
+surface, to machine precision, which ties the frame the record publishes to the
+surface it claims to be on with no closed form required.
+
+`geometry` is `None` for a record built from a declared curvature profile, and
+correctly so: a profile is not an embedding, so there are no points to sample
+and no ambient frame to write down.
+
+### How well it was solved, and how far it got
+
+| field | why it cannot be inferred |
+|---|---|
+| `resolution` | Method, samples, step — and `convergence`, a per-quantity step-doubling error estimate. "rk4 at h = 0.005" is a recipe; a consumer deciding whether a focus at `s = 3.1416` is good enough to plan against needs the error. Reported separately for position, transfer, curvature, focus and covariance, because they do not converge together. `not-established` is the default, because the estimate costs a second integration and a producer that did not pay for it must not appear to have. |
+| `validity` | The perturbation range over which the linear map is declared to hold, and **on what basis**: a bound measured against an exact separation is a different claim from one a caller asserted. |
+| `chart` | How much of the *requested* path the parameterisation could carry. A record never holds an invalid sample, so this is not a mask over the samples in hand — it is the other half of the story, that the path is shorter than the one asked for and why. A consumer asking whether a route covers a part has to tell a route that ended because it finished from one that ended because the chart ran out. |
+
+### Who made it, from what, under what
+
+| field | why it cannot be inferred |
+|---|---|
 | `covariance` | `C0`, the starting-pose distribution. The runtime can propagate one and cannot know one. |
-| `provenance` | Producer, producer version, and the upstream artefacts the path came from. A prediction that cannot be traced to its geometry cannot be re-derived when that geometry turns out to be wrong. |
+| `provenance` | Producer, producer version, and the upstream artefacts the path came from, each with a `kind` from `ARTEFACT_KINDS` — `cad-model`, `as-built-scan`, `mesh`, `path-artefact`. A prediction that cannot be traced to its geometry cannot be re-derived when that geometry turns out to be wrong. |
 | `calibration` | Opaque identifiers, carried and never interpreted here. |
-| `observation_mode` | An in-surface distance and an ambient chord differ at the order the campaign is trying to resolve, so an untagged comparison is not evidence. |
 
-Alongside them the record carries `resolution` (method, samples, step) and
-`validity` (the perturbation range over which the linear map is declared to
-hold, and **on what basis**), because "rk4" alone does not say whether a focus
-is located to 1e-3 or 1e-12, and a bound measured against an exact separation
-is a different claim from one a caller asserted.
+### The fields that are allowed to say *no*
 
-### Three fields that are allowed to say *no*
-
-`covariance`, `calibration` and `validity` each have an undeclared state, and
-each undeclared state is the honest default for a record computed from an
-analytic surface. Nothing was calibrated, so nothing claims to be.
+`covariance`, `calibration`, `validity`, `convergence` and the geometry's
+`uncertainty` each have an undeclared state, and each undeclared state is the
+honest default for a record computed from an analytic surface. Nothing was
+calibrated, so nothing claims to be. No step-doubling run was paid for, so no
+error budget is claimed.
 
 The discipline is that an undeclared field is never silently replaced:
 
@@ -75,6 +113,9 @@ The discipline is that an undeclared field is never silently replaced:
   different instrument state, and reports `calibration.agreed = None` when the
   prediction is unbound — so the reader sees that no tie was established rather
   than assuming one.
+
+- `ConvergenceEstimate` refuses to carry numbers while its basis says
+  `not-established`, so a budget cannot be half-filled.
 
 `StartingCovariance.from_tolerance_box` exists because a box is a bound and a
 covariance is a distribution: converting one to the other needs a coverage
@@ -139,9 +180,12 @@ Two version strings, and they move for different reasons.
 
 `RECORD_SCHEMA` (`path-transfer-record-v2`) names the payload shape. Readers
 accept every schema in `SUPPORTED_RECORD_SCHEMAS`; a `v1` payload — written
-before covariance, provenance and calibration existed — reads back with those
-fields undeclared, which is what they in fact were. An unrecognised schema is
-refused rather than partially understood.
+before covariance, provenance, calibration, geometry, chart validity, path type
+and the convergence estimate existed — reads back with all of those undeclared
+or absent, which is what they in fact were. An unrecognised schema is refused
+rather than partially understood, and a payload written without samples comes
+back as an error rather than as a record with the metadata right and the
+numbers missing.
 
 `BOUNDARY_CONTRACT` (`path-sensitivity-boundary-v1`) names the *shape of the
 boundary*: which fields exist and what they mean. It moves when a field is

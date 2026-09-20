@@ -187,6 +187,18 @@ class JacobiTrace:
             ).with_upstream(*upstream),
             calibration=calibration
             or CalibrationBinding.unbound("no instrument took part in this computation"),
+            # No geometry and no chart, and both absences are the right answer:
+            # a curvature profile is not an embedding, so there are no points to
+            # sample, no frame to write down in ambient coordinates and no
+            # parameterisation to run off the edge of. A consumer needing a
+            # position must go to a record built from a surface.
+            geometry=None,
+            chart=None,
+            path_type="geodesic",
+            path_type_basis=(
+                "declared: K(s) is given as the curvature along a geodesic, which "
+                "is what makes j'' + K j = 0 the right equation"
+            ),
         )
 
     def as_dict(self) -> dict[str, object]:

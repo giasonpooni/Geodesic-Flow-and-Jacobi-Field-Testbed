@@ -30,10 +30,15 @@ from typing import Any
 
 import numpy as np
 
-from .integrators import integrate, integrate_guarded
+from .contract import validated_covariance
+from .integrators import get_integrator, integrate, integrate_guarded
 from .record import (
     CalibrationBinding,
+    ChartValidity,
+    ConvergenceEstimate,
     FirstOrderValidity,
+    GeometryUncertainty,
+    PathGeometry,
     Provenance,
     Resolution,
     StartingCovariance,
@@ -42,7 +47,7 @@ from .record import (
     UpstreamArtefact,
     digest,
 )
-from .surfaces import ParametricSurface
+from .surfaces import ParametricSurface, darboux_frame
 from .transfer import FocusEvent, TransferMap
 
 
@@ -136,6 +141,11 @@ class PathEnvelope:
     arc_length: np.ndarray
     u: np.ndarray
     v: np.ndarray
+    #: Parameter velocities. Kept because the ambient tangent cannot be
+    #: recovered from ``u, v`` alone without differencing them, and a
+    #: differenced tangent is a different quantity at the order that matters.
+    du: np.ndarray
+    dv: np.ndarray
     points: np.ndarray
     curvature: np.ndarray
     lateral_basis: np.ndarray
@@ -183,8 +193,9 @@ class PathEnvelope:
         sliced = {
             name: np.asarray(getattr(self, name))[:keep]
             for name in (
-                "arc_length", "u", "v", "points", "curvature", "lateral_basis",
-                "lateral_rate", "jacobi_field", "jacobi_derivative", "speed",
+                "arc_length", "u", "v", "du", "dv", "points", "curvature",
+                "lateral_basis", "lateral_rate", "jacobi_field", "jacobi_derivative",
+                "speed",
             )
         }
         grid = sliced["arc_length"]
@@ -209,6 +220,54 @@ class PathEnvelope:
             **sliced,
         )
 
+    # -- the path, in the form that crosses the boundary -------------------
+    def path_geometry(
+        self,
+        *,
+        coordinate_frame: str = "surface-parameterisation-ambient",
+        datum_frame: str = "not-declared",
+        uncertainty: GeometryUncertainty | None = None,
+    ) -> PathGeometry:
+        """Positions, the frame as vectors, and the two normal curvatures.
+
+        The geometry uncertainty defaults to ``analytic`` and not to
+        undeclared, because for a surface given by a formula zero *is* the
+        answer: there is no reconstruction and nothing to be uncertain about.
+        A caller working from a scan replaces it with what the scan measured.
+        """
+        frame = darboux_frame(self.surface, self.u, self.v, self.du, self.dv)
+        return PathGeometry(
+            position=self.points,
+            tangent=frame["tangent"],
+            transverse=frame["transverse"],
+            surface_normal=frame["surface_normal"],
+            normal_curvature_along=frame["normal_curvature_along"],
+            normal_curvature_transverse=frame["normal_curvature_transverse"],
+            coordinate_frame=coordinate_frame,
+            datum_frame=datum_frame,
+            uncertainty=uncertainty
+            or GeometryUncertainty.analytic(
+                f"{self.surface.name} is given in closed form; its geometry carries "
+                "no reconstruction error"
+            ),
+        )
+
+    def chart_record(self) -> ChartValidity:
+        """How much of the requested path the parameterisation could carry."""
+        truncated = bool(self.chart.get("truncated", False))
+        return ChartValidity(
+            samples=int(self.arc_length.size),
+            requested_samples=int(
+                self.chart.get("truncated_from_samples", self.arc_length.size)
+            ),
+            truncated=truncated,
+            reason=str(self.chart.get("truncation_reason") or "") if truncated else "",
+            truncated_at=self.chart.get("truncated_at"),
+            requested_length=self.chart.get("truncated_from_length", float(self.length)),
+            min_conditioning=self.chart.get("min_conditioning"),
+            declared_domain=dict(self.chart.get("declared_domain", {})),
+        )
+
     # -- readout -----------------------------------------------------------
     @property
     def transfer_map(self) -> TransferMap:
@@ -231,6 +290,12 @@ class PathEnvelope:
         calibration: CalibrationBinding | None = None,
         upstream: tuple[UpstreamArtefact, ...] = (),
         provenance: Provenance | None = None,
+        geometry: PathGeometry | None = None,
+        geometry_uncertainty: GeometryUncertainty | None = None,
+        coordinate_frame: str = "surface-parameterisation-ambient",
+        datum_frame: str = "not-declared",
+        convergence: ConvergenceEstimate | None = None,
+        include_geometry: bool = True,
     ) -> TransferRecord:
         """Present this path as the public transfer record.
 
@@ -287,6 +352,11 @@ class PathEnvelope:
                 samples=steps + 1,
                 max_step=float(self.length) / steps,
                 uniform=True,
+                convergence=convergence
+                or ConvergenceEstimate.not_established(
+                    "no step-doubling comparison was run for this path; call "
+                    "estimate_convergence(envelope) to pay for one"
+                ),
             ),
             validity=validity
             or FirstOrderValidity.not_established(
@@ -302,6 +372,25 @@ class PathEnvelope:
             .with_upstream(*upstream),
             calibration=calibration
             or CalibrationBinding.unbound("no instrument took part in this computation"),
+            geometry=(
+                geometry
+                or self.path_geometry(
+                    coordinate_frame=coordinate_frame,
+                    datum_frame=datum_frame,
+                    uncertainty=geometry_uncertainty,
+                )
+            )
+            if include_geometry
+            else None,
+            # By construction, not by assertion: what was integrated is the
+            # geodesic equation, and the residual in that claim is what the
+            # speed drift and the Wronskian measure.
+            path_type="geodesic",
+            path_type_basis=(
+                "by construction: the geodesic equation was integrated, and the "
+                "unit-speed and det Phi = 1 invariants are never re-imposed"
+            ),
+            chart=self.chart_record(),
         )
 
     @property
@@ -510,6 +599,8 @@ def _wrap(
                 arc_length=grid,
                 u=u,
                 v=v,
+                du=du,
+                dv=dv,
                 points=surface.embed(u, v),
                 curvature=np.asarray(surface.gaussian_curvature(u, v), dtype=float),
                 lateral_basis=trajectory[:, index, 4],
@@ -705,3 +796,128 @@ def scan_headings(
             }
         )
     return sorted(rows, key=lambda row: row["max_forward_amplification"])
+
+
+def estimate_convergence(
+    envelope: PathEnvelope, *, refinement: int = 2, probe_covariance=None
+) -> ConvergenceEstimate:
+    """What this path's numerics cost, per quantity, by halving the step.
+
+    Fixed-step RK4 is kept because its order is known and therefore testable,
+    and an order is a statement about the limit rather than about the run in
+    hand. This is the run in hand: flow the same path again at ``h / 2`` and
+    Richardson-extrapolate at the method's order, so that
+
+    ``error(h) ~ |y(h) - y(h/2)| * 2^p / (2^p - 1)``
+
+    is an absolute error estimate for *the samples the record carries*, in the
+    record's own units.
+
+    Reported per quantity, because they do not converge together:
+
+    ``position``
+        where the path is, in ambient length.
+    ``transfer``
+        the worst of the four entries of ``Phi``.
+    ``curvature``
+        ``K`` along the path, which is evaluated rather than integrated and so
+        converges at the rate the *path* does, not the rate ``Phi`` does.
+    ``focus``
+        the location of the first focus. A root of ``b`` divided by a slope
+        that is small precisely where the root is, so it is the entry most
+        likely to be the one that matters, and the one a step size chosen by
+        looking at ``Phi`` alone will get wrong.
+    ``covariance``
+        the propagated ``Phi C Phi^T``, quadratic in ``Phi`` and so with
+        roughly twice its relative error. The probe is the identity unless one
+        is given, which makes the figure the error in ``Phi Phi^T`` -- the
+        factor any starting covariance is sandwiched by.
+
+    It costs a second integration, which is why no producer does it by
+    default: a record whose convergence says ``not-established`` has not paid
+    for one, and that is a true statement rather than a missing feature.
+    """
+    if refinement < 2:
+        raise ValueError("refinement must halve the step at least once")
+    order = get_integrator(envelope.integrator).order
+    fine = integrate_path(
+        envelope.surface,
+        u0=envelope.start[0],
+        v0=envelope.start[1],
+        heading=envelope.start[2],
+        length=float(envelope.length),
+        n_steps=int(envelope.n_steps) * refinement,
+        method=envelope.integrator,
+    )
+    # A refined run can stop at a different sample if the path leaves the
+    # chart, so the comparison is made on the samples both runs actually hold.
+    coarse_samples = int(envelope.arc_length.size)
+    shared = min(coarse_samples, 1 + (int(fine.arc_length.size) - 1) // refinement)
+    if shared < 2:
+        return ConvergenceEstimate.not_established(
+            "the refined run left the chart before a second sample, so there is "
+            "nothing to compare"
+        )
+    coarse_slice = slice(0, shared)
+    fine_slice = slice(0, shared * refinement, refinement)
+    if not np.allclose(
+        envelope.arc_length[coarse_slice], fine.arc_length[fine_slice], rtol=0.0, atol=1e-12
+    ):
+        raise ValueError("the refined run does not land on the coarse run's samples")
+
+    scale = refinement**order / (refinement**order - 1.0)
+
+    def gap(coarse_values, fine_values) -> float:
+        difference = np.asarray(coarse_values)[coarse_slice] - np.asarray(fine_values)[
+            fine_slice
+        ]
+        return float(np.max(np.abs(difference))) * scale
+
+    transfer = max(
+        gap(envelope.lateral_basis, fine.lateral_basis),
+        gap(envelope.lateral_rate, fine.lateral_rate),
+        gap(envelope.jacobi_field, fine.jacobi_field),
+        gap(envelope.jacobi_derivative, fine.jacobi_derivative),
+    )
+    position = float(
+        np.max(
+            np.linalg.norm(
+                envelope.points[coarse_slice] - fine.points[fine_slice], axis=-1
+            )
+        )
+    ) * scale
+
+    coarse_focus = envelope.focus_points()
+    fine_focus = fine.focus_points()
+    focus: float | None = None
+    note = ""
+    if coarse_focus and fine_focus:
+        focus = abs(coarse_focus[0] - fine_focus[0]) * scale
+    elif bool(coarse_focus) != bool(fine_focus):
+        note = (
+            "the two resolutions disagree about whether the path has a focus at "
+            "all, which is a stronger statement than any error estimate"
+        )
+
+    probe = np.eye(2) if probe_covariance is None else validated_covariance(probe_covariance)
+    covariance = float(
+        np.max(
+            np.abs(
+                envelope.transfer_map.propagate_covariance(probe)[coarse_slice]
+                - fine.transfer_map.propagate_covariance(probe)[fine_slice]
+            )
+        )
+    ) * scale
+
+    return ConvergenceEstimate(
+        basis=f"step-doubling: {envelope.integrator} at h and h/{refinement}, "
+        f"Richardson-extrapolated at order {order}",
+        order=order,
+        refinement=refinement,
+        position=position,
+        transfer=transfer,
+        curvature=gap(envelope.curvature, fine.curvature),
+        focus=focus,
+        covariance=covariance,
+        note=note,
+    )

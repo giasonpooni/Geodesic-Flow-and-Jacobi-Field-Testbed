@@ -38,7 +38,7 @@ drift is therefore a free measure of how well it is integrating.
 
 ## Verification
 
-**238 declared checks across two stages, 0 failed.** Every number below has a
+**266 declared checks across two stages, 0 failed.** Every number below has a
 threshold attached in `engine/experiment.py` or `engine/experiment_surfaces.py`,
 and the committed reports are regenerated and compared in CI.
 
@@ -79,6 +79,9 @@ form left, four things replace it:
 | **two independent routes, twice** — `b` by perturbing the heading, `a` by moving the start point and parallel-transporting the direction | both second order in the perturbation on every surface, exponent 2.000 ± 0.001 |
 | **self-convergence** — halve the step against a finer run | order 3.96 – 4.00 in `j`, 3.92 – 4.01 in the path, on every case with anything to converge |
 | **invariants** — unit speed and `det Phi`, neither ever re-imposed | both hold to 2e-12 everywhere |
+| **error budget** — halve the step and Richardson-extrapolate, per quantity | the estimate reproduces the *actual* error to 0.02% wherever a closed form leaves one to resolve, and the budget itself falls as `h^4` (observed order 3.99 – 4.00) |
+| **the frame the record publishes** — Euler's theorem, `kappa_n(along) + kappa_n(across) = 2H` | machine precision on every surface, with no closed form needed |
+| **the jet's step, along a whole path** | the transfer error spans four orders of magnitude over relative steps from 1e-2 to 1e-6; no step in the sweep invents or erases a focus |
 
 Three results worth stating plainly:
 
@@ -166,7 +169,7 @@ observability `W = ∫ Phi^T H^T R^-1 H Phi ds` is not computed at all.
 
 ```bash
 uv sync --locked --extra dev          # or: pip install -e ".[dev]"
-uv run pytest -q                      # 338 tests, no network, about three minutes
+uv run pytest -q                      # 349 tests, no network, about four minutes
 uv run python examples/run_experiment.py --out out        # both stages: reports + figures
 uv run python examples/write_reference_report.py          # application reference report
 ```
@@ -235,11 +238,27 @@ transfer / path-sensitivity record      <- the shared contract
 instrument calibration + measurement tooling
 ```
 
-`geodesic_testbed.boundary` is that contract on its own. The record carries the
-seven things a consumer cannot reconstruct from the samples and must not guess
-— **units, frame, arclength grid, covariance, provenance, calibration IDs and
-observation mode** — and it round-trips through a file, because a boundary that
-has never left the process is a type rather than a boundary.
+`geodesic_testbed.boundary` is that contract on its own, and it round-trips
+through a file, because a boundary that has never left the process is a type
+rather than a boundary. The record carries everything a consumer cannot
+reconstruct and must not guess:
+
+- **what the map means** — units, frame, the arclength grid, the observation
+  mode (checked against the domain, because the *pair* is what can be false),
+  and whether the curve is a geodesic at all, since `j'' + K j = 0` has no
+  first-derivative term only because it is;
+- **where the path is** — ambient positions, the Darboux triad as *vectors* and
+  not just as a name, so the frame claim can be checked rather than trusted,
+  and both normal curvatures, since it is the transverse one that sets how far
+  a reconstructed chord falls short of an in-surface separation;
+- **what it cost and how far it got** — a per-quantity step-doubling error
+  budget (position, transfer, curvature, focus, covariance — they do not
+  converge together), and how much of the *requested* path the chart could
+  carry, because a route that ended when the parameterisation ran out is not a
+  route that finished;
+- **who made it, from what, under what** — provenance with upstream artefacts,
+  the starting covariance, geometry uncertainty, and calibration identifiers
+  carried and never interpreted here.
 
 ```bash
 uv run python examples/emit_boundary_record.py --out out
@@ -254,6 +273,11 @@ uv run python examples/emit_boundary_record.py --out out
   covariance       declared-tolerance-box
   provenance       curved-surface-geodesic-sensitivity-runtime 0.2.0
   calibration      unbound: no instrument took part in this computation
+  geometry         4001 points, frame in surface-parameterisation-ambient, datum coupon-datum-A
+  geometry sigma   analytic
+  path type        geodesic
+  chart            4001 of 4001 samples, complete=True
+  error budget     position 1.23e-12, transfer 2.85e-12, focus n/a
 ```
 
 `unbound` is the honest default and the interesting one. Nothing here was
