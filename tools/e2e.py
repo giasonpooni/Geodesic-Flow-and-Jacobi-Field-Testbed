@@ -275,11 +275,19 @@ class Cycle:
             [
                 *self.python,
                 "-c",
-                "import geodesic_testbed as g, tomllib, pathlib;"
-                "meta = tomllib.loads(pathlib.Path(r'%s').read_text());"
-                "assert g.__version__ == g.RUNTIME_VERSION == meta['project']['version'],"
-                " (g.__version__, meta['project']['version']);"
-                "print(g.__version__)" % (ROOT / "pyproject.toml"),
+                # The version is declared once, in engine/contract.py, and
+                # pyproject reads it through hatchling's dynamic hook -- so the
+                # thing to compare against is the *built* distribution's
+                # metadata, not a literal in pyproject that deliberately no
+                # longer exists. Reading one from pyproject is what this step
+                # used to do, and it is why the determinism job went red while
+                # every other job stayed green: only this harness looked there.
+                "import geodesic_testbed as g;"
+                "from importlib.metadata import version;"
+                "built = version('curved-surface-geodesic-sensitivity');"
+                "assert g.__version__ == g.RUNTIME_VERSION == built,"
+                " (g.__version__, g.RUNTIME_VERSION, built);"
+                "print(g.__version__)",
             ],
             cwd=self.workspace,
         )
