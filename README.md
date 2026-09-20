@@ -1,12 +1,16 @@
-# Curved-Surface Geodesic Sensitivity
+# Curved-Surface Geodesic Sensitivity Runtime
+
+Part of **Notation Systems' computational instrumentation and evidence infrastructure** for industrial and cyber-physical systems.
+
+[Stack map](https://github.com/giasonpooni/Computational-Instrumentation-Workbench/blob/main/docs/STACK.md) · [Component role and interfaces](docs/STACK_ROLE.md)
 
 **How a small error in how a path is started grows into a deviation further
 along a curved surface — and exactly how far that prediction can be trusted.**
 
 Path sensitivity for curved-surface manufacturing and robotic inspection, in
 two layers: deterministic tolerance contracts on top, and a numerical engine
-underneath that is verified against everything it is possible to verify it
-against.
+underneath checked against closed-form references, convergence behavior and
+declared numerical invariants.
 
 ![Curvature-aware path sensitivity on parametric surfaces](figures/surfaces-testbed-v1.png)
 
