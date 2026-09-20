@@ -9,6 +9,7 @@ import pytest
 
 from geodesic_testbed.engine.surfaces import (
     CATALOGUE,
+    Chart,
     ParametricSurface,
     built_in,
     christoffel,
@@ -140,3 +141,28 @@ def test_unknown_surface_is_refused() -> None:
     assert set(CATALOGUE) == {"plane", "cylinder", "sphere", "pseudosphere", "saddle", "torus"}
     with pytest.raises(KeyError):
         built_in("klein-bottle")
+
+
+def test_chart_orthogonality_survives_an_anisotropic_reparameterisation() -> None:
+    """The defect that retired ``sqrt(EG - F^2) / max(E, G)``.
+
+    Running one coordinate three times as fast leaves the surface, and the
+    regularity of the chart, untouched. The retired criterion falls by exactly
+    that factor; orthogonality does not move.
+    """
+    base = torus(2.0, 1.0)
+    stretched = ParametricSurface(
+        name="torus with v running three times as fast",
+        position=lambda u, v: base.position(u, 3.0 * v),
+        chart=Chart(u_min=-10.0, u_max=10.0, v_min=-10.0, v_max=10.0),
+    )
+    u = np.linspace(0.1, 1.2, 17)
+    v = np.linspace(0.1, 1.2, 17)
+
+    def retired(surface: ParametricSurface) -> float:
+        E, F, G = surface.first_fundamental_form(u, v)
+        return float(np.min(np.sqrt(E * G - F**2) / np.maximum(E, G)))
+
+    assert retired(base) / retired(stretched) == pytest.approx(3.0, rel=1e-6)
+    assert float(np.min(base.chart_orthogonality(u, v))) == pytest.approx(1.0, abs=1e-9)
+    assert float(np.min(stretched.chart_orthogonality(u, v))) == pytest.approx(1.0, abs=1e-9)

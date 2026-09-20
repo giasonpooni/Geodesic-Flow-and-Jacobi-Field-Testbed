@@ -38,7 +38,7 @@ drift is therefore a free measure of how well it is integrating.
 
 ## Verification
 
-**191 declared checks across two stages, 0 failed.** Every number below has a
+**235 declared checks across two stages, 0 failed.** Every number below has a
 threshold attached in `engine/experiment.py` or `engine/experiment_surfaces.py`,
 and the committed reports are regenerated and compared in CI.
 
@@ -51,11 +51,11 @@ a single formula in `K` built from `sn_K = s, sin s, sinh s`.
 | what was measured | result |
 |---|---|
 | order of accuracy, Euler / midpoint / RK4 | 1.02 / 1.96 / 3.93 (sphere), 0.97 / 1.98 / 3.97 (hyperbolic) |
-| Wronskian drift order, same three methods | 1.03 / 3.000 / 4.998 — and matching the exact `\|d^n - 1\|` to 1e-12, 7e-6, 8e-7 |
+| Wronskian drift order, same three methods | 0.97-1.03 / 3.000 / 4.998-5.002 — and matching the exact `\|d^n - 1\|` to 1e-11, 7e-6, 8e-7 |
 | flat model | every method exact to `< 1e-13`; no order exists to measure, and the report says so |
 | separation of two geodesics | `sn_K(d/2) = sn_K(s)·sin(eps/2)` — one law of cosines for all three curvatures |
-| error of the first-order prediction | grows as `eps^2` with coefficient `cn_K(s)^2/24`, matched to 3e-5 … 1e-4 relative |
-| first-order validity at `s = 1`, to 1e-6 | `eps <= 0.52°` (sphere), `0.28°` (plane), `0.18°` (saddle) |
+| error of the first-order prediction | grows as `eps^2` with coefficient `cn_K(s)^2/24`, matched to 2e-5 … 4e-4 relative |
+| first-order validity at `s = 1`, to 1e-6 | `eps <= 0.52°` (sphere), `0.28°` (plane), `0.18°` (hyperbolic) |
 | conjugate point on the sphere | found at `s = 3.141592653589791`, error 2.2e-15 |
 | loss of minimality past it | excess length matches `2(s - pi)` to 7.1e-15 |
 
@@ -75,9 +75,9 @@ form left, four things replace it:
 
 | verification | result |
 |---|---|
-| **anchoring** — recover the known answers the general way | `b`: `s`, `s`, `sin s`, `sinh s` to 4.4e-13 or better; `a`: `1`, `1`, `cos s`, `cosh s` to 4.0e-13 or better |
+| **anchoring** — recover the known answers the general way | `b`: `s`, `s`, `sin s`, `sinh s` to 4.4e-13 or better; `a`: `1`, `1`, `cos s`, `cosh s` to 4.1e-13 or better |
 | **two independent routes, twice** — `b` by perturbing the heading, `a` by moving the start point and parallel-transporting the direction | both second order in the perturbation on every surface, exponent 2.000 ± 0.001 |
-| **self-convergence** — halve the step against a finer run | order 3.96 – 4.01 on every case with anything to converge |
+| **self-convergence** — halve the step against a finer run | order 3.96 – 4.00 in `j`, 3.92 – 4.01 in the path, on every case with anything to converge |
 | **invariants** — unit speed and `det Phi`, neither ever re-imposed | both hold to 2e-12 everywhere |
 
 Three results worth stating plainly:
@@ -85,17 +85,21 @@ Three results worth stating plainly:
 - **A rolled sheet has exactly the path sensitivity of the flat sheet** — to
   1e-13, from a completely different parameterisation. Bending a sheet onto a
   drum changes nothing, because only intrinsic curvature carries a pose error.
-- **A camera measures chords, not distances in the surface.** The
+- **Reconstructed 3-D points give chords, not distances in the surface.** The
   finite-difference route differs from the Jacobi equation at order `eps^2`
   with coefficient `(cn_K(s)^2 + kappa_n^2 sn_K(s)^2)/6` — the second term
-  being the ambient chord. On the pseudosphere it is 2.5 times the intrinsic
-  term, the same order as the first-order model's own failure. Every
+  being the ambient chord. On the pseudosphere the chord term is 1.45 times
+  the intrinsic one, so a chord measurement sees 2.5 times the coefficient an
+  in-surface distance would — the same order as the first-order model's own
+  failure. A camera does
+  not even report that directly: it reports image coordinates, and a chord
+  appears only after calibration, reconstruction and registration. Every
   comparison in the reports therefore names its **observation mode**.
 - **The two columns focus at different places.** On a spherical cap `b`
   vanishes at `s = pi` and `a` at `s = pi/2`. A heading error and a lateral
   offset are not interchangeable.
 
-### The decision, and the trap in it
+### The decision, and what is allowed to make it
 
 Of 24 candidate starting headings from one point on a torus, forward angular
 error amplification `max |b(s)|` varies by a factor of **21** over the same
@@ -104,14 +108,57 @@ where `|b|` drops to ~1e-4 — cheap forward separation bought with an
 ill-conditioned endpoint map, proximity to a conjugate point, and path-family
 crowding rather than coverage.
 
-So the scan reports both an upper measure and a lower one, and the honest
-answer is not the best score. The lowest-amplification heading that both avoids
-a focus and keeps a margin of at least 0.25 is 127°, at `max |b| = 1.92`,
-against 1.74 for the focus-passing 97°: **10% more amplification for a focus
-margin four orders of magnitude larger** — 0.785 against 0.000106. The
-objective is therefore named `minimum-forward-angular-error-amplification`, not
-robustness. Boundary clearance, chart validity, path length, curvature
-exposure and coverage are not modelled.
+The tempting patch — demand a focus margin above some floor — is the wrong kind
+of quantity: `|b|` has units of length per radian, so any floor is specific to
+the part's size and to the angle unit, and is a number chosen here rather than
+a property of the job. What replaces it is the observation model,
+
+```text
+dz(s) = Phi(s) dz0        y(s) = H(s) dz(s) + eta(s)
+Cov(y) = H Phi C0 Phi^T H^T + R
+```
+
+from which the heading column's visibility to the sensor is the dimensionless
+
+```text
+rho(s) = |b(s)| * sigma_alpha / sigma_measurement
+```
+
+— 0.1° of aiming uncertainty against a 25 µm metrology system here, and checked
+to be unchanged when the same physical situation is drawn at twice the size.
+`rho(0) = 0` on every route, so it is applied as an acquisition *schedule*, not
+a minimum: acquire above 5 within the first 1.0 of path length, hold above 3,
+tolerate at most 0.1 of continuous loss, and report `TRACKED`,
+`NEVER_ACQUIRED`, `LATE_ACQUISITION`, `TRACK_LOST` or
+`INSUFFICIENT_TRACKED_DISTANCE`.
+
+| | declared process limits | plus the scanner's schedule |
+|---|---|---|
+| feasible, of 24 | 15 | 8 |
+| recommended | 97°, `max \|b\|` = 1.74 | 120°, `max \|b\|` = 1.82 |
+| fate of 97° | feasible | `TRACK_LOST` from `s = 5.354` |
+
+**5% more amplification, for a route the scanner can actually follow** — and
+the seven routes it cannot follow are *exactly* the seven that pass through a
+focus, two independent computations agreeing, as a declared check rather than
+a remark. Note that 120° has a focus margin of 0.200: a hand-chosen floor of
+0.25 would have rejected a route the instrument holds for the whole path.
+
+That agreement is corroboration under one configuration, not an identity, and
+the check is named for the configuration. A geometric focus is a zero of a
+transfer column and belongs to the surface; resolvability belongs to the whole
+chain, and the two come apart in both directions. Shrink the admitted heading
+tolerance by 10⁴ and the plate — whose `b(s) = s` never vanishes — drops to
+`rho` = 0.0042 everywhere, unresolvable with no focus in it. Stand 0.01 before
+the sphere's conjugate point and 1.0 µm metrology on a 300 mm coupon resolves
+it, because `|b|` beside a focus is small but not zero. Both are declared
+checks, and both quantities stay in the report.
+
+The ranking scalar is therefore named
+`minimum-forward-angular-error-amplification`, not robustness, and it decides
+nothing. Boundary clearance, curvature exposure and path length are declared in
+`RouteConstraints` and left unbounded in this example; accumulated
+observability `W = ∫ Phi^T H^T R^-1 H Phi ds` is not computed at all.
 
 ![Geodesic flow and Jacobi fields on the three constant-curvature surfaces](figures/jacobi-testbed-v1.png)
 
@@ -119,7 +166,7 @@ exposure and coverage are not modelled.
 
 ```bash
 uv sync --locked --extra dev          # or: pip install -e ".[dev]"
-uv run pytest -q                      # ~190 tests, no network, about a minute
+uv run pytest -q                      # 283 tests, no network, about three minutes
 uv run python examples/run_experiment.py --out out        # both stages: reports + figures
 uv run python examples/write_reference_report.py          # application reference report
 ```

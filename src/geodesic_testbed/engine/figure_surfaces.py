@@ -199,37 +199,75 @@ def _panel_two_routes(ax, report: dict[str, Any]) -> None:
 
 
 def _panel_decision(ax, report: dict[str, Any]) -> None:
-    """Panel D: low forward amplification is not the same thing as robustness."""
+    """Panel D: the ranking scalar, and the instrument that overrules it."""
     scan = report["results"]["heading_scan"]
+    tracked_selection = scan["route_selection_with_tracking"]
+    outcomes = {
+        entry["label"]: entry["tracking"]["outcome"]
+        for entry in tracked_selection.get("assessments", [])
+        if entry.get("tracking")
+    }
     rows = sorted(scan["headings"], key=lambda row: row["heading_degrees"])
     headings = np.array([row["heading_degrees"] for row in rows])
     worst = np.array([row["max_forward_amplification"] for row in rows])
-    focus = np.array([row["passes_a_focus"] for row in rows])
+    lost = np.array(
+        [outcomes.get(f"{h:.0f}deg", "TRACKED") != "TRACKED" for h in headings]
+    )
     colour = CASE_COLOURS["torus"]
 
     ax.plot(headings, worst, color=colour, linewidth=1.6, zorder=3)
-    ax.plot(headings[~focus], worst[~focus], linestyle="none", marker="o", markersize=4.6,
+    ax.plot(headings[~lost], worst[~lost], linestyle="none", marker="o", markersize=4.6,
             markerfacecolor=SURFACE, markeredgecolor=colour, markeredgewidth=1.3, zorder=4)
-    ax.plot(headings[focus], worst[focus], linestyle="none", marker="o", markersize=4.6,
+    ax.plot(headings[lost], worst[lost], linestyle="none", marker="o", markersize=4.6,
             color=colour, markeredgecolor=SURFACE, markeredgewidth=0.8, zorder=4)
 
-    lowest = scan["lowest_amplification"]
-    clear = scan["lowest_amplification_clear_of_a_focus"]
+    declared = scan["route_selection"]["recommended"]
+    tracked = tracked_selection["recommended"]
     highest = scan["highest_amplification"]
+    def _held(degrees: float) -> bool:
+        return outcomes.get(f"{degrees:.0f}deg", "TRACKED") == "TRACKED"
+
     annotations = [
-        (highest, "highest amplification", (0.22, 0.86)),
-        (lowest, "lowest amplification,\nbut passes a focus", (0.04, 0.16)),
+        (
+            highest["heading_degrees"],
+            highest["max_forward_amplification"],
+            "highest amplification",
+            (0.22, 0.86),
+        ),
     ]
-    if clear is not None:
-        annotations.append((clear, "lowest clear of a focus", (0.58, 0.46)))
-    for row, text, target in annotations:
-        ax.plot([row["heading_degrees"]], [row["max_forward_amplification"]], marker="o",
-                markersize=7.5, color=colour, markeredgecolor=SURFACE,
-                markeredgewidth=1.4, zorder=6)
+    if declared is not None:
+        label = declared["label"]
+        row = next(r for r in rows if f"{r['heading_degrees']:.0f}deg" == label)
+        held = outcomes.get(label, "TRACKED") == "TRACKED"
+        annotations.append(
+            (
+                row["heading_degrees"],
+                row["max_forward_amplification"],
+                "best by declared limits"
+                + ("" if held else ",\nbut the scanner loses it"),
+                (0.04, 0.16),
+            )
+        )
+    if tracked is not None:
+        label = tracked["label"]
+        row = next(r for r in rows if f"{r['heading_degrees']:.0f}deg" == label)
+        annotations.append(
+            (
+                row["heading_degrees"],
+                row["max_forward_amplification"],
+                "best the scanner can track",
+                (0.58, 0.46),
+            )
+        )
+    for degrees, value, text, target in annotations:
+        # the emphasis marker keeps the hollow/filled convention, or it would
+        # contradict the legend on exactly the points the reader looks at
+        ax.plot([degrees], [value], marker="o", markersize=8.5,
+                markerfacecolor=SURFACE if _held(degrees) else colour,
+                markeredgecolor=colour, markeredgewidth=1.8, zorder=6)
         ax.annotate(
-            f"{text}\n{row['heading_degrees']:.0f}°, "
-            f"max|b| = {row['max_forward_amplification']:.2f}",
-            xy=(row["heading_degrees"], row["max_forward_amplification"]),
+            f"{text}\n{degrees:.0f}°, max|b| = {value:.2f}",
+            xy=(degrees, value),
             xytext=target,
             textcoords="axes fraction",
             fontsize=8.2,
@@ -241,16 +279,15 @@ def _panel_decision(ax, report: dict[str, Any]) -> None:
     from matplotlib.lines import Line2D
 
     handles = [
-        Line2D([], [], linestyle="none", marker="o", markersize=5.0, markerfacecolor=SURFACE,
-               markeredgecolor=colour, markeredgewidth=1.3, label="clear of any focus"),
+        Line2D([], [], linestyle="none", marker="o", markersize=5.0,
+               markerfacecolor=SURFACE, markeredgecolor=colour, markeredgewidth=1.3,
+               label="tracked throughout"),
         Line2D([], [], linestyle="none", marker="o", markersize=5.0, color=colour,
                markeredgecolor=SURFACE, markeredgewidth=0.8,
-               label=f"passes a focus ({scan['n_headings_passing_a_focus']} of "
-                     f"{scan['n_headings']})"),
+               label=f"track lost ({int(lost.sum())} of {len(rows)})"),
     ]
     legend = ax.legend(handles=handles, loc="upper right", frameon=True, facecolor=SURFACE,
-                       edgecolor="none", framealpha=0.92, handlelength=1.2, ncols=1,
-                       columnspacing=1.2)
+                       edgecolor="none", framealpha=0.92, handlelength=1.2, ncols=1)
     for text in legend.get_texts():
         text.set_color(INK_SOFT)
 
@@ -263,8 +300,9 @@ def _panel_decision(ax, report: dict[str, Any]) -> None:
     _panel_title(
         ax,
         "D \u00b7 The decision, and the trap in it",
-        f"{scan['n_headings']} headings on the {scan['surface']}, ranked by forward "
-        "amplification alone;\nevery one of the best few buys its score with a focus",
+        f"{scan['n_headings']} headings on the {scan['surface']}. Ranked by forward "
+        "amplification\nalone; decided by whether the scanner can acquire and hold "
+        "the path.",
     )
 
 

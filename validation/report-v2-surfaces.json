@@ -1,43 +1,66 @@
 {
-  "schema": "geodesic-jacobi-surfaces-v2",
-  "supersedes": "geodesic-jacobi-surfaces-v1",
+  "schema": "geodesic-jacobi-surfaces-v3",
+  "supersedes": "geodesic-jacobi-surfaces-v2",
   "schema_changes": [
+    "heading_scan.route_selection: routes are chosen by declared process limits and a sensor acquisition schedule, not by a threshold on |b|",
+    "envelopes: adds chart validity, the transfer record, and the scaled-transfer singular values",
     "adds results.lateral_route: the a column checked by moving the start point",
     "adds the lateral column and the Wronskian to the anchors and envelopes",
     "heading_scan: max_abs_jacobi_field -> max_forward_amplification, adds focus_margin and passes_a_focus, most/least_tolerant -> lowest/highest_amplification, sensitivity_ratio -> amplification_ratio",
+    "adds results.chart_rescaling_invariance: the anisotropic-rescaling defect that retired sqrt(EG - F^2)/max(E, G)",
+    "adds results.focus_versus_resolvability: a geometric focus and low instrument resolvability are separate quantities, and both are reported",
+    "route_selection: min_focus_clearance is removed, not deprecated; a dimensionful clearance may be reported but may not decide",
+    "tracking outcomes carry acquisition_window_started_at / acquisition_declared_at and loss_started_at / track_loss_declared_at, because a causal instrument cannot act on a window before it closes",
+    "heading_scan.route_selection_with_tracking: adds per-route assessments so each candidate carries its own tracking outcome",
     "adds observation_modes and tags each comparison with one"
   ],
   "experiment": "curvature-aware-path-sensitivity-on-parametric-surfaces",
   "claim_scope": "numerical-verification-anchored-to-the-constant-curvature-stage",
-  "depends_on": "geodesic-jacobi-report-v2",
+  "depends_on": "geodesic-jacobi-report-v3",
   "observation_modes": [
     {
       "identifier": "intrinsic-surface-distance",
       "version": 1,
       "quantity": "Riemannian distance between two points, measured in the surface",
-      "implemented": true,
-      "note": "What the Jacobi field predicts. Available in closed form on the constant-curvature model spaces; on a general surface it would require solving a boundary-value problem and is not computed here."
+      "support": {
+        "constant-curvature": "exact",
+        "parametric-surface": "unavailable",
+        "physical-instrument": "unavailable"
+      },
+      "note": "What the Jacobi field predicts. Closed form on the model spaces (sn_K(d/2) = sn_K(s) sin(eps/2)); on a general parametric surface it is a boundary-value problem that is not solved here, and no instrument reports it directly."
     },
     {
       "identifier": "ambient-euclidean-chord",
       "version": 1,
       "quantity": "straight-line distance in R^3 between two points of the surface",
-      "implemented": true,
-      "note": "What a pair of reconstructed 3-D coordinates gives. Differs from the intrinsic distance at second order in the separation, with a coefficient set by the transverse normal curvature."
+      "support": {
+        "constant-curvature": "exact",
+        "parametric-surface": "numerical",
+        "physical-instrument": "unavailable"
+      },
+      "note": "What a reconstructed pair of 3-D coordinates gives. Differs from the intrinsic distance at second order in the separation, with a coefficient set by the transverse normal curvature. An instrument reports it only after calibration and reconstruction, which is a separate mode."
     },
     {
       "identifier": "scanner-reconstructed-chord",
       "version": 0,
       "quantity": "ambient chord as reported by a calibrated metrology system",
-      "implemented": false,
+      "support": {
+        "constant-curvature": "unavailable",
+        "parametric-surface": "unavailable",
+        "physical-instrument": "unavailable"
+      },
       "note": "The ambient chord plus calibration, registration and fitting error. Needs a characterised instrument; nothing here models it."
     },
     {
       "identifier": "camera-image-residual",
       "version": 0,
       "quantity": "residual in image coordinates, before reconstruction",
-      "implemented": false,
-      "note": "Furthest from the model of the four. Not modelled here."
+      "support": {
+        "constant-curvature": "unavailable",
+        "parametric-surface": "unavailable",
+        "physical-instrument": "unavailable"
+      },
+      "note": "Furthest from the model of the four, and the only one a camera actually produces. Not modelled here."
     }
   ],
   "cases": [
@@ -152,7 +175,23 @@
     "heading_scan_key": "torus",
     "heading_scan_length": 6.0,
     "heading_scan_steps": 3000,
-    "focus_margin_floor": 0.25,
+    "focus_margin_report_level": 0.25,
+    "route_tolerance_lateral": 0.001,
+    "route_tolerance_heading": 0.001,
+    "route_max_cross_track_error": 0.02,
+    "route_max_heading_error": 0.05,
+    "route_nominal_spacing": 0.1,
+    "route_swath_width": 0.14,
+    "route_min_coverage_margin": 0.0,
+    "route_measurement_sigma": 8.333333333333334e-05,
+    "route_heading_sigma_degrees": 0.1,
+    "route_lateral_sigma": 0.0,
+    "route_acquire_threshold": 5.0,
+    "route_hold_threshold": 3.0,
+    "route_acquisition_window": 0.05,
+    "route_max_acquisition_distance": 1.0,
+    "route_min_tracked_distance": 3.0,
+    "route_max_loss_distance": 0.1,
     "curve_samples": 200,
     "analytic_tolerance": 1e-11,
     "finite_difference_tolerance": 1e-07,
@@ -212,7 +251,7 @@
         "max_speed_drift": 1.6053824936079764e-12,
         "max_curvature_error": 8.881784197001252e-16,
         "focus_points": [
-          3.14159265346205
+          3.1415926535902137
         ]
       },
       {
@@ -1567,7 +1606,13 @@
       {
         "case": "plate",
         "surface": "plane",
-        "fd_step": 0.0001,
+        "fd_relative_step": 0.0001,
+        "fd_step_at_start": 0.0001,
+        "fd_convergence": {
+          "relative_change": 0.0,
+          "step": 0.0001,
+          "source": "finite-difference"
+        },
         "max_jacobi_difference": 0.0,
         "max_relative_jacobi_difference": 0.0,
         "max_curvature_difference": 0.0
@@ -1575,7 +1620,13 @@
       {
         "case": "rolled-sheet",
         "surface": "cylinder(R=1)",
-        "fd_step": 0.0001,
+        "fd_relative_step": 0.0001,
+        "fd_step_at_start": 0.0001,
+        "fd_convergence": {
+          "relative_change": 0.0,
+          "step": 0.0001,
+          "source": "finite-difference"
+        },
         "max_jacobi_difference": 0.0,
         "max_relative_jacobi_difference": 0.0,
         "max_curvature_difference": 0.0
@@ -1583,34 +1634,58 @@
       {
         "case": "spherical-cap",
         "surface": "sphere(R=1)",
-        "fd_step": 0.0001,
-        "max_jacobi_difference": 8.046224291013981e-09,
-        "max_relative_jacobi_difference": 8.046230119819847e-09,
-        "max_curvature_difference": 5.1974540449251094e-08
+        "fd_relative_step": 0.0001,
+        "fd_step_at_start": 0.00015707963267948965,
+        "fd_convergence": {
+          "relative_change": 2.010085327105272e-08,
+          "step": 0.00015707963267948965,
+          "source": "finite-difference"
+        },
+        "max_jacobi_difference": 4.7725351004501704e-08,
+        "max_relative_jacobi_difference": 4.7725385577463606e-08,
+        "max_curvature_difference": 7.33997522761598e-08
       },
       {
         "case": "pseudosphere",
         "surface": "pseudosphere",
-        "fd_step": 0.0001,
-        "max_jacobi_difference": 2.207857896507903e-09,
-        "max_relative_jacobi_difference": 1.0369037710034828e-09,
-        "max_curvature_difference": 7.512129185371919e-08
+        "fd_relative_step": 0.0001,
+        "fd_step_at_start": 0.00012,
+        "fd_convergence": {
+          "relative_change": 1.4793829264858635e-08,
+          "step": 0.00012,
+          "source": "finite-difference"
+        },
+        "max_jacobi_difference": 9.295896052918806e-09,
+        "max_relative_jacobi_difference": 4.3657473098126076e-09,
+        "max_curvature_difference": 4.967055522442365e-08
       },
       {
         "case": "saddle",
         "surface": "hyperbolic-paraboloid(a=1)",
-        "fd_step": 0.0001,
-        "max_jacobi_difference": 1.3568701717758813e-11,
-        "max_relative_jacobi_difference": 6.018437581356865e-12,
-        "max_curvature_difference": 3.1506267872405402e-09
+        "fd_relative_step": 0.0001,
+        "fd_step_at_start": 0.0001,
+        "fd_convergence": {
+          "relative_change": 6.068584286706189e-10,
+          "step": 0.0001,
+          "source": "finite-difference"
+        },
+        "max_jacobi_difference": 2.4381385799188138e-11,
+        "max_relative_jacobi_difference": 1.0814435428803254e-11,
+        "max_curvature_difference": 8.513126315001784e-10
       },
       {
         "case": "torus",
         "surface": "torus(R=2, r=1)",
-        "fd_step": 0.0001,
-        "max_jacobi_difference": 5.381368683998744e-10,
-        "max_relative_jacobi_difference": 3.030929042887608e-10,
-        "max_curvature_difference": 3.83547785198779e-08
+        "fd_relative_step": 0.0001,
+        "fd_step_at_start": 0.0001,
+        "fd_convergence": {
+          "relative_change": 1.068292604357791e-07,
+          "step": 0.0001,
+          "source": "finite-difference"
+        },
+        "max_jacobi_difference": 5.881706233168416e-10,
+        "max_relative_jacobi_difference": 3.3127323717572264e-10,
+        "max_curvature_difference": 1.5166927325171997e-08
       }
     ],
     "envelopes": [
@@ -1634,11 +1709,67 @@
         "amplification_at_end": 0.9999999999999453,
         "max_abs_jacobi_field": 1.9999999999998905,
         "max_speed_drift": 0.0,
+        "chart": {
+          "valid": true,
+          "valid_until": 2.0,
+          "first_invalid_index": null,
+          "reason": null,
+          "min_conditioning": 1.0,
+          "min_domain_margin": null,
+          "declared_domain": {
+            "u": [
+              null,
+              null
+            ],
+            "v": [
+              null,
+              null
+            ],
+            "u_period": null,
+            "v_period": null,
+            "u_scale": 1.0,
+            "v_scale": 1.0,
+            "reference_length": 1.0,
+            "note": "global: the identity chart covers the plane"
+          }
+        },
         "focus_points": [],
+        "focus_events": [],
+        "focus_clearance": null,
+        "crossed_first_conjugate_point": false,
         "well_conditioned": true,
         "max_wronskian_drift": 0.0,
         "max_lateral_amplification": 1.0,
         "lateral_focus_points": [],
+        "scaled_singular_value_product_error": 2.220446049250313e-16,
+        "min_scaled_singular_value_max": 1.0,
+        "amplification_score": 2.414213562373002,
+        "record": {
+          "schema": "path-transfer-record-v1",
+          "frame": "transverse-to-gamma, parallel-transported",
+          "units": {
+            "length": "declared length unit",
+            "angle": "radian"
+          },
+          "source_digest": "sha256:8c812602fc19acb40df3cdcba82a1487",
+          "resolution": {
+            "method": "rk4",
+            "samples": 2001,
+            "max_step": 0.001,
+            "uniform": true
+          },
+          "validity": {
+            "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
+            "relative_tolerance": null,
+            "max_lateral": null,
+            "max_heading": null,
+            "established": false
+          },
+          "observation_mode": "ambient-euclidean-chord",
+          "domain": "parametric-surface",
+          "samples": 2001,
+          "round_trip_error": 0.0
+        },
         "budget": [
           {
             "transverse_tolerance": 0.001,
@@ -2728,11 +2859,67 @@
         "amplification_at_end": 0.9999999999999453,
         "max_abs_jacobi_field": 1.9999999999998905,
         "max_speed_drift": 0.0,
+        "chart": {
+          "valid": true,
+          "valid_until": 2.0,
+          "first_invalid_index": null,
+          "reason": null,
+          "min_conditioning": 0.9999999999999999,
+          "min_domain_margin": null,
+          "declared_domain": {
+            "u": [
+              null,
+              null
+            ],
+            "v": [
+              null,
+              null
+            ],
+            "u_period": 6.283185307179586,
+            "v_period": null,
+            "u_scale": 1.0,
+            "v_scale": 1.0,
+            "reference_length": 1.0,
+            "note": "u wraps around the axis; v runs along it without bound"
+          }
+        },
         "focus_points": [],
+        "focus_events": [],
+        "focus_clearance": null,
+        "crossed_first_conjugate_point": false,
         "well_conditioned": true,
         "max_wronskian_drift": 0.0,
         "max_lateral_amplification": 1.0,
         "lateral_focus_points": [],
+        "scaled_singular_value_product_error": 2.220446049250313e-16,
+        "min_scaled_singular_value_max": 1.0,
+        "amplification_score": 2.414213562373002,
+        "record": {
+          "schema": "path-transfer-record-v1",
+          "frame": "transverse-to-gamma, parallel-transported",
+          "units": {
+            "length": "declared length unit",
+            "angle": "radian"
+          },
+          "source_digest": "sha256:9fb6408ca0491852c730969267140049",
+          "resolution": {
+            "method": "rk4",
+            "samples": 2001,
+            "max_step": 0.001,
+            "uniform": true
+          },
+          "validity": {
+            "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
+            "relative_tolerance": null,
+            "max_lateral": null,
+            "max_heading": null,
+            "established": false
+          },
+          "observation_mode": "ambient-euclidean-chord",
+          "domain": "parametric-surface",
+          "samples": 2001,
+          "round_trip_error": 0.0
+        },
         "budget": [
           {
             "transverse_tolerance": 0.001,
@@ -3822,15 +4009,84 @@
         "amplification_at_end": -0.18920062382689468,
         "max_abs_jacobi_field": 0.9999996829318342,
         "max_speed_drift": 1.6053824936079764e-12,
+        "chart": {
+          "valid": true,
+          "valid_until": 4.0,
+          "first_invalid_index": null,
+          "reason": null,
+          "min_conditioning": 0.5646428559034694,
+          "min_domain_margin": 0.6000004634581226,
+          "declared_domain": {
+            "u": [
+              0.0,
+              3.141592653589793
+            ],
+            "v": [
+              null,
+              null
+            ],
+            "u_period": null,
+            "v_period": 6.283185307179586,
+            "u_scale": 1.0,
+            "v_scale": 1.0,
+            "reference_length": 1.0,
+            "note": "colatitude and longitude; the poles u = 0, pi are chart singularities where the longitude direction collapses"
+          }
+        },
         "focus_points": [
-          3.14159265346205
+          3.1415926535902137
         ],
+        "focus_events": [
+          {
+            "column": "b",
+            "arc_length": 3.1415926535902137,
+            "location_uncertainty": 1.2816367722655295e-10,
+            "derivative": -0.9999999999999447,
+            "bracket": [
+              3.14,
+              3.142
+            ],
+            "order": 1,
+            "distance_to_end": 0.8584073464097863
+          }
+        ],
+        "focus_clearance": 0.8584073464097863,
+        "crossed_first_conjugate_point": true,
         "well_conditioned": false,
         "max_wronskian_drift": 3.1086244689504383e-15,
         "max_lateral_amplification": 1.0,
         "lateral_focus_points": [
-          1.5707963268601812
+          1.5707963267951066
         ],
+        "scaled_singular_value_product_error": 3.3306690738754696e-15,
+        "min_scaled_singular_value_max": 0.9999999999999992,
+        "amplification_score": 1.000000000000002,
+        "record": {
+          "schema": "path-transfer-record-v1",
+          "frame": "transverse-to-gamma, parallel-transported",
+          "units": {
+            "length": "declared length unit",
+            "angle": "radian"
+          },
+          "source_digest": "sha256:a4eb07de5e928f539d7385e0d5baa8c7",
+          "resolution": {
+            "method": "rk4",
+            "samples": 2001,
+            "max_step": 0.002,
+            "uniform": true
+          },
+          "validity": {
+            "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
+            "relative_tolerance": null,
+            "max_lateral": null,
+            "max_heading": null,
+            "established": false
+          },
+          "observation_mode": "ambient-euclidean-chord",
+          "domain": "parametric-surface",
+          "samples": 2001,
+          "round_trip_error": 0.0
+        },
         "budget": [
           {
             "transverse_tolerance": 0.001,
@@ -4920,11 +5176,67 @@
         "amplification_at_end": 1.4195196367298706,
         "max_abs_jacobi_field": 2.1292794550948058,
         "max_speed_drift": 9.325873406851315e-15,
+        "chart": {
+          "valid": true,
+          "valid_until": 1.5,
+          "first_invalid_index": null,
+          "reason": null,
+          "min_conditioning": 0.3118442367856869,
+          "min_domain_margin": 1.15,
+          "declared_domain": {
+            "u": [
+              0.05,
+              6.0
+            ],
+            "v": [
+              null,
+              null
+            ],
+            "u_period": null,
+            "v_period": 6.283185307179586,
+            "u_scale": 1.0,
+            "v_scale": 1.0,
+            "reference_length": 1.0,
+            "note": "u > 0 strictly: the cusp circle u = 0 is an edge of the surface, and the chart also degenerates as u grows and the tube closes on the axis"
+          }
+        },
         "focus_points": [],
+        "focus_events": [],
+        "focus_clearance": null,
+        "crossed_first_conjugate_point": false,
         "well_conditioned": true,
         "max_wronskian_drift": 1.9539925233402755e-14,
         "max_lateral_amplification": 2.352409615243233,
         "lateral_focus_points": [],
+        "scaled_singular_value_product_error": 2.1649348980190553e-14,
+        "min_scaled_singular_value_max": 1.0,
+        "amplification_score": 4.481689070338039,
+        "record": {
+          "schema": "path-transfer-record-v1",
+          "frame": "transverse-to-gamma, parallel-transported",
+          "units": {
+            "length": "declared length unit",
+            "angle": "radian"
+          },
+          "source_digest": "sha256:b075f7908d16ade746fbfc996fb0bcf1",
+          "resolution": {
+            "method": "rk4",
+            "samples": 2001,
+            "max_step": 0.00075,
+            "uniform": true
+          },
+          "validity": {
+            "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
+            "relative_tolerance": null,
+            "max_lateral": null,
+            "max_heading": null,
+            "established": false
+          },
+          "observation_mode": "ambient-euclidean-chord",
+          "domain": "parametric-surface",
+          "samples": 2001,
+          "round_trip_error": 0.0
+        },
         "budget": [
           {
             "transverse_tolerance": 0.001,
@@ -6014,11 +6326,67 @@
         "amplification_at_end": 1.1272611482912747,
         "max_abs_jacobi_field": 2.2545222965825493,
         "max_speed_drift": 2.4424906541753444e-15,
+        "chart": {
+          "valid": true,
+          "valid_until": 2.0,
+          "first_invalid_index": null,
+          "reason": null,
+          "min_conditioning": 0.40911405399258255,
+          "min_domain_margin": null,
+          "declared_domain": {
+            "u": [
+              null,
+              null
+            ],
+            "v": [
+              null,
+              null
+            ],
+            "u_period": null,
+            "v_period": null,
+            "u_scale": 1.0,
+            "v_scale": 1.0,
+            "reference_length": 1.0,
+            "note": "global: a graph over the whole (u, v) plane"
+          }
+        },
         "focus_points": [],
+        "focus_events": [],
+        "focus_clearance": null,
+        "crossed_first_conjugate_point": false,
         "well_conditioned": true,
         "max_wronskian_drift": 3.3306690738754696e-15,
         "max_lateral_amplification": 1.708053061918498,
         "lateral_focus_points": [],
+        "scaled_singular_value_product_error": 3.552713678800501e-15,
+        "min_scaled_singular_value_max": 1.0,
+        "amplification_score": 3.1076413102411697,
+        "record": {
+          "schema": "path-transfer-record-v1",
+          "frame": "transverse-to-gamma, parallel-transported",
+          "units": {
+            "length": "declared length unit",
+            "angle": "radian"
+          },
+          "source_digest": "sha256:1a44060dc5212ddc587c0407fecd4d65",
+          "resolution": {
+            "method": "rk4",
+            "samples": 2001,
+            "max_step": 0.001,
+            "uniform": true
+          },
+          "validity": {
+            "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
+            "relative_tolerance": null,
+            "max_lateral": null,
+            "max_heading": null,
+            "established": false
+          },
+          "observation_mode": "ambient-euclidean-chord",
+          "domain": "parametric-surface",
+          "samples": 2001,
+          "round_trip_error": 0.0
+        },
         "budget": [
           {
             "transverse_tolerance": 0.001,
@@ -7108,11 +7476,67 @@
         "amplification_at_end": 0.8877424393399584,
         "max_abs_jacobi_field": 1.775484878679917,
         "max_speed_drift": 1.6653345369377348e-15,
+        "chart": {
+          "valid": true,
+          "valid_until": 2.0,
+          "first_invalid_index": null,
+          "reason": null,
+          "min_conditioning": 0.9999999999999998,
+          "min_domain_margin": null,
+          "declared_domain": {
+            "u": [
+              null,
+              null
+            ],
+            "v": [
+              null,
+              null
+            ],
+            "u_period": 6.283185307179586,
+            "v_period": 6.283185307179586,
+            "u_scale": 1.0,
+            "v_scale": 1.0,
+            "reference_length": 1.0,
+            "note": "both angles wrap; the chart is regular everywhere for R > r"
+          }
+        },
         "focus_points": [],
+        "focus_events": [],
+        "focus_clearance": null,
+        "crossed_first_conjugate_point": false,
         "well_conditioned": true,
         "max_wronskian_drift": 1.1102230246251565e-15,
         "max_lateral_amplification": 1.0,
         "lateral_focus_points": [],
+        "scaled_singular_value_product_error": 1.4432899320127035e-15,
+        "min_scaled_singular_value_max": 1.0,
+        "amplification_score": 1.9916679275132587,
+        "record": {
+          "schema": "path-transfer-record-v1",
+          "frame": "transverse-to-gamma, parallel-transported",
+          "units": {
+            "length": "declared length unit",
+            "angle": "radian"
+          },
+          "source_digest": "sha256:36600b2d0f800df4a67e5268f6aaafb7",
+          "resolution": {
+            "method": "rk4",
+            "samples": 2001,
+            "max_step": 0.001,
+            "uniform": true
+          },
+          "validity": {
+            "basis": "not-established: no closed form for the eps^2 coefficient on a varying-curvature surface",
+            "relative_tolerance": null,
+            "max_lateral": null,
+            "max_heading": null,
+            "established": false
+          },
+          "observation_mode": "ambient-euclidean-chord",
+          "domain": "parametric-surface",
+          "samples": 2001,
+          "round_trip_error": 0.0
+        },
         "budget": [
           {
             "transverse_tolerance": 0.001,
@@ -8183,18 +8607,83 @@
         "case": "torus"
       }
     ],
+    "chart_rescaling_invariance": {
+      "surface": "torus(R=2, r=1)",
+      "reparameterisation": "v -> v/3",
+      "retired_criterion": "sqrt(EG - F^2) / max(E, G)",
+      "retired_before": 0.3338893520060163,
+      "retired_after": 0.11129645280546785,
+      "retired_ratio": 2.999999942402592,
+      "expected_ratio": 3.0,
+      "orthogonality_before": 0.9999999999999999,
+      "orthogonality_after": 0.9999999999986734,
+      "orthogonality_absolute_difference": 1.326494469822137e-12,
+      "note": "the chart is exactly as regular after the rescaling as before, so a conditioning number that moves is measuring the parameterisation rather than the chart"
+    },
+    "focus_versus_resolvability": {
+      "no_focus_but_unresolvable": {
+        "case": "plate",
+        "surface": "plane",
+        "heading_sigma": 1.7453292519943297e-07,
+        "heading_sigma_ratio_to_declared": 0.0001,
+        "n_focus_points": 0,
+        "max_resolvability": 0.0041887902047861615,
+        "acquire_threshold": 5.0,
+        "note": "b(s) = s has no zero on this path, so there is no focus at any arc length; rho is below the acquire threshold everywhere regardless, because the tolerance admits less than the scanner can see"
+      },
+      "focus_nearby_but_resolvable": {
+        "case": "spherical-cap",
+        "surface": "sphere(R=1)",
+        "focus_points": [
+          3.141592653590081
+        ],
+        "declared_metrology_sigma": 8.333333333333334e-05,
+        "samples": [
+          {
+            "offset_from_focus": 0.1,
+            "arclength": 3.0407298657474775,
+            "abs_b": 0.10069185687931362,
+            "rho_with_declared_scanner": 2.10888531898911,
+            "metrology_sigma_to_reach_acquire_threshold": 3.514808864981851e-05,
+            "metrology_sigma_micrometres_on_a_300mm_coupon": 10.544426594945552,
+            "resolvable_with_declared_scanner": false
+          },
+          {
+            "offset_from_focus": 0.05,
+            "arclength": 3.0917121628977347,
+            "abs_b": 0.04985980896190604,
+            "rho_with_declared_scanner": 1.0442613969607635,
+            "metrology_sigma_to_reach_acquire_threshold": 1.7404356616012726e-05,
+            "metrology_sigma_micrometres_on_a_300mm_coupon": 5.221306984803817,
+            "resolvable_with_declared_scanner": false
+          },
+          {
+            "offset_from_focus": 0.01,
+            "arclength": 3.131769682087222,
+            "abs_b": 0.00982281353260714,
+            "rho_with_declared_scanner": 0.20572852554413998,
+            "metrology_sigma_to_reach_acquire_threshold": 3.428808759069e-06,
+            "metrology_sigma_micrometres_on_a_300mm_coupon": 1.0286426277207,
+            "resolvable_with_declared_scanner": false
+          }
+        ],
+        "note": "|b| is small near a conjugate point but not zero, so the metrology sigma that resolves the admitted poses there is finite; a focus does not by itself make a path unobservable"
+      },
+      "note": "a focus is a fact about the surface and the path; resolvability is a fact about the surface, the tolerance and the instrument together. Both are reported, and the route constraint uses the second"
+    },
     "heading_scan": {
       "case": "torus",
       "surface": "torus(R=2, r=1)",
-      "objective": "minimum-forward-angular-error-amplification",
-      "objective_note": "Ranked by max |b(s)| alone. That is how far an aiming error is carried, not robustness: a heading can score well by passing through a focus, where the endpoint map is ill conditioned and a family of paths crowds instead of covering. Boundary clearance, chart validity, path length, curvature exposure and coverage are not modelled.",
+      "ranking_scalar": "minimum-forward-angular-error-amplification",
+      "ranking_note": "max |b(s)| is how far an aiming error is carried, not robustness. It is reported because it is the cleanest single number about the heading column, and it does not decide anything: the recommendation below comes from declared process limits.",
       "start": {
         "u": 0.3,
         "v": 0.2
       },
       "length": 6.0,
       "n_headings": 24,
-      "focus_margin_floor": 0.25,
+      "focus_margin_report_level": 0.25,
+      "focus_margin_note": "|b| has units of length per radian, so this level is specific to this part's size and to radians. It is reported, never used as a criterion; the criterion is resolvability below.",
       "lowest_amplification": {
         "heading": 1.7016960206944711,
         "heading_degrees": 97.49999999999999,
@@ -8207,7 +8696,7 @@
         "max_wronskian_drift": 2.4424906541753444e-15,
         "mean_curvature_along_path": 0.32544117757184626,
         "focus_points": [
-          5.498107672100967
+          5.498107672081362
         ],
         "passes_a_focus": true,
         "max_speed_drift": 3.1086244689504383e-15
@@ -8227,23 +8716,2760 @@
         "passes_a_focus": false,
         "max_speed_drift": 5.140332604014475e-14
       },
-      "lowest_amplification_clear_of_a_focus": {
-        "heading": 2.22529479629277,
-        "heading_degrees": 127.49999999999999,
-        "max_forward_amplification": 1.9166371781373872,
-        "focus_margin": 0.7849589465144989,
-        "dead_zone_fraction": 0.2,
-        "jacobi_field_at_end": 0.7849589465144989,
-        "amplification_at_end": 0.1308264910857498,
-        "max_lateral_amplification": 1.1575485220260089,
-        "max_wronskian_drift": 4.6629367034256575e-15,
-        "mean_curvature_along_path": 0.24814050970479035,
-        "focus_points": [],
-        "passes_a_focus": false,
-        "max_speed_drift": 1.532107773982716e-14
-      },
-      "n_headings_passing_a_focus": 7,
       "amplification_ratio": 21.245441757231657,
+      "n_headings_passing_a_focus": 7,
+      "route_selection": {
+        "tolerance": {
+          "lateral": 0.001,
+          "heading": 0.001
+        },
+        "constraints": {
+          "max_cross_track_error": 0.02,
+          "max_heading_error": 0.05,
+          "min_coverage_margin": 0.0,
+          "acquisition": null,
+          "min_boundary_clearance": null,
+          "max_path_length": null,
+          "coverage": {
+            "nominal_spacing": 0.1,
+            "swath_width": 0.14,
+            "initial_heading_delta": 0.0
+          }
+        },
+        "n_feasible": 15,
+        "recommended": {
+          "label": "97deg",
+          "feasible": true,
+          "binding_constraint": "cross-track-error",
+          "amplification_score": 1.7370669462531205,
+          "max_cross_track_error": 0.0020098787363542294,
+          "max_heading_error": 0.0011515511007941404,
+          "focus_clearance": 0.5018923279186378,
+          "tracking": null,
+          "crossed_first_conjugate_point": true,
+          "path_length": 6.0,
+          "margins": [
+            {
+              "name": "cross-track-error",
+              "limit": 0.02,
+              "worst_value": 0.0020098787363542294,
+              "margin": 0.01799012126364577,
+              "satisfied": true,
+              "at_arclength": 1.822
+            },
+            {
+              "name": "heading-error",
+              "limit": 0.05,
+              "worst_value": 0.0011515511007941404,
+              "margin": 0.048848448899205865,
+              "satisfied": true,
+              "at_arclength": 0.908
+            },
+            {
+              "name": "coverage-margin",
+              "limit": 0.0,
+              "worst_value": 0.036006281758703795,
+              "margin": 0.036006281758703795,
+              "satisfied": true,
+              "at_arclength": 5.574
+            }
+          ],
+          "source_digest": "sha256:3b58c6bce5f82f06b40f718091858ccf",
+          "observation_mode": "ambient-euclidean-chord"
+        },
+        "binding_constraints": [
+          "coverage-margin",
+          "cross-track-error"
+        ],
+        "assessments": [
+          {
+            "label": "97deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 1.7370669462531205,
+            "max_cross_track_error": 0.0020098787363542294,
+            "max_heading_error": 0.0011515511007941404,
+            "focus_clearance": 0.5018923279186378,
+            "tracking": null,
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.0020098787363542294,
+                "margin": 0.01799012126364577,
+                "satisfied": true,
+                "at_arclength": 1.822
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011515511007941404,
+                "margin": 0.048848448899205865,
+                "satisfied": true,
+                "at_arclength": 0.908
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.036006281758703795,
+                "margin": 0.036006281758703795,
+                "satisfied": true,
+                "at_arclength": 5.574
+              }
+            ],
+            "source_digest": "sha256:3b58c6bce5f82f06b40f718091858ccf",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "105deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 1.7439481623328588,
+            "max_cross_track_error": 0.002043107127905988,
+            "max_heading_error": 0.0011523183793793715,
+            "focus_clearance": 0.38518380679912756,
+            "tracking": null,
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.002043107127905988,
+                "margin": 0.017956892872094014,
+                "satisfied": true,
+                "at_arclength": 3.734
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011523183793793715,
+                "margin": 0.04884768162062063,
+                "satisfied": true,
+                "at_arclength": 0.908
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.03382325181585305,
+                "margin": 0.03382325181585305,
+                "satisfied": true,
+                "at_arclength": 5.498
+              }
+            ],
+            "source_digest": "sha256:7db693f1a5d04681dc968c8f9817546c",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "90deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 1.7452493854091462,
+            "max_cross_track_error": 0.0020184060599444794,
+            "max_heading_error": 0.0011624850134363098,
+            "focus_clearance": 0.5381006246621798,
+            "tracking": null,
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.0020184060599444794,
+                "margin": 0.01798159394005552,
+                "satisfied": true,
+                "at_arclength": 1.838
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011624850134363098,
+                "margin": 0.04883751498656369,
+                "satisfied": true,
+                "at_arclength": 4.562
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.03782480903269882,
+                "margin": 0.03782480903269882,
+                "satisfied": true,
+                "at_arclength": 5.564
+              }
+            ],
+            "source_digest": "sha256:a8aba482c160e56b661abaa9fd6d4c4d",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "112deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 1.769002744951954,
+            "max_cross_track_error": 0.002123505883915718,
+            "max_heading_error": 0.001152847946816673,
+            "focus_clearance": 0.16314918991455407,
+            "tracking": null,
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.002123505883915718,
+                "margin": 0.01787649411608428,
+                "satisfied": true,
+                "at_arclength": 3.88
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.001152847946816673,
+                "margin": 0.04884715205318333,
+                "satisfied": true,
+                "at_arclength": 0.908
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.030888828175279257,
+                "margin": 0.030888828175279257,
+                "satisfied": true,
+                "at_arclength": 5.57
+              }
+            ],
+            "source_digest": "sha256:9ac7f9e398aa3d43213295df91a40ff3",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "82deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 1.7692054527636802,
+            "max_cross_track_error": 0.002033011322962437,
+            "max_heading_error": 0.0011682186324526926,
+            "focus_clearance": 0.5027699959265384,
+            "tracking": null,
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.002033011322962437,
+                "margin": 0.017966988677037565,
+                "satisfied": true,
+                "at_arclength": 1.872
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011682186324526926,
+                "margin": 0.04883178136754731,
+                "satisfied": true,
+                "at_arclength": 4.62
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.037939335417397524,
+                "margin": 0.037939335417397524,
+                "satisfied": true,
+                "at_arclength": 0.06
+              }
+            ],
+            "source_digest": "sha256:afcb0984e40b6b1c63415bd4f9f1a30d",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "75deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 1.8132391653735023,
+            "max_cross_track_error": 0.0020738118027448784,
+            "max_heading_error": 0.0011632088458906815,
+            "focus_clearance": 0.3930232137858951,
+            "tracking": null,
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.0020738118027448784,
+                "margin": 0.01792618819725512,
+                "satisfied": true,
+                "at_arclength": 3.714
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011632088458906815,
+                "margin": 0.04883679115410932,
+                "satisfied": true,
+                "at_arclength": 4.746
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.03793930287521978,
+                "margin": 0.03793930287521978,
+                "satisfied": true,
+                "at_arclength": 0.06
+              }
+            ],
+            "source_digest": "sha256:a4cf0440ed2188d2c0a06415a5250e31",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "120deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 1.8244077093397078,
+            "max_cross_track_error": 0.0022765475751787955,
+            "max_heading_error": 0.0011531613731623406,
+            "focus_clearance": 2.7645339344157476,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.0022765475751787955,
+                "margin": 0.017723452424821207,
+                "satisfied": true,
+                "at_arclength": 4.148
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011531613731623406,
+                "margin": 0.04884683862683766,
+                "satisfied": true,
+                "at_arclength": 0.908
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.026695179786411727,
+                "margin": 0.026695179786411727,
+                "satisfied": true,
+                "at_arclength": 5.676
+              }
+            ],
+            "source_digest": "sha256:f0ee4be4c09a13d85da9172122cf534e",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "68deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 1.8879667009158567,
+            "max_cross_track_error": 0.0021743710508905474,
+            "max_heading_error": 0.0011764975471788373,
+            "focus_clearance": 0.19481943207333163,
+            "tracking": null,
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.0021743710508905474,
+                "margin": 0.017825628949109454,
+                "satisfied": true,
+                "at_arclength": 3.8320000000000003
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011764975471788373,
+                "margin": 0.04882350245282117,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.037939271042356656,
+                "margin": 0.037939271042356656,
+                "satisfied": true,
+                "at_arclength": 0.06
+              }
+            ],
+            "source_digest": "sha256:1ddc5e3e38883410a72c5be3e4295b4a",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "127deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 1.9693662620353172,
+            "max_cross_track_error": 0.002588781427736525,
+            "max_heading_error": 0.0011532892897028932,
+            "focus_clearance": 2.7967923986082446,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.002588781427736525,
+                "margin": 0.017411218572263475,
+                "satisfied": true,
+                "at_arclength": 4.606
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011532892897028932,
+                "margin": 0.04884671071029711,
+                "satisfied": true,
+                "at_arclength": 0.908
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.020101209311156124,
+                "margin": 0.020101209311156124,
+                "satisfied": true,
+                "at_arclength": 5.83
+              }
+            ],
+            "source_digest": "sha256:21add373d049d09e5d734cc5e6034386",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "60deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 2.0195371133779876,
+            "max_cross_track_error": 0.002350181349964663,
+            "max_heading_error": 0.0012084542705183647,
+            "focus_clearance": 2.9772568015892253,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.002350181349964663,
+                "margin": 0.017649818650035336,
+                "satisfied": true,
+                "at_arclength": 4.026
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0012084542705183647,
+                "margin": 0.04879154572948164,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.037939240516061706,
+                "margin": 0.037939240516061706,
+                "satisfied": true,
+                "at_arclength": 0.06
+              }
+            ],
+            "source_digest": "sha256:0c989ec61a1724a1bb0aff61bcbf8dd7",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "52deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 2.279243403872104,
+            "max_cross_track_error": 0.0026701643191024,
+            "max_heading_error": 0.001234929940890513,
+            "focus_clearance": 2.885914564474817,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.0026701643191024,
+                "margin": 0.0173298356808976,
+                "satisfied": true,
+                "at_arclength": 4.328
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.001234929940890513,
+                "margin": 0.04876507005910949,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.037939211887940305,
+                "margin": 0.037939211887940305,
+                "satisfied": true,
+                "at_arclength": 0.06
+              }
+            ],
+            "source_digest": "sha256:8ccb82babca1ee05cbc14c9d86daaee2",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "135deg",
+            "feasible": true,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 2.4724324100061223,
+            "max_cross_track_error": 0.003307224732115946,
+            "max_heading_error": 0.0011532695908099354,
+            "focus_clearance": 2.8423515783608257,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.003307224732115946,
+                "margin": 0.016692775267884055,
+                "satisfied": true,
+                "at_arclength": 5.2540000000000004
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011532695908099354,
+                "margin": 0.04884673040919007,
+                "satisfied": true,
+                "at_arclength": 0.908
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.008537627487199828,
+                "margin": 0.008537627487199828,
+                "satisfied": true,
+                "at_arclength": 6.0
+              }
+            ],
+            "source_digest": "sha256:824d057ace93b47a28833e7f151e6568",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "45deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 2.8720826270759283,
+            "max_cross_track_error": 0.003312012734120135,
+            "max_heading_error": 0.0012888059714200447,
+            "focus_clearance": 2.6631653582545547,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.003312012734120135,
+                "margin": 0.016687987265879865,
+                "satisfied": true,
+                "at_arclength": 4.7700000000000005
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0012888059714200447,
+                "margin": 0.04871119402857996,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.03793918572914108,
+                "margin": 0.03793918572914108,
+                "satisfied": true,
+                "at_arclength": 0.06
+              }
+            ],
+            "source_digest": "sha256:976e9574621141b72b79e7cb0d581841",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "37deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 4.420277047300088,
+            "max_cross_track_error": 0.004806826044662051,
+            "max_heading_error": 0.0013678010784655991,
+            "focus_clearance": 2.2033218936768257,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.004806826044662051,
+                "margin": 0.015193173955337948,
+                "satisfied": true,
+                "at_arclength": 5.364
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0013678010784655991,
+                "margin": 0.048632198921534406,
+                "satisfied": true,
+                "at_arclength": 3.654
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.03793916257502877,
+                "margin": 0.03793916257502877,
+                "satisfied": true,
+                "at_arclength": 0.06
+              }
+            ],
+            "source_digest": "sha256:5edd8653d417979312dc1b8f91b145d7",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "30deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 9.443361216452262,
+            "max_cross_track_error": 0.009537010355519588,
+            "max_heading_error": 0.002930913941435611,
+            "focus_clearance": null,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.009537010355519588,
+                "margin": 0.010462989644480412,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.002930913941435611,
+                "margin": 0.04706908605856439,
+                "satisfied": true,
+                "at_arclength": 4.5040000000000004
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.037939142909980045,
+                "margin": 0.037939142909980045,
+                "satisfied": true,
+                "at_arclength": 0.06
+              }
+            ],
+            "source_digest": "sha256:38c6b25dce4a150df82d446a9723d388",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "142deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 3.978792964703725,
+            "max_cross_track_error": 0.005127651923608181,
+            "max_heading_error": 0.001289350982969937,
+            "focus_clearance": 2.903110839528859,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.005127651923608181,
+                "margin": 0.01487234807639182,
+                "satisfied": true,
+                "at_arclength": 5.988
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.001289350982969937,
+                "margin": 0.04871064901703007,
+                "satisfied": true,
+                "at_arclength": 4.406
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.011974423625637859,
+                "margin": -0.011974423625637859,
+                "satisfied": false,
+                "at_arclength": 6.0
+              }
+            ],
+            "source_digest": "sha256:53868ad04c97d668bdc3e38fe8d15c6c",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "172deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 22.66714668541487,
+            "max_cross_track_error": 0.022875713995224794,
+            "max_heading_error": 0.009665090464672966,
+            "focus_clearance": 2.7032545932727308,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.022875713995224794,
+                "margin": -0.0028757139952247934,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.009665090464672966,
+                "margin": 0.040334909535327035,
+                "satisfied": true,
+                "at_arclength": 5.19
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.03197591923415183,
+                "margin": -0.03197591923415183,
+                "satisfied": false,
+                "at_arclength": 6.0
+              }
+            ],
+            "source_digest": "sha256:cf15e91b6d3b814ca050d166b20becc0",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "150deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 8.40742350551191,
+            "max_cross_track_error": 0.00973166577550796,
+            "max_heading_error": 0.0033009933671055416,
+            "focus_clearance": 2.981389215104666,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.00973166577550796,
+                "margin": 0.01026833422449204,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0033009933671055416,
+                "margin": 0.04669900663289446,
+                "satisfied": true,
+                "at_arclength": 5.194
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.053983519181742295,
+                "margin": -0.053983519181742295,
+                "satisfied": false,
+                "at_arclength": 6.0
+              }
+            ],
+            "source_digest": "sha256:dce3fc60bdaa609377596b2a9bb5aebb",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "165deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 32.40719929398088,
+            "max_cross_track_error": 0.030066170126695848,
+            "max_heading_error": 0.017732468896883256,
+            "focus_clearance": 2.8085983279349604,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.030066170126695848,
+                "margin": -0.010066170126695848,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.017732468896883256,
+                "margin": 0.032267531103116746,
+                "satisfied": true,
+                "at_arclength": 5.974
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.14272350491669,
+                "margin": -0.14272350491669,
+                "satisfied": false,
+                "at_arclength": 6.0
+              }
+            ],
+            "source_digest": "sha256:8a4e58a64fd5606afa670d7400bbfdac",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "158deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 26.05859048047916,
+            "max_cross_track_error": 0.023732392579402177,
+            "max_heading_error": 0.016942518396356618,
+            "focus_clearance": 2.9212287526812717,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.023732392579402177,
+                "margin": -0.0037323925794021766,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.016942518396356618,
+                "margin": 0.033057481603643385,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.1750524903910457,
+                "margin": -0.1750524903910457,
+                "satisfied": false,
+                "at_arclength": 6.0
+              }
+            ],
+            "source_digest": "sha256:2b85e04bac935cc86a4feecf34504134",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "22deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 36.423798355044276,
+            "max_cross_track_error": 0.03484737793856496,
+            "max_heading_error": 0.018592943917426538,
+            "focus_clearance": null,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.03484737793856496,
+                "margin": -0.01484737793856496,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.018592943917426538,
+                "margin": 0.031407056082573465,
+                "satisfied": true,
+                "at_arclength": 5.938
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.21346599478714912,
+                "margin": -0.21346599478714912,
+                "satisfied": false,
+                "at_arclength": 6.0
+              }
+            ],
+            "source_digest": "sha256:9b0cc66caee6949c7c3a419ccf4057f8",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "0deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 21.406630572472586,
+            "max_cross_track_error": 0.024289430783985676,
+            "max_heading_error": 0.008947710428308562,
+            "focus_clearance": null,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.024289430783985676,
+                "margin": -0.004289430783985675,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.008947710428308562,
+                "margin": 0.04105228957169144,
+                "satisfied": true,
+                "at_arclength": 4.412
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.2216617561337289,
+                "margin": -0.2216617561337289,
+                "satisfied": false,
+                "at_arclength": 6.0
+              }
+            ],
+            "source_digest": "sha256:84fc035a64f96d62f8bcc750c3273ad9",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "7deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 24.20444874754397,
+            "max_cross_track_error": 0.027257584695956204,
+            "max_heading_error": 0.010124906196161906,
+            "focus_clearance": null,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.027257584695956204,
+                "margin": -0.007257584695956203,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.010124906196161906,
+                "margin": 0.039875093803838094,
+                "satisfied": true,
+                "at_arclength": 4.586
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.25601293003804193,
+                "margin": -0.25601293003804193,
+                "satisfied": false,
+                "at_arclength": 6.0
+              }
+            ],
+            "source_digest": "sha256:ef5c6c426b9dfdc1e57c1f4f8913718f",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "15deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 39.6090374646041,
+            "max_cross_track_error": 0.04158500352954471,
+            "max_heading_error": 0.018198205353345615,
+            "focus_clearance": null,
+            "tracking": null,
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.04158500352954471,
+                "margin": -0.02158500352954471,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.018198205353345615,
+                "margin": 0.03180179464665439,
+                "satisfied": true,
+                "at_arclength": 5.354
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.4112204507749595,
+                "margin": -0.4112204507749595,
+                "satisfied": false,
+                "at_arclength": 6.0
+              }
+            ],
+            "source_digest": "sha256:880120acfa78c137299964b3747c4fa5",
+            "observation_mode": "ambient-euclidean-chord"
+          }
+        ]
+      },
+      "route_selection_with_tracking": {
+        "note": "The same candidates, with the constraint that the scanner acquires the path and does not lose it. rho = |b| sigma_alpha / sigma_measurement is dimensionless, so unlike a threshold on |b| it does not move when the part is rescaled or the angle unit changes; and a schedule rather than a minimum, because rho(0) = 0 on every route and a route acquired at its last sample was never tracked.",
+        "observation_model": {
+          "mode": "ambient-euclidean-chord",
+          "matrix": [
+            [
+              1.0,
+              0.0
+            ]
+          ],
+          "noise_covariance": [
+            [
+              6.944444444444446e-09
+            ]
+          ],
+          "outputs": [
+            "transverse"
+          ],
+          "calibration_id": "declared-example",
+          "reconstruction_version": "none",
+          "temporal_filter": null,
+          "note": "a 25 um metrology system on a 300 mm coupon, expressed in units of R",
+          "extra": {}
+        },
+        "initial_covariance": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            3.046174197867086e-06
+          ]
+        ],
+        "acquisition": {
+          "acquire_threshold": 5.0,
+          "hold_threshold": 3.0,
+          "acquisition_window": 0.05,
+          "max_acquisition_distance": 1.0,
+          "min_tracked_distance": 3.0,
+          "max_loss_distance": 0.1,
+          "processing": "offline",
+          "note": "a declared example schedule; a real one comes from the sensor"
+        },
+        "n_feasible": 8,
+        "recommended": {
+          "label": "120deg",
+          "feasible": true,
+          "binding_constraint": "cross-track-error",
+          "amplification_score": 1.8244077093397078,
+          "max_cross_track_error": 0.0022765475751787955,
+          "max_heading_error": 0.0011531613731623406,
+          "focus_clearance": 2.7645339344157476,
+          "tracking": {
+            "outcome": "TRACKED",
+            "acquired": true,
+            "acquisition_arclength": 0.24,
+            "acquisition_latency": 0.24,
+            "acquisition_window_started_at": 0.24,
+            "acquisition_declared_at": 0.292,
+            "tracked_distance": 5.76,
+            "min_resolvability_while_tracked": 4.188356933463546,
+            "max_resolvability": 38.02775908782449,
+            "loss_intervals": [],
+            "longest_loss": 0.0,
+            "loss_started_at": null,
+            "track_loss_declared_at": null,
+            "processing": "offline",
+            "detail": "acquired at 0.24 and held for 5.76",
+            "satisfied": true
+          },
+          "crossed_first_conjugate_point": false,
+          "path_length": 6.0,
+          "margins": [
+            {
+              "name": "cross-track-error",
+              "limit": 0.02,
+              "worst_value": 0.0022765475751787955,
+              "margin": 0.017723452424821207,
+              "satisfied": true,
+              "at_arclength": 4.148
+            },
+            {
+              "name": "heading-error",
+              "limit": 0.05,
+              "worst_value": 0.0011531613731623406,
+              "margin": 0.04884683862683766,
+              "satisfied": true,
+              "at_arclength": 0.908
+            },
+            {
+              "name": "coverage-margin",
+              "limit": 0.0,
+              "worst_value": 0.026695179786411727,
+              "margin": 0.026695179786411727,
+              "satisfied": true,
+              "at_arclength": 5.676
+            },
+            {
+              "name": "tracking",
+              "limit": 3.0,
+              "worst_value": 4.188356933463546,
+              "margin": 1.1883569334635462,
+              "satisfied": true,
+              "at_arclength": 0.24
+            }
+          ],
+          "source_digest": "sha256:f0ee4be4c09a13d85da9172122cf534e",
+          "observation_mode": "ambient-euclidean-chord"
+        },
+        "outcomes": [
+          "TRACKED",
+          "TRACK_LOST"
+        ],
+        "scale_invariance": {
+          "radii": [
+            1.0,
+            2.0
+          ],
+          "max_absolute_difference": 0.0,
+          "max_relative_difference": 0.0,
+          "note": "same physical situation at two sizes; rho must not move"
+        },
+        "assessments": [
+          {
+            "label": "120deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 1.8244077093397078,
+            "max_cross_track_error": 0.0022765475751787955,
+            "max_heading_error": 0.0011531613731623406,
+            "focus_clearance": 2.7645339344157476,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 4.188356933463546,
+              "max_resolvability": 38.02775908782449,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.0022765475751787955,
+                "margin": 0.017723452424821207,
+                "satisfied": true,
+                "at_arclength": 4.148
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011531613731623406,
+                "margin": 0.04884683862683766,
+                "satisfied": true,
+                "at_arclength": 0.908
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.026695179786411727,
+                "margin": 0.026695179786411727,
+                "satisfied": true,
+                "at_arclength": 5.676
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 4.188356933463546,
+                "margin": 1.1883569334635462,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:f0ee4be4c09a13d85da9172122cf534e",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "127deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 1.9693662620353172,
+            "max_cross_track_error": 0.002588781427736525,
+            "max_heading_error": 0.0011532892897028932,
+            "focus_clearance": 2.7967923986082446,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.010760343995699,
+              "max_resolvability": 40.141955189556576,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.002588781427736525,
+                "margin": 0.017411218572263475,
+                "satisfied": true,
+                "at_arclength": 4.606
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011532892897028932,
+                "margin": 0.04884671071029711,
+                "satisfied": true,
+                "at_arclength": 0.908
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.020101209311156124,
+                "margin": 0.020101209311156124,
+                "satisfied": true,
+                "at_arclength": 5.83
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.010760343995699,
+                "margin": 2.010760343995699,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:21add373d049d09e5d734cc5e6034386",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "60deg",
+            "feasible": true,
+            "binding_constraint": "tracking",
+            "amplification_score": 2.0195371133779876,
+            "max_cross_track_error": 0.002350181349964663,
+            "max_heading_error": 0.0012084542705183647,
+            "focus_clearance": 2.9772568015892253,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 2.8006928642533016,
+              "max_resolvability": 42.17530001001815,
+              "loss_intervals": [
+                [
+                  5.992,
+                  6.0
+                ]
+              ],
+              "longest_loss": 0.008000000000000007,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.002350181349964663,
+                "margin": 0.017649818650035336,
+                "satisfied": true,
+                "at_arclength": 4.026
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0012084542705183647,
+                "margin": 0.04879154572948164,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.037939240516061706,
+                "margin": 0.037939240516061706,
+                "satisfied": true,
+                "at_arclength": 0.06
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 2.8006928642533016,
+                "margin": -0.19930713574669845,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:0c989ec61a1724a1bb0aff61bcbf8dd7",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "52deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 2.279243403872104,
+            "max_cross_track_error": 0.0026701643191024,
+            "max_heading_error": 0.001234929940890513,
+            "focus_clearance": 2.885914564474817,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.0112356318854605,
+              "max_resolvability": 47.363571678758156,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.0026701643191024,
+                "margin": 0.0173298356808976,
+                "satisfied": true,
+                "at_arclength": 4.328
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.001234929940890513,
+                "margin": 0.04876507005910949,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.037939211887940305,
+                "margin": 0.037939211887940305,
+                "satisfied": true,
+                "at_arclength": 0.06
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.0112356318854605,
+                "margin": 2.0112356318854605,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:8ccb82babca1ee05cbc14c9d86daaee2",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "135deg",
+            "feasible": true,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 2.4724324100061223,
+            "max_cross_track_error": 0.003307224732115946,
+            "max_heading_error": 0.0011532695908099354,
+            "focus_clearance": 2.8423515783608257,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.010734517539782,
+              "max_resolvability": 47.647242795937295,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.003307224732115946,
+                "margin": 0.016692775267884055,
+                "satisfied": true,
+                "at_arclength": 5.2540000000000004
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011532695908099354,
+                "margin": 0.04884673040919007,
+                "satisfied": true,
+                "at_arclength": 0.908
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.008537627487199828,
+                "margin": 0.008537627487199828,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.010734517539782,
+                "margin": 2.010734517539782,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:824d057ace93b47a28833e7f151e6568",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "45deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 2.8720826270759283,
+            "max_cross_track_error": 0.003312012734120135,
+            "max_heading_error": 0.0012888059714200447,
+            "focus_clearance": 2.6631653582545547,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.011287242443256,
+              "max_resolvability": 59.53194413632324,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.003312012734120135,
+                "margin": 0.016687987265879865,
+                "satisfied": true,
+                "at_arclength": 4.7700000000000005
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0012888059714200447,
+                "margin": 0.04871119402857996,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.03793918572914108,
+                "margin": 0.03793918572914108,
+                "satisfied": true,
+                "at_arclength": 0.06
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.011287242443256,
+                "margin": 2.011287242443256,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:976e9574621141b72b79e7cb0d581841",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "37deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 4.420277047300088,
+            "max_cross_track_error": 0.004806826044662051,
+            "max_heading_error": 0.0013678010784655991,
+            "focus_clearance": 2.2033218936768257,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.01133423057582,
+              "max_resolvability": 92.22162069679267,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.004806826044662051,
+                "margin": 0.015193173955337948,
+                "satisfied": true,
+                "at_arclength": 5.364
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0013678010784655991,
+                "margin": 0.048632198921534406,
+                "satisfied": true,
+                "at_arclength": 3.654
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.03793916257502877,
+                "margin": 0.03793916257502877,
+                "satisfied": true,
+                "at_arclength": 0.06
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.01133423057582,
+                "margin": 2.0113342305758204,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:5edd8653d417979312dc1b8f91b145d7",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "30deg",
+            "feasible": true,
+            "binding_constraint": "cross-track-error",
+            "amplification_score": 9.443361216452262,
+            "max_cross_track_error": 0.009537010355519588,
+            "max_heading_error": 0.002930913941435611,
+            "focus_clearance": null,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.011375092274304,
+              "max_resolvability": 197.62643740886972,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.009537010355519588,
+                "margin": 0.010462989644480412,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.002930913941435611,
+                "margin": 0.04706908605856439,
+                "satisfied": true,
+                "at_arclength": 4.5040000000000004
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.037939142909980045,
+                "margin": 0.037939142909980045,
+                "satisfied": true,
+                "at_arclength": 0.06
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.011375092274304,
+                "margin": 2.011375092274304,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:38c6b25dce4a150df82d446a9723d388",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "142deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 3.978792964703725,
+            "max_cross_track_error": 0.005127651923608181,
+            "max_heading_error": 0.001289350982969937,
+            "focus_clearance": 2.903110839528859,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.010713353376231,
+              "max_resolvability": 78.12787347303667,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.005127651923608181,
+                "margin": 0.01487234807639182,
+                "satisfied": true,
+                "at_arclength": 5.988
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.001289350982969937,
+                "margin": 0.04871064901703007,
+                "satisfied": true,
+                "at_arclength": 4.406
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.011974423625637859,
+                "margin": -0.011974423625637859,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.010713353376231,
+                "margin": 2.0107133533762314,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:53868ad04c97d668bdc3e38fe8d15c6c",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "172deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 22.66714668541487,
+            "max_cross_track_error": 0.022875713995224794,
+            "max_heading_error": 0.009665090464672966,
+            "focus_clearance": 2.7032545932727308,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.010669956787961,
+              "max_resolvability": 452.67143792717457,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.022875713995224794,
+                "margin": -0.0028757139952247934,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.009665090464672966,
+                "margin": 0.040334909535327035,
+                "satisfied": true,
+                "at_arclength": 5.19
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.03197591923415183,
+                "margin": -0.03197591923415183,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.010669956787961,
+                "margin": 2.010669956787961,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:cf15e91b6d3b814ca050d166b20becc0",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "150deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 8.40742350551191,
+            "max_cross_track_error": 0.00973166577550796,
+            "max_heading_error": 0.0033009933671055416,
+            "focus_clearance": 2.981389215104666,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.010696591771505,
+              "max_resolvability": 167.26810875926,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.00973166577550796,
+                "margin": 0.01026833422449204,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0033009933671055416,
+                "margin": 0.04669900663289446,
+                "satisfied": true,
+                "at_arclength": 5.194
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.053983519181742295,
+                "margin": -0.053983519181742295,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.010696591771505,
+                "margin": 2.010696591771505,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:dce3fc60bdaa609377596b2a9bb5aebb",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "165deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 32.40719929398088,
+            "max_cross_track_error": 0.030066170126695848,
+            "max_heading_error": 0.017732468896883256,
+            "focus_clearance": 2.8085983279349604,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.0106751416545094,
+              "max_resolvability": 583.0850101000428,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.030066170126695848,
+                "margin": -0.010066170126695848,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.017732468896883256,
+                "margin": 0.032267531103116746,
+                "satisfied": true,
+                "at_arclength": 5.974
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.14272350491669,
+                "margin": -0.14272350491669,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.0106751416545094,
+                "margin": 2.0106751416545094,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:8a4e58a64fd5606afa670d7400bbfdac",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "158deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 26.05859048047916,
+            "max_cross_track_error": 0.023732392579402177,
+            "max_heading_error": 0.016942518396356618,
+            "focus_clearance": 2.9212287526812717,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.0106839455729775,
+              "max_resolvability": 441.0066299338213,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.023732392579402177,
+                "margin": -0.0037323925794021766,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.016942518396356618,
+                "margin": 0.033057481603643385,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.1750524903910457,
+                "margin": -0.1750524903910457,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.0106839455729775,
+                "margin": 2.0106839455729775,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:2b85e04bac935cc86a4feecf34504134",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "22deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 36.423798355044276,
+            "max_cross_track_error": 0.03484737793856496,
+            "max_heading_error": 0.018592943917426538,
+            "focus_clearance": null,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.011408461470896,
+              "max_resolvability": 670.4088675604321,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.03484737793856496,
+                "margin": -0.01484737793856496,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.018592943917426538,
+                "margin": 0.031407056082573465,
+                "satisfied": true,
+                "at_arclength": 5.938
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.21346599478714912,
+                "margin": -0.21346599478714912,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.011408461470896,
+                "margin": 2.0114084614708956,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:9b0cc66caee6949c7c3a419ccf4057f8",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "0deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 21.406630572472586,
+            "max_cross_track_error": 0.024289430783985676,
+            "max_heading_error": 0.008947710428308562,
+            "focus_clearance": null,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.011453512381392,
+              "max_resolvability": 443.1447206368203,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.024289430783985676,
+                "margin": -0.004289430783985675,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.008947710428308562,
+                "margin": 0.04105228957169144,
+                "satisfied": true,
+                "at_arclength": 4.412
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.2216617561337289,
+                "margin": -0.2216617561337289,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.011453512381392,
+                "margin": 2.011453512381392,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:84fc035a64f96d62f8bcc750c3273ad9",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "7deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 24.20444874754397,
+            "max_cross_track_error": 0.027257584695956204,
+            "max_heading_error": 0.010124906196161906,
+            "focus_clearance": null,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.011448383731723,
+              "max_resolvability": 499.3583951652341,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.027257584695956204,
+                "margin": -0.007257584695956203,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.010124906196161906,
+                "margin": 0.039875093803838094,
+                "satisfied": true,
+                "at_arclength": 4.586
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.25601293003804193,
+                "margin": -0.25601293003804193,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.011448383731723,
+                "margin": 2.0114483837317234,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:ef5c6c426b9dfdc1e57c1f4f8913718f",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "15deg",
+            "feasible": false,
+            "binding_constraint": "coverage-margin",
+            "amplification_score": 39.6090374646041,
+            "max_cross_track_error": 0.04158500352954471,
+            "max_heading_error": 0.018198205353345615,
+            "focus_clearance": null,
+            "tracking": {
+              "outcome": "TRACKED",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.76,
+              "min_resolvability_while_tracked": 5.0114331841481,
+              "max_resolvability": 772.9260215536739,
+              "loss_intervals": [],
+              "longest_loss": 0.0,
+              "loss_started_at": null,
+              "track_loss_declared_at": null,
+              "processing": "offline",
+              "detail": "acquired at 0.24 and held for 5.76",
+              "satisfied": true
+            },
+            "crossed_first_conjugate_point": false,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.04158500352954471,
+                "margin": -0.02158500352954471,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.018198205353345615,
+                "margin": 0.03180179464665439,
+                "satisfied": true,
+                "at_arclength": 5.354
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": -0.4112204507749595,
+                "margin": -0.4112204507749595,
+                "satisfied": false,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 5.0114331841481,
+                "margin": 2.0114331841480997,
+                "satisfied": true,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:880120acfa78c137299964b3747c4fa5",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "68deg",
+            "feasible": false,
+            "binding_constraint": "tracking",
+            "amplification_score": 1.8879667009158567,
+            "max_cross_track_error": 0.0021743710508905474,
+            "max_heading_error": 0.0011764975471788373,
+            "focus_clearance": 0.19481943207333163,
+            "tracking": {
+              "outcome": "TRACK_LOST",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.4319999999999995,
+              "min_resolvability_while_tracked": 0.018433781848231367,
+              "max_resolvability": 39.5162590739263,
+              "loss_intervals": [
+                [
+                  5.672,
+                  5.94
+                ]
+              ],
+              "longest_loss": 0.2680000000000007,
+              "loss_started_at": 5.672,
+              "track_loss_declared_at": 5.772,
+              "processing": "offline",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.672 and detectable at 5.772",
+              "satisfied": false
+            },
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.0021743710508905474,
+                "margin": 0.017825628949109454,
+                "satisfied": true,
+                "at_arclength": 3.8320000000000003
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011764975471788373,
+                "margin": 0.04882350245282117,
+                "satisfied": true,
+                "at_arclength": 6.0
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.037939271042356656,
+                "margin": 0.037939271042356656,
+                "satisfied": true,
+                "at_arclength": 0.06
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 0.018433781848231367,
+                "margin": -3.0,
+                "satisfied": false,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:1ddc5e3e38883410a72c5be3e4295b4a",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "75deg",
+            "feasible": false,
+            "binding_constraint": "tracking",
+            "amplification_score": 1.8132391653735023,
+            "max_cross_track_error": 0.0020738118027448784,
+            "max_heading_error": 0.0011632088458906815,
+            "focus_clearance": 0.3930232137858951,
+            "tracking": {
+              "outcome": "TRACK_LOST",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.2299999999999995,
+              "min_resolvability_while_tracked": 0.02128686550189458,
+              "max_resolvability": 37.974487594258534,
+              "loss_intervals": [
+                [
+                  5.47,
+                  5.746
+                ]
+              ],
+              "longest_loss": 0.2760000000000007,
+              "loss_started_at": 5.47,
+              "track_loss_declared_at": 5.57,
+              "processing": "offline",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.47 and detectable at 5.57",
+              "satisfied": false
+            },
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.0020738118027448784,
+                "margin": 0.01792618819725512,
+                "satisfied": true,
+                "at_arclength": 3.714
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011632088458906815,
+                "margin": 0.04883679115410932,
+                "satisfied": true,
+                "at_arclength": 4.746
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.03793930287521978,
+                "margin": 0.03793930287521978,
+                "satisfied": true,
+                "at_arclength": 0.06
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 0.02128686550189458,
+                "margin": -3.0,
+                "satisfied": false,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:a4cf0440ed2188d2c0a06415a5250e31",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "82deg",
+            "feasible": false,
+            "binding_constraint": "tracking",
+            "amplification_score": 1.7692054527636802,
+            "max_cross_track_error": 0.002033011322962437,
+            "max_heading_error": 0.0011682186324526926,
+            "focus_clearance": 0.5027699959265384,
+            "tracking": {
+              "outcome": "TRACK_LOST",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.118,
+              "min_resolvability_while_tracked": 0.01642389106687555,
+              "max_resolvability": 37.05385664920485,
+              "loss_intervals": [
+                [
+                  5.3580000000000005,
+                  5.64
+                ]
+              ],
+              "longest_loss": 0.28199999999999914,
+              "loss_started_at": 5.3580000000000005,
+              "track_loss_declared_at": 5.46,
+              "processing": "offline",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.358 and detectable at 5.46",
+              "satisfied": false
+            },
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.002033011322962437,
+                "margin": 0.017966988677037565,
+                "satisfied": true,
+                "at_arclength": 1.872
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011682186324526926,
+                "margin": 0.04883178136754731,
+                "satisfied": true,
+                "at_arclength": 4.62
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.037939335417397524,
+                "margin": 0.037939335417397524,
+                "satisfied": true,
+                "at_arclength": 0.06
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 0.01642389106687555,
+                "margin": -3.0,
+                "satisfied": false,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:afcb0984e40b6b1c63415bd4f9f1a30d",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "90deg",
+            "feasible": false,
+            "binding_constraint": "tracking",
+            "amplification_score": 1.7452493854091462,
+            "max_cross_track_error": 0.0020184060599444794,
+            "max_heading_error": 0.0011624850134363098,
+            "focus_clearance": 0.5381006246621798,
+            "tracking": {
+              "outcome": "TRACK_LOST",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.08,
+              "min_resolvability_while_tracked": 0.0021074779953465703,
+              "max_resolvability": 36.551141824089584,
+              "loss_intervals": [
+                [
+                  5.32,
+                  5.606
+                ]
+              ],
+              "longest_loss": 0.2859999999999996,
+              "loss_started_at": 5.32,
+              "track_loss_declared_at": 5.422,
+              "processing": "offline",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.32 and detectable at 5.422",
+              "satisfied": false
+            },
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.0020184060599444794,
+                "margin": 0.01798159394005552,
+                "satisfied": true,
+                "at_arclength": 1.838
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011624850134363098,
+                "margin": 0.04883751498656369,
+                "satisfied": true,
+                "at_arclength": 4.562
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.03782480903269882,
+                "margin": 0.03782480903269882,
+                "satisfied": true,
+                "at_arclength": 5.564
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 0.0021074779953465703,
+                "margin": -3.0,
+                "satisfied": false,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:a8aba482c160e56b661abaa9fd6d4c4d",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "97deg",
+            "feasible": false,
+            "binding_constraint": "tracking",
+            "amplification_score": 1.7370669462531205,
+            "max_cross_track_error": 0.0020098787363542294,
+            "max_heading_error": 0.0011515511007941404,
+            "focus_clearance": 0.5018923279186378,
+            "tracking": {
+              "outcome": "TRACK_LOST",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.114,
+              "min_resolvability_while_tracked": 0.00221394672483646,
+              "max_resolvability": 36.38079313133512,
+              "loss_intervals": [
+                [
+                  5.354,
+                  5.646
+                ]
+              ],
+              "longest_loss": 0.2919999999999998,
+              "loss_started_at": 5.354,
+              "track_loss_declared_at": 5.456,
+              "processing": "offline",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.354 and detectable at 5.456",
+              "satisfied": false
+            },
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.0020098787363542294,
+                "margin": 0.01799012126364577,
+                "satisfied": true,
+                "at_arclength": 1.822
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011515511007941404,
+                "margin": 0.048848448899205865,
+                "satisfied": true,
+                "at_arclength": 0.908
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.036006281758703795,
+                "margin": 0.036006281758703795,
+                "satisfied": true,
+                "at_arclength": 5.574
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 0.00221394672483646,
+                "margin": -3.0,
+                "satisfied": false,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:3b58c6bce5f82f06b40f718091858ccf",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "105deg",
+            "feasible": false,
+            "binding_constraint": "tracking",
+            "amplification_score": 1.7439481623328588,
+            "max_cross_track_error": 0.002043107127905988,
+            "max_heading_error": 0.0011523183793793715,
+            "focus_clearance": 0.38518380679912756,
+            "tracking": {
+              "outcome": "TRACK_LOST",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.226,
+              "min_resolvability_while_tracked": 0.016457727842446264,
+              "max_resolvability": 36.52288607643582,
+              "loss_intervals": [
+                [
+                  5.466,
+                  5.764
+                ]
+              ],
+              "longest_loss": 0.29800000000000004,
+              "loss_started_at": 5.466,
+              "track_loss_declared_at": 5.5680000000000005,
+              "processing": "offline",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.466 and detectable at 5.568",
+              "satisfied": false
+            },
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.002043107127905988,
+                "margin": 0.017956892872094014,
+                "satisfied": true,
+                "at_arclength": 3.734
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.0011523183793793715,
+                "margin": 0.04884768162062063,
+                "satisfied": true,
+                "at_arclength": 0.908
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.03382325181585305,
+                "margin": 0.03382325181585305,
+                "satisfied": true,
+                "at_arclength": 5.498
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 0.016457727842446264,
+                "margin": -3.0,
+                "satisfied": false,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:7db693f1a5d04681dc968c8f9817546c",
+            "observation_mode": "ambient-euclidean-chord"
+          },
+          {
+            "label": "112deg",
+            "feasible": false,
+            "binding_constraint": "tracking",
+            "amplification_score": 1.769002744951954,
+            "max_cross_track_error": 0.002123505883915718,
+            "max_heading_error": 0.001152847946816673,
+            "focus_clearance": 0.16314918991455407,
+            "tracking": {
+              "outcome": "TRACK_LOST",
+              "acquired": true,
+              "acquisition_arclength": 0.24,
+              "acquisition_latency": 0.24,
+              "acquisition_window_started_at": 0.24,
+              "acquisition_declared_at": 0.292,
+              "tracked_distance": 5.446,
+              "min_resolvability_while_tracked": 0.016853615618563307,
+              "max_resolvability": 37.01940681591804,
+              "loss_intervals": [
+                [
+                  5.686,
+                  5.99
+                ]
+              ],
+              "longest_loss": 0.30400000000000027,
+              "loss_started_at": 5.686,
+              "track_loss_declared_at": 5.7860000000000005,
+              "processing": "offline",
+              "detail": "rho stayed below 3 for longer than the tolerated 0.1, from 5.686 and detectable at 5.786",
+              "satisfied": false
+            },
+            "crossed_first_conjugate_point": true,
+            "path_length": 6.0,
+            "margins": [
+              {
+                "name": "cross-track-error",
+                "limit": 0.02,
+                "worst_value": 0.002123505883915718,
+                "margin": 0.01787649411608428,
+                "satisfied": true,
+                "at_arclength": 3.88
+              },
+              {
+                "name": "heading-error",
+                "limit": 0.05,
+                "worst_value": 0.001152847946816673,
+                "margin": 0.04884715205318333,
+                "satisfied": true,
+                "at_arclength": 0.908
+              },
+              {
+                "name": "coverage-margin",
+                "limit": 0.0,
+                "worst_value": 0.030888828175279257,
+                "margin": 0.030888828175279257,
+                "satisfied": true,
+                "at_arclength": 5.57
+              },
+              {
+                "name": "tracking",
+                "limit": 3.0,
+                "worst_value": 0.016853615618563307,
+                "margin": -3.0,
+                "satisfied": false,
+                "at_arclength": 0.24
+              }
+            ],
+            "source_digest": "sha256:9ac7f9e398aa3d43213295df91a40ff3",
+            "observation_mode": "ambient-euclidean-chord"
+          }
+        ]
+      },
       "headings": [
         {
           "heading": 1.7016960206944711,
@@ -8257,7 +11483,7 @@
           "max_wronskian_drift": 2.4424906541753444e-15,
           "mean_curvature_along_path": 0.32544117757184626,
           "focus_points": [
-            5.498107672100967
+            5.498107672081362
           ],
           "passes_a_focus": true,
           "max_speed_drift": 3.1086244689504383e-15
@@ -8274,7 +11500,7 @@
           "max_wronskian_drift": 7.105427357601002e-15,
           "mean_curvature_along_path": 0.3174290854572467,
           "focus_points": [
-            5.614816193220117
+            5.614816193200872
           ],
           "passes_a_focus": true,
           "max_speed_drift": 6.439293542825908e-15
@@ -8291,7 +11517,7 @@
           "max_wronskian_drift": 3.1086244689504383e-15,
           "mean_curvature_along_path": 0.32788838439620865,
           "focus_points": [
-            5.461899375319298
+            5.46189937533782
           ],
           "passes_a_focus": true,
           "max_speed_drift": 2.4424906541753444e-15
@@ -8308,7 +11534,7 @@
           "max_wronskian_drift": 7.993605777301127e-15,
           "mean_curvature_along_path": 0.3030767858360921,
           "focus_points": [
-            5.836850810101447
+            5.836850810085446
           ],
           "passes_a_focus": true,
           "max_speed_drift": 4.440892098500626e-15
@@ -8325,7 +11551,7 @@
           "max_wronskian_drift": 2.4424906541753444e-15,
           "mean_curvature_along_path": 0.32504459998711277,
           "focus_points": [
-            5.497230004050003
+            5.497230004073462
           ],
           "passes_a_focus": true,
           "max_speed_drift": 3.9968028886505635e-15
@@ -8342,7 +11568,7 @@
           "max_wronskian_drift": 2.6645352591003757e-15,
           "mean_curvature_along_path": 0.31674284690490295,
           "focus_points": [
-            5.606976786216589
+            5.606976786214105
           ],
           "passes_a_focus": true,
           "max_speed_drift": 1.9984014443252818e-15
@@ -8374,7 +11600,7 @@
           "max_wronskian_drift": 3.1086244689504383e-15,
           "mean_curvature_along_path": 0.3023005264343449,
           "focus_points": [
-            5.805180567908232
+            5.805180567926668
           ],
           "passes_a_focus": true,
           "max_speed_drift": 4.884981308350689e-15
@@ -9058,7 +12284,7 @@
     {
       "id": "surface-fd-cost/spherical-cap",
       "statement": "a surface given without analytic derivatives still tracks the analytic one closely enough to be useful",
-      "value": 8.046230119819847e-09,
+      "value": 4.7725385577463606e-08,
       "threshold": 1e-07,
       "comparison": "<=",
       "passed": true
@@ -9066,7 +12292,7 @@
     {
       "id": "surface-fd-cost/pseudosphere",
       "statement": "a surface given without analytic derivatives still tracks the analytic one closely enough to be useful",
-      "value": 1.0369037710034828e-09,
+      "value": 4.3657473098126076e-09,
       "threshold": 1e-07,
       "comparison": "<=",
       "passed": true
@@ -9074,7 +12300,7 @@
     {
       "id": "surface-fd-cost/saddle",
       "statement": "a surface given without analytic derivatives still tracks the analytic one closely enough to be useful",
-      "value": 6.018437581356865e-12,
+      "value": 1.0814435428803254e-11,
       "threshold": 1e-07,
       "comparison": "<=",
       "passed": true
@@ -9082,7 +12308,7 @@
     {
       "id": "surface-fd-cost/torus",
       "statement": "a surface given without analytic derivatives still tracks the analytic one closely enough to be useful",
-      "value": 3.030929042887608e-10,
+      "value": 3.3127323717572264e-10,
       "threshold": 1e-07,
       "comparison": "<=",
       "passed": true
@@ -9098,7 +12324,7 @@
     {
       "id": "surface-focus-found",
       "statement": "the spherical cap refocuses at s = pi and is flagged ill conditioned",
-      "value": 1.277431493917902e-10,
+      "value": 4.205524817280093e-13,
       "threshold": 1e-08,
       "comparison": "<=",
       "passed": true
@@ -9106,6 +12332,294 @@
     {
       "id": "surface-no-spurious-focus",
       "statement": "no focus is reported on the negatively curved cases, where none exists",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-no-free-robustness/plate",
+      "statement": "det Phi = 1 makes the scaled transfer's singular values reciprocal, so no path contracts every starting-pose error at once",
+      "value": 2.220446049250313e-16,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-amplification-floor/plate",
+      "statement": "and the larger of the two is never below 1 anywhere on the path",
+      "value": 1.0,
+      "threshold": 0.999999999999,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "surface-record/plate",
+      "statement": "the path presents itself as a transfer record that reproduces its own arrays and declares units, resolution and observation mode",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-no-free-robustness/rolled-sheet",
+      "statement": "det Phi = 1 makes the scaled transfer's singular values reciprocal, so no path contracts every starting-pose error at once",
+      "value": 2.220446049250313e-16,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-amplification-floor/rolled-sheet",
+      "statement": "and the larger of the two is never below 1 anywhere on the path",
+      "value": 1.0,
+      "threshold": 0.999999999999,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "surface-record/rolled-sheet",
+      "statement": "the path presents itself as a transfer record that reproduces its own arrays and declares units, resolution and observation mode",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-no-free-robustness/spherical-cap",
+      "statement": "det Phi = 1 makes the scaled transfer's singular values reciprocal, so no path contracts every starting-pose error at once",
+      "value": 3.3306690738754696e-15,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-amplification-floor/spherical-cap",
+      "statement": "and the larger of the two is never below 1 anywhere on the path",
+      "value": 0.9999999999999992,
+      "threshold": 0.999999999999,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "surface-record/spherical-cap",
+      "statement": "the path presents itself as a transfer record that reproduces its own arrays and declares units, resolution and observation mode",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-no-free-robustness/pseudosphere",
+      "statement": "det Phi = 1 makes the scaled transfer's singular values reciprocal, so no path contracts every starting-pose error at once",
+      "value": 2.1649348980190553e-14,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-amplification-floor/pseudosphere",
+      "statement": "and the larger of the two is never below 1 anywhere on the path",
+      "value": 1.0,
+      "threshold": 0.999999999999,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "surface-record/pseudosphere",
+      "statement": "the path presents itself as a transfer record that reproduces its own arrays and declares units, resolution and observation mode",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-no-free-robustness/saddle",
+      "statement": "det Phi = 1 makes the scaled transfer's singular values reciprocal, so no path contracts every starting-pose error at once",
+      "value": 3.552713678800501e-15,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-amplification-floor/saddle",
+      "statement": "and the larger of the two is never below 1 anywhere on the path",
+      "value": 1.0,
+      "threshold": 0.999999999999,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "surface-record/saddle",
+      "statement": "the path presents itself as a transfer record that reproduces its own arrays and declares units, resolution and observation mode",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-no-free-robustness/torus",
+      "statement": "det Phi = 1 makes the scaled transfer's singular values reciprocal, so no path contracts every starting-pose error at once",
+      "value": 1.4432899320127035e-15,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-amplification-floor/torus",
+      "statement": "and the larger of the two is never below 1 anywhere on the path",
+      "value": 1.0,
+      "threshold": 0.999999999999,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "surface-record/torus",
+      "statement": "the path presents itself as a transfer record that reproduces its own arrays and declares units, resolution and observation mode",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-route-feasible",
+      "statement": "at least one candidate route meets every declared process limit, and the recommendation is one of them",
+      "value": 15.0,
+      "threshold": 1.0,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "surface-route-follows-constraints",
+      "statement": "adding the sensor's acquisition schedule changes which route is recommended, so the answer follows a declared instrument limit and not a threshold chosen here",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-tracking-discriminates",
+      "statement": "the schedule separates routes that hold the track from routes that lose it, rather than passing everything or nothing",
+      "value": 2.0,
+      "threshold": 2.0,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "surface-route-declared-choice-is-not-trackable",
+      "statement": "the route the declared process limits pick is one the scanner does not hold, which is why the instrument and not the ranking scalar decides",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-tracking-outcome-per-route",
+      "statement": "every candidate route carries its own recorded tracking outcome, so the figure's marking is read from the report rather than assumed",
+      "value": 24.0,
+      "threshold": 24.0,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "surface-track-loss-coincides-with-focus-in-this-configuration",
+      "statement": "for THIS torus, starting uncertainty, H, scanner noise and schedule, the routes the scanner cannot hold are exactly the routes that pass through a focus -- corroboration from two independent computations, not a general identity: see surface-unresolvable-without-a-focus and surface-resolvable-beside-a-focus for the two ways they come apart",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-unresolvable-without-a-focus",
+      "statement": "shrinking the admitted starting uncertainty drives rho below the acquire threshold on a path with no focus at any arc length, so low resolvability is not evidence of a focus",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-resolvable-beside-a-focus",
+      "statement": "and |b| beside a genuine conjugate point is small but not zero, so the metrology sigma that resolves the admitted poses there is finite -- a focus does not by itself make a path unobservable",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-focus-is-instrument-independent",
+      "statement": "the conjugate point on the spherical cap is at pi whatever scanner is pointed at it, which is what makes it a different quantity from rho",
+      "value": 2.877698079828406e-13,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-resolvability-scale-invariant",
+      "statement": "rho is the same for the same physical situation drawn at twice the size, which is what a threshold on |b| could never be",
+      "value": 0.0,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-chart-orthogonality-rescaling-invariant",
+      "statement": "reparameterising a coordinate does not change how orthogonal the chart is, so the conditioning number measures the chart and not the parameterisation",
+      "value": 1.326494469822137e-12,
+      "threshold": 1e-09,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-retired-chart-criterion-is-not",
+      "statement": "and the criterion this replaced moves by exactly the rescaling factor on the same regular chart, which is why it was replaced",
+      "value": 5.7597408176235376e-08,
+      "threshold": 1e-06,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-chart-validity/plate",
+      "statement": "the path stays inside the declared parameter domain and the chart stays conditioned along all of it",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-chart-validity/rolled-sheet",
+      "statement": "the path stays inside the declared parameter domain and the chart stays conditioned along all of it",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-chart-validity/spherical-cap",
+      "statement": "the path stays inside the declared parameter domain and the chart stays conditioned along all of it",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-chart-validity/pseudosphere",
+      "statement": "the path stays inside the declared parameter domain and the chart stays conditioned along all of it",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-chart-validity/saddle",
+      "statement": "the path stays inside the declared parameter domain and the chart stays conditioned along all of it",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "surface-chart-validity/torus",
+      "statement": "the path stays inside the declared parameter domain and the chart stays conditioned along all of it",
       "value": 0.0,
       "threshold": 0.0,
       "comparison": "<=",
@@ -9137,20 +12651,20 @@
     },
     {
       "id": "surface-heading-scan-focus-tradeoff",
-      "statement": "lowest forward amplification is not robustness: the best-scoring heading passes a focus, and a heading clear of one exists at a measurably higher amplification",
-      "value": 1.1033831792683468,
-      "threshold": 1.0,
-      "comparison": ">=",
+      "statement": "the best-scoring heading buys its score with a focus, so the ranking scalar alone is not a robustness criterion",
+      "value": 0.0,
+      "threshold": 0.0,
+      "comparison": "<=",
       "passed": true
     }
   ],
   "summary": {
-    "n_checks": 65,
+    "n_checks": 101,
     "n_failed": 0,
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "bffe9055400ad79e0013ff18a863f0e835aa73cd3ffa28bebc79c09a41992226",
+  "content_hash": "b336bbc2370617993fff083b1d422c8332471ace1970ea88bc77e9e64f4f8bc0",
   "environment": {
     "package_version": "0.1.0",
     "python": "3.11.15",

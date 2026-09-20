@@ -8,15 +8,26 @@ starting tolerances.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from numpy.typing import NDArray
 
-from .jacobi import JacobiTrace
+from .engine.record import to_transfer_record
 from .tolerances import PathTolerance
 
 Array = NDArray[np.float64]
+
+
+def _provenance(trace) -> dict[str, object]:
+    """What the bound was computed from, so a number can be traced to a geometry."""
+    return {
+        "observation_mode": trace.observation_mode,
+        "domain": trace.domain,
+        "source_digest": trace.source_digest,
+        "units": trace.units.to_dict(),
+        "first_order_validity_established": trace.validity.established,
+    }
 
 
 def _positive(value: float, name: str) -> float:
@@ -57,6 +68,7 @@ class ManufacturingAssessment:
     maximum_spacing: Array
     maximum_possible_gap: Array
     maximum_possible_overlap: Array
+    provenance: dict[str, object] = field(default_factory=dict)
 
     @property
     def max_gap(self) -> float:
@@ -74,9 +86,10 @@ class ManufacturingAssessment:
     def worst_overlap_location(self) -> float:
         return float(self.arclength[int(np.argmax(self.maximum_possible_overlap))])
 
-    def summary(self) -> dict[str, float | str]:
+    def summary(self) -> dict[str, object]:
         return {
             "claim_scope": "first-order-deterministic-bound",
+            **self.provenance,
             "max_gap": self.max_gap,
             "worst_gap_arclength": self.worst_gap_location,
             "max_overlap": self.max_overlap,
@@ -84,8 +97,14 @@ class ManufacturingAssessment:
         }
 
 
-def assess_manufacturing(trace: JacobiTrace, spec: ManufacturingSpec) -> ManufacturingAssessment:
-    """Bound gap and overlap between two neighbouring manufactured courses."""
+def assess_manufacturing(source, spec: ManufacturingSpec) -> ManufacturingAssessment:
+    """Bound gap and overlap between two neighbouring manufactured courses.
+
+    ``source`` is a transfer record or anything that can present one, so a
+    declared curvature profile and a traced path on a real parametric surface
+    reach this contract the same way.
+    """
+    trace = to_transfer_record(source)
     nominal = np.abs(trace.separation(spec.initial_spacing, spec.initial_heading_delta))
     relative_error = (
         spec.relative_tolerance_factor * spec.path_tolerance.envelope(trace)
@@ -101,6 +120,7 @@ def assess_manufacturing(trace: JacobiTrace, spec: ManufacturingSpec) -> Manufac
         maximum_spacing=maximum,
         maximum_possible_gap=gap,
         maximum_possible_overlap=overlap,
+        provenance=_provenance(trace),
     )
 
 
@@ -131,6 +151,7 @@ class InspectionAssessment:
     maximum_possible_coverage_gap: Array
     coverage_margin: Array
     reliable: bool
+    provenance: dict[str, object] = field(default_factory=dict)
 
     @property
     def max_coverage_gap(self) -> float:
@@ -140,9 +161,10 @@ class InspectionAssessment:
     def worst_cross_track_error(self) -> float:
         return float(np.max(self.per_path_uncertainty))
 
-    def summary(self) -> dict[str, float | bool | str]:
+    def summary(self) -> dict[str, object]:
         return {
             "claim_scope": "first-order-deterministic-bound",
+            **self.provenance,
             "reliable": self.reliable,
             "max_coverage_gap": self.max_coverage_gap,
             "worst_cross_track_error": self.worst_cross_track_error,
@@ -150,8 +172,12 @@ class InspectionAssessment:
         }
 
 
-def assess_inspection(trace: JacobiTrace, spec: InspectionSpec) -> InspectionAssessment:
-    """Assess track coverage and cross-track reliability under pose bounds."""
+def assess_inspection(source, spec: InspectionSpec) -> InspectionAssessment:
+    """Assess track coverage and cross-track reliability under pose bounds.
+
+    ``source`` is a transfer record or anything that can present one.
+    """
+    trace = to_transfer_record(source)
     nominal = np.abs(trace.separation(spec.initial_track_spacing, spec.initial_heading_delta))
     path_uncertainty = spec.path_tolerance.envelope(trace)
     maximum_spacing = nominal + spec.relative_tolerance_factor * path_uncertainty
@@ -169,4 +195,5 @@ def assess_inspection(trace: JacobiTrace, spec: InspectionSpec) -> InspectionAss
         maximum_possible_coverage_gap=gap,
         coverage_margin=margin,
         reliable=reliable,
+        provenance=_provenance(trace),
     )

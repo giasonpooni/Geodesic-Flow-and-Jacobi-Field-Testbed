@@ -56,11 +56,18 @@ from .flows import (
 )
 from .integrators import get_integrator, integrate, step_ladder
 from .observation import catalogue as observation_catalogue
+from .record import TransferRecord
 from .spaceforms import SpaceForm, all_space_forms
-from .transfer import INITIAL_STATE, transfer_from_trajectory, transfer_rhs
+from .transfer import (
+    INITIAL_STATE,
+    TransferMap,
+    constant_curvature_transfer,
+    transfer_from_trajectory,
+    transfer_rhs,
+)
 
-REPORT_SCHEMA = "geodesic-jacobi-report-v2"
-SUPERSEDES = "geodesic-jacobi-report-v1"
+REPORT_SCHEMA = "geodesic-jacobi-report-v3"
+SUPERSEDES = "geodesic-jacobi-report-v2"
 
 
 @dataclass(frozen=True)
@@ -109,6 +116,10 @@ class ExperimentConfig:
     # rounding (about n * eps), not by the method's drift.
     wronskian_theory_floor: float = 1e-9
     wronskian_theory_tolerance: float = 1e-3
+    # Deliberately coarse: a refinement that only helps at fine resolution is
+    # not worth having.
+    focus_refinement_span: float = 4.0
+    focus_refinement_samples: int = 21
     exponent_tolerance: float = 0.05
     coefficient_tolerance: float = 0.01
     epsilon_star_tolerance: float = 0.01
@@ -371,6 +382,98 @@ def sweep_wronskian(config: ExperimentConfig) -> list[dict[str, Any]]:
                     "levels": levels,
                 }
             )
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# sweep 2c: what det Phi = 1 costs a route planner
+# ---------------------------------------------------------------------------
+def sweep_transfer_determinant(config: ExperimentConfig) -> list[dict[str, Any]]:
+    """The reciprocal-singular-value consequence of the conserved Wronskian.
+
+    Scaling the transfer map by the tolerance box, ``S^-1 Phi S``, makes its
+    entries pure ratios so that paths can be compared -- and leaves the
+    determinant at 1, so the two singular values are reciprocal. Whatever
+    direction of starting-pose error the flow contracts, it expands the
+    conjugate direction by the same factor, and the larger is never below one.
+
+    That is the precise sense in which a low ``max |b|`` is error
+    redistribution rather than robustness, so it is measured rather than
+    asserted, on a range of tolerance boxes with very different aspect ratios.
+    """
+    boxes = ((1e-3, 1e-3), (1e-2, 1e-4), (1e-5, 1e-1))
+    rows: list[dict[str, Any]] = []
+    for form in all_space_forms():
+        grid = np.linspace(0.0, config.arc_length, 401)
+        phi = constant_curvature_transfer(grid, form.K)
+        record = TransferRecord(
+            arclength=grid,
+            gaussian_curvature=np.full_like(grid, form.K),
+            a=phi.a, a_rate=phi.a_rate, b=phi.b, b_rate=phi.b_rate,
+            domain="constant-curvature",
+        )
+        product_error = 0.0
+        smallest = float("inf")
+        per_box = []
+        for lateral, heading in boxes:
+            singular = record.scaled_singular_values(lateral, heading)
+            product_error = max(
+                product_error, float(np.max(np.abs(singular[:, 0] * singular[:, 1] - 1.0)))
+            )
+            smallest = min(smallest, float(np.min(singular[:, 0])))
+            per_box.append(
+                {
+                    "max_lateral": lateral,
+                    "max_heading": heading,
+                    "amplification_score": float(np.max(singular[:, 0])),
+                    "min_largest_singular_value": float(np.min(singular[:, 0])),
+                }
+            )
+        rows.append(
+            {
+                "curvature": form.K,
+                "curvature_label": form.label,
+                "identity": "sigma_1 sigma_2 = |det Phi| = 1",
+                "product_error": product_error,
+                "min_largest_singular_value": smallest,
+                "boxes": per_box,
+            }
+        )
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# sweep 2d: how well a focus is located
+# ---------------------------------------------------------------------------
+def sweep_focus_refinement(config: ExperimentConfig) -> list[dict[str, Any]]:
+    """Refined against linear root location, where the answer is known exactly."""
+    rows: list[dict[str, Any]] = []
+    for form in all_space_forms():
+        if form.K <= 0.0:
+            continue  # only the sphere has a focus
+        grid = np.linspace(0.0, config.focus_refinement_span, config.focus_refinement_samples)
+        phi = constant_curvature_transfer(grid, form.K)
+        event = phi.focus_events(component="b")[0]
+        values = phi.b
+        index = int(np.argmax(np.sign(values[:-1]) * np.sign(values[1:]) < 0.0))
+        weight = values[index] / (values[index] - values[index + 1])
+        linear = float(grid[index] + weight * (grid[index + 1] - grid[index]))
+        exact = float(np.pi / np.sqrt(form.K))
+        rows.append(
+            {
+                "curvature": form.K,
+                "curvature_label": form.label,
+                "exact": exact,
+                "sample_spacing": float(grid[1] - grid[0]),
+                "refined": event.arc_length,
+                "refined_error": float(abs(event.arc_length - exact)),
+                "linear": linear,
+                "linear_error": float(abs(linear - exact)),
+                "reported_uncertainty": event.location_uncertainty,
+                "derivative_at_focus": event.derivative,
+                "method": "cubic-Hermite, Newton with bisection safeguard",
+            }
+        )
     return rows
 
 
@@ -643,8 +746,15 @@ def study_conjugate_point(config: ExperimentConfig) -> dict[str, Any]:
     form = SpaceForm(1.0)
     span = config.conjugate_span_multiple * np.pi
     n_steps = config.conjugate_steps
-    grid, j, _ = integrate_jacobi(form.K, length=span, n_steps=n_steps, method="rk4")
-    first_zero = _first_positive_zero(grid, j)
+    grid, j, j_rate = integrate_jacobi(form.K, length=span, n_steps=n_steps, method="rk4")
+    # One root finder for the whole repository: the Hermite refinement in
+    # TransferMap, fed the heading column this sweep already has.
+    events = TransferMap(
+        arc_length=grid, a=np.ones_like(grid), a_rate=np.zeros_like(grid),
+        b=j, b_rate=j_rate,
+    ).focus_events(component="b")
+    first_zero = events[0].arc_length if events else None
+    first_zero_uncertainty = events[0].location_uncertainty if events else None
 
     flow_grid, points, _ = integrate_geodesic(form, length=span, n_steps=n_steps, method="rk4")
     flowed_distance = form.distance(form.base_point(), points)
@@ -678,6 +788,8 @@ def study_conjugate_point(config: ExperimentConfig) -> dict[str, Any]:
         "h": float(span / n_steps),
         "jacobi_first_zero": first_zero,
         "jacobi_first_zero_error": None if first_zero is None else float(abs(first_zero - np.pi)),
+        "jacobi_first_zero_uncertainty": first_zero_uncertainty,
+        "root_finder": "cubic-Hermite, Newton with bisection safeguard",
         "max_distance_error": float(np.max(np.abs(flowed_distance - true_distance))),
         "return_to_start_distance": float(flowed_distance[-1]),
         "max_length_excess_model_error": float(
@@ -724,6 +836,17 @@ def _lowest_decade_slope(epsilons: np.ndarray, values: np.ndarray) -> float | No
         return None
     slope, _ = np.polyfit(np.log10(epsilons[low]), np.log10(values[low]), 1)
     return float(slope)
+
+
+def _grid_index(grid: np.ndarray, s_value: float, span: float, n_steps: int) -> int:
+    """Index of ``s_value`` on a uniform grid, refusing to silently snap to a neighbour."""
+    index = int(round(s_value / (span / n_steps)))
+    if not (0 <= index < grid.size) or not np.isclose(grid[index], s_value, rtol=0.0, atol=1e-9):
+        raise ValueError(
+            f"sample arc length {s_value} does not lie on a grid of {n_steps} steps over "
+            f"[0, {span}]"
+        )
+    return index
 
 
 def _grid_index(grid: np.ndarray, s_value: float, span: float, n_steps: int) -> int:
@@ -981,6 +1104,46 @@ def collect_checks(results: dict[str, Any], config: ExperimentConfig) -> list[di
             )
         )
 
+    for row in results["transfer_determinant"]:
+        checks.append(
+            _check(
+                f"transfer-determinant/{row['curvature_label']}",
+                "the scaled transfer's singular values are reciprocal at every arc "
+                "length, because conjugation leaves det Phi = 1 alone",
+                row["product_error"],
+                1e-12,
+            )
+        )
+        checks.append(
+            _check(
+                f"transfer-amplification-floor/{row['curvature_label']}",
+                "so the larger is never below 1: a path cannot be robust to every "
+                "direction of starting-pose error at once",
+                row["min_largest_singular_value"],
+                1.0 - 1e-12,
+                comparison=">=",
+            )
+        )
+
+    for row in results["focus_refinement"]:
+        checks.append(
+            _check(
+                f"focus-refinement/{row['curvature_label']}",
+                "the Hermite-refined focus beats a linear one by orders of "
+                "magnitude at the same sample spacing",
+                row["refined_error"],
+                row["linear_error"] / 100.0,
+            )
+        )
+        checks.append(
+            _check(
+                f"focus-uncertainty/{row['curvature_label']}",
+                "and the reported location uncertainty bounds the error it left",
+                row["refined_error"],
+                row["reported_uncertainty"],
+            )
+        )
+
     conjugate = results["conjugate_point"]
     checks.append(
         _check(
@@ -1054,6 +1217,8 @@ def run_experiment(config: ExperimentConfig | None = None) -> dict[str, Any]:
         "jacobi_ode_convergence": sweep_jacobi_convergence(config),
         "geodesic_flow_convergence": sweep_flow_convergence(config),
         "wronskian_conservation": sweep_wronskian(config),
+        "transfer_determinant": sweep_transfer_determinant(config),
+        "focus_refinement": sweep_focus_refinement(config),
         "first_order_validity": sweep_first_order_validity(config),
         "path_sensitivity": sweep_path_sensitivity(config),
         "conjugate_point": study_conjugate_point(config),
@@ -1064,8 +1229,13 @@ def run_experiment(config: ExperimentConfig | None = None) -> dict[str, Any]:
             "schema": REPORT_SCHEMA,
             "supersedes": SUPERSEDES,
             "schema_changes": [
-                "adds results.wronskian_conservation: det Phi = 1 and its drift per method",
-                "adds observation_modes and tags first_order_validity with one",
+                "observation_modes: support is now per domain, not one boolean",
+                "adds results.transfer_determinant: reciprocal singular values of "
+                "the scaled transfer map",
+                "adds results.focus_refinement: Hermite-refined focus location "
+                "against a linear one",
+                "conjugate_point: adds the refined root's uncertainty and names "
+                "the root finder",
             ],
             "experiment": "geodesic-flow-and-jacobi-field-testbed",
             "claim_scope": "numerical-verification-against-closed-form-solutions",

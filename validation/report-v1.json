@@ -1,9 +1,11 @@
 {
-  "schema": "geodesic-jacobi-report-v2",
-  "supersedes": "geodesic-jacobi-report-v1",
+  "schema": "geodesic-jacobi-report-v3",
+  "supersedes": "geodesic-jacobi-report-v2",
   "schema_changes": [
-    "adds results.wronskian_conservation: det Phi = 1 and its drift per method",
-    "adds observation_modes and tags first_order_validity with one"
+    "observation_modes: support is now per domain, not one boolean",
+    "adds results.transfer_determinant: reciprocal singular values of the scaled transfer map",
+    "adds results.focus_refinement: Hermite-refined focus location against a linear one",
+    "conjugate_point: adds the refined root's uncertainty and names the root finder"
   ],
   "experiment": "geodesic-flow-and-jacobi-field-testbed",
   "claim_scope": "numerical-verification-against-closed-form-solutions",
@@ -17,29 +19,45 @@
       "identifier": "intrinsic-surface-distance",
       "version": 1,
       "quantity": "Riemannian distance between two points, measured in the surface",
-      "implemented": true,
-      "note": "What the Jacobi field predicts. Available in closed form on the constant-curvature model spaces; on a general surface it would require solving a boundary-value problem and is not computed here."
+      "support": {
+        "constant-curvature": "exact",
+        "parametric-surface": "unavailable",
+        "physical-instrument": "unavailable"
+      },
+      "note": "What the Jacobi field predicts. Closed form on the model spaces (sn_K(d/2) = sn_K(s) sin(eps/2)); on a general parametric surface it is a boundary-value problem that is not solved here, and no instrument reports it directly."
     },
     {
       "identifier": "ambient-euclidean-chord",
       "version": 1,
       "quantity": "straight-line distance in R^3 between two points of the surface",
-      "implemented": true,
-      "note": "What a pair of reconstructed 3-D coordinates gives. Differs from the intrinsic distance at second order in the separation, with a coefficient set by the transverse normal curvature."
+      "support": {
+        "constant-curvature": "exact",
+        "parametric-surface": "numerical",
+        "physical-instrument": "unavailable"
+      },
+      "note": "What a reconstructed pair of 3-D coordinates gives. Differs from the intrinsic distance at second order in the separation, with a coefficient set by the transverse normal curvature. An instrument reports it only after calibration and reconstruction, which is a separate mode."
     },
     {
       "identifier": "scanner-reconstructed-chord",
       "version": 0,
       "quantity": "ambient chord as reported by a calibrated metrology system",
-      "implemented": false,
+      "support": {
+        "constant-curvature": "unavailable",
+        "parametric-surface": "unavailable",
+        "physical-instrument": "unavailable"
+      },
       "note": "The ambient chord plus calibration, registration and fitting error. Needs a characterised instrument; nothing here models it."
     },
     {
       "identifier": "camera-image-residual",
       "version": 0,
       "quantity": "residual in image coordinates, before reconstruction",
-      "implemented": false,
-      "note": "Furthest from the model of the four. Not modelled here."
+      "support": {
+        "constant-curvature": "unavailable",
+        "parametric-surface": "unavailable",
+        "physical-instrument": "unavailable"
+      },
+      "note": "Furthest from the model of the four, and the only one a camera actually produces. Not modelled here."
     }
   ],
   "config": {
@@ -105,6 +123,8 @@
     "order_tolerance": 0.15,
     "wronskian_theory_floor": 1e-09,
     "wronskian_theory_tolerance": 0.001,
+    "focus_refinement_span": 4.0,
+    "focus_refinement_samples": 21,
     "exponent_tolerance": 0.05,
     "coefficient_tolerance": 0.01,
     "epsilon_star_tolerance": 0.01,
@@ -3040,6 +3060,104 @@
             "relative_error": null
           }
         ]
+      }
+    ],
+    "transfer_determinant": [
+      {
+        "curvature": 0.0,
+        "curvature_label": "K=0",
+        "identity": "sigma_1 sigma_2 = |det Phi| = 1",
+        "product_error": 2.220446049250313e-16,
+        "min_largest_singular_value": 1.0,
+        "boxes": [
+          {
+            "max_lateral": 0.001,
+            "max_heading": 0.001,
+            "amplification_score": 2.414213562373095,
+            "min_largest_singular_value": 1.0
+          },
+          {
+            "max_lateral": 0.01,
+            "max_heading": 0.0001,
+            "amplification_score": 1.0100499987500624,
+            "min_largest_singular_value": 1.0
+          },
+          {
+            "max_lateral": 1e-05,
+            "max_heading": 0.1,
+            "amplification_score": 20000.00005,
+            "min_largest_singular_value": 1.0
+          }
+        ]
+      },
+      {
+        "curvature": 1.0,
+        "curvature_label": "K=+1",
+        "identity": "sigma_1 sigma_2 = |det Phi| = 1",
+        "product_error": 2.6423307986078726e-14,
+        "min_largest_singular_value": 0.9999999999999999,
+        "boxes": [
+          {
+            "max_lateral": 0.001,
+            "max_heading": 0.001,
+            "amplification_score": 1.0000000000000002,
+            "min_largest_singular_value": 0.9999999999999999
+          },
+          {
+            "max_lateral": 0.01,
+            "max_heading": 0.0001,
+            "amplification_score": 99.99996829952418,
+            "min_largest_singular_value": 1.0
+          },
+          {
+            "max_lateral": 1e-05,
+            "max_heading": 0.1,
+            "amplification_score": 9999.99682931841,
+            "min_largest_singular_value": 1.0
+          }
+        ]
+      },
+      {
+        "curvature": -1.0,
+        "curvature_label": "K=-1",
+        "identity": "sigma_1 sigma_2 = |det Phi| = 1",
+        "product_error": 9.64339719189411e-13,
+        "min_largest_singular_value": 1.0,
+        "boxes": [
+          {
+            "max_lateral": 0.001,
+            "max_heading": 0.001,
+            "amplification_score": 7.3890560989306495,
+            "min_largest_singular_value": 1.0
+          },
+          {
+            "max_lateral": 0.01,
+            "max_heading": 0.0001,
+            "amplification_score": 362.72506629778087,
+            "min_largest_singular_value": 1.0
+          },
+          {
+            "max_lateral": 1e-05,
+            "max_heading": 0.1,
+            "amplification_score": 36268.60446872827,
+            "min_largest_singular_value": 1.0
+          }
+        ]
+      }
+    ],
+    "focus_refinement": [
+      {
+        "curvature": 1.0,
+        "curvature_label": "K=+1",
+        "exact": 3.141592653589793,
+        "sample_spacing": 0.2,
+        "refined": 3.141592558854202,
+        "refined_error": 9.473559092754158e-08,
+        "linear": 3.1414778398340637,
+        "linear_error": 0.00011481375572941488,
+        "reported_uncertainty": 0.00011471902013884271,
+        "derivative_at_focus": -0.9999975247443927,
+        "method": "cubic-Hermite, Newton with bisection safeguard"
       }
     ],
     "first_order_validity": [
@@ -7273,6 +7391,8 @@
       "h": 0.0003141592653589793,
       "jacobi_first_zero": 3.141592653589791,
       "jacobi_first_zero_error": 2.220446049250313e-15,
+      "jacobi_first_zero_uncertainty": 0.0,
+      "root_finder": "cubic-Hermite, Newton with bisection safeguard",
       "max_distance_error": 7.545179758761122e-15,
       "return_to_start_distance": 7.229186642060381e-15,
       "max_length_excess_model_error": 7.105427357601002e-15,
@@ -9289,6 +9409,70 @@
       "passed": true
     },
     {
+      "id": "transfer-determinant/K=0",
+      "statement": "the scaled transfer's singular values are reciprocal at every arc length, because conjugation leaves det Phi = 1 alone",
+      "value": 2.220446049250313e-16,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "transfer-amplification-floor/K=0",
+      "statement": "so the larger is never below 1: a path cannot be robust to every direction of starting-pose error at once",
+      "value": 1.0,
+      "threshold": 0.999999999999,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "transfer-determinant/K=+1",
+      "statement": "the scaled transfer's singular values are reciprocal at every arc length, because conjugation leaves det Phi = 1 alone",
+      "value": 2.6423307986078726e-14,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "transfer-amplification-floor/K=+1",
+      "statement": "so the larger is never below 1: a path cannot be robust to every direction of starting-pose error at once",
+      "value": 0.9999999999999999,
+      "threshold": 0.999999999999,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "transfer-determinant/K=-1",
+      "statement": "the scaled transfer's singular values are reciprocal at every arc length, because conjugation leaves det Phi = 1 alone",
+      "value": 9.64339719189411e-13,
+      "threshold": 1e-12,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "transfer-amplification-floor/K=-1",
+      "statement": "so the larger is never below 1: a path cannot be robust to every direction of starting-pose error at once",
+      "value": 1.0,
+      "threshold": 0.999999999999,
+      "comparison": ">=",
+      "passed": true
+    },
+    {
+      "id": "focus-refinement/K=+1",
+      "statement": "the Hermite-refined focus beats a linear one by orders of magnitude at the same sample spacing",
+      "value": 9.473559092754158e-08,
+      "threshold": 1.1481375572941487e-06,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "focus-uncertainty/K=+1",
+      "statement": "and the reported location uncertainty bounds the error it left",
+      "value": 9.473559092754158e-08,
+      "threshold": 0.00011471902013884271,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
       "id": "conjugate-point/jacobi-zero",
       "statement": "numerically integrated Jacobi field vanishes at s = pi",
       "value": 2.220446049250313e-15,
@@ -9322,12 +9506,12 @@
     }
   ],
   "summary": {
-    "n_checks": 126,
+    "n_checks": 134,
     "n_failed": 0,
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "ab7017e637d7fda33fcb302ad91534365d73a286c0d6c213c94e22e66cd7b685",
+  "content_hash": "0ca8cebc758eaa67d16f9e9fcf2257a7a2b8f81c0aff158f2fdf0215c768161c",
   "environment": {
     "package_version": "0.1.0",
     "python": "3.11.15",

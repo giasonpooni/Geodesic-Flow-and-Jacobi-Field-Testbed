@@ -40,6 +40,14 @@
     "positive-curvature": {
       "manufacturing": {
         "claim_scope": "first-order-deterministic-bound",
+        "observation_mode": "intrinsic-surface-distance",
+        "domain": "constant-curvature",
+        "source_digest": "sha256:8620fb19792358384bbf6defc576a9fd",
+        "units": {
+          "length": "declared length unit",
+          "angle": "radian"
+        },
+        "first_order_validity_established": true,
         "max_gap": 0.002019598013377602,
         "worst_gap_arclength": 0.02,
         "max_overlap": 0.07099637772397485,
@@ -47,6 +55,14 @@
       },
       "inspection": {
         "claim_scope": "first-order-deterministic-bound",
+        "observation_mode": "intrinsic-surface-distance",
+        "domain": "constant-curvature",
+        "source_digest": "sha256:8620fb19792358384bbf6defc576a9fd",
+        "units": {
+          "length": "declared length unit",
+          "angle": "radian"
+        },
+        "first_order_validity_established": true,
         "reliable": true,
         "max_coverage_gap": 0.0,
         "worst_cross_track_error": 0.0014141985880698439,
@@ -56,6 +72,14 @@
     "negative-curvature": {
       "manufacturing": {
         "claim_scope": "first-order-deterministic-bound",
+        "observation_mode": "intrinsic-surface-distance",
+        "domain": "constant-curvature",
+        "source_digest": "sha256:eb0cd0d4a87f9d9bc9538c29acc448ba",
+        "units": {
+          "length": "declared length unit",
+          "angle": "radian"
+        },
+        "first_order_validity_established": true,
         "max_gap": 0.09582307363102527,
         "worst_gap_arclength": 1.25,
         "max_overlap": 0.002020402013377956,
@@ -63,6 +87,14 @@
       },
       "inspection": {
         "claim_scope": "first-order-deterministic-bound",
+        "observation_mode": "intrinsic-surface-distance",
+        "domain": "constant-curvature",
+        "source_digest": "sha256:eb0cd0d4a87f9d9bc9538c29acc448ba",
+        "units": {
+          "length": "declared length unit",
+          "angle": "radian"
+        },
+        "first_order_validity_established": true,
         "reliable": false,
         "max_coverage_gap": 0.07582307363102528,
         "worst_cross_track_error": 0.0034903429574618416,

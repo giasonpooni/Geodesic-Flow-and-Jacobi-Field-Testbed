@@ -28,7 +28,7 @@ Three levels, in increasing order of what they would be worth:
 
 | level | meaning | status here |
 |---|---|---|
-| **Proof of work** | derivation, solver, numerical tests, reproducible reports | **done** — 191 declared checks across two stages: orders 1/2/4 recovered, the `ε²` coefficient matched to ~1e-4 relative, the conjugate point located to 2e-15, the full 2x2 transfer map with `det Phi = 1` held to 2e-14, and the general parametric solver recovering both columns to 4e-13 before it is trusted on a saddle. [`report-v1.json`](../validation/report-v1.json), [`report-v2-surfaces.json`](../validation/report-v2-surfaces.json) |
+| **Proof of work** | derivation, solver, numerical tests, reproducible reports | **done** — 235 declared checks across two stages: orders 1/2/4 recovered, the `ε²` coefficient matched to 4e-4 relative or better, the conjugate point located to 2e-15, the full 2x2 transfer map with `det Phi = 1` held to 2e-14, and the general parametric solver recovering both columns to 4e-13 before it is trusted on a saddle. [`report-v1.json`](../validation/report-v1.json), [`report-v2-surfaces.json`](../validation/report-v2-surfaces.json) |
 | **Proof of function** | measured physical path separation agrees with the Jacobi prediction inside a quantified error budget | **not attempted** — no physical measurement exists in this repository |
 | **Proof of industrial relevance** | using the sensitivity model produces a better decision: fewer gaps, better coverage, lower endpoint error | **not attempted** |
 
@@ -71,9 +71,10 @@ exists because the differencing measures a **straight-line chord in space**,
 while the Jacobi field is a **distance in the surface**. On a plate the term
 vanishes; on the pseudosphere it is 2.5 times the intrinsic term.
 
-A camera, a photogrammetry rig or a line-laser scanner measures chords. A bench
-that compares such a measurement directly against `ε j(s)` will see a
-discrepancy that is second order in the perturbation — the same order as the
+A photogrammetry rig or a line-laser scanner reports image or range
+observations; a chord appears only once those are calibrated, reconstructed and
+registered into 3-D points. A bench that compares the resulting chord directly
+against `ε j(s)` will see a discrepancy that is second order in the perturbation — the same order as the
 first-order model's own failure — and will mistake one for the other. Either
 convert the measurement to an in-surface distance, or predict the chord. The
 coefficient above says how much it matters for a given coupon, before any
@@ -190,10 +191,15 @@ less.
    `minimum-forward-angular-error-amplification`, separating best from worst by
    a factor of 21 on a torus. But the best-scoring headings all pass through a
    focus, where the endpoint map is ill conditioned — low forward separation
-   bought with bad conditioning. The scan therefore also reports a focus
-   margin, and the defensible pick is the lowest amplification *clear of a
-   focus*. A production score still needs boundary clearance, chart validity,
-   path length, curvature exposure and coverage, none of which are modelled.
+   bought with bad conditioning. The ranking scalar therefore decides nothing.
+   The recommendation comes from `engine/routing.py` under declared limits
+   (cross-track error, heading error, coverage margin) plus the sensor's own
+   acquisition schedule on the dimensionless `rho = |b| sigma_alpha /
+   sigma_measurement`, which moves the answer from 97° to 120° and removes
+   seven of fifteen feasible routes. What a production score still needs:
+   boundary clearance and curvature exposure (declared in `RouteConstraints`,
+   left unbounded here), accumulated observability rather than a per-sample
+   threshold, and a route generator that is not a heading fan from one point.
 8. **Configuration space**, where the manifold is the robot's, not the
    workpiece's. — not started.
 

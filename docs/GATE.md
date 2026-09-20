@@ -3,7 +3,8 @@
 This repository owns a tested NumPy runtime: geodesic flow, Jacobi transfer
 maps, and the application contracts built on them. Matplotlib is used for the
 figures and nothing else. There is no CUDA or Rust runtime here and there is
-no case for one -- both experiment stages run in under a minute.
+no case for one: the constant-curvature stage runs in seconds, the surfaces
+stage in a few minutes, and the whole test suite in about three.
 
 A Jacobi field is a first-order variation, not a finite distance. The
 constant-curvature stage checks that distinction against the exact finite

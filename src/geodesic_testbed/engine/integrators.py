@@ -76,11 +76,20 @@ def integrate(
     of shape ``(n_steps + 1,) + y0.shape``.  The grid is rebuilt from the step
     index rather than accumulated, so the abscissae carry no drift of their own.
     """
+    if isinstance(n_steps, bool) or not isinstance(n_steps, (int, np.integer)):
+        raise TypeError("n_steps must be an integer")
     if n_steps < 1:
         raise ValueError("n_steps must be >= 1")
+    length = float(length)
+    if not np.isfinite(length) or length <= 0.0:
+        raise ValueError("length must be finite and positive")
+    if not np.isfinite(s0):
+        raise ValueError("s0 must be finite")
     integrator = get_integrator(method)
-    h = float(length) / float(n_steps)
+    h = length / float(n_steps)
     y0 = np.asarray(y0, dtype=float)
+    if not np.all(np.isfinite(y0)):
+        raise ValueError("the initial state must be finite")
     trajectory = np.empty((n_steps + 1,) + y0.shape, dtype=float)
     trajectory[0] = y0
     grid = s0 + h * np.arange(n_steps + 1, dtype=float)
@@ -108,10 +117,14 @@ def integrate_on_grid(
     grid = np.asarray(grid, dtype=float)
     if grid.ndim != 1 or grid.size < 2:
         raise ValueError("grid must be a one-dimensional array with at least two samples")
+    if not np.all(np.isfinite(grid)):
+        raise ValueError("grid must be finite")
     if np.any(np.diff(grid) <= 0.0):
         raise ValueError("grid must be strictly increasing")
     integrator = get_integrator(method)
     y0 = np.asarray(y0, dtype=float)
+    if not np.all(np.isfinite(y0)):
+        raise ValueError("the initial state must be finite")
     trajectory = np.empty((grid.size,) + y0.shape, dtype=float)
     trajectory[0] = y0
     y = y0
