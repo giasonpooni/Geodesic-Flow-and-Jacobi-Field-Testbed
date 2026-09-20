@@ -195,15 +195,37 @@ def test_an_obstacle_needs_one_radius_each() -> None:
 # -- generating routes -----------------------------------------------------
 
 
-def test_a_route_label_sits_off_every_rounding_boundary() -> None:
-    """The bug this exists to prevent already happened once, at 97.5 degrees."""
-    assert route_label(u0=0.3, v0=0.2, heading_degrees=97.5) != route_label(
-        u0=0.3, v0=0.2, heading_degrees=98.0
+def test_a_route_label_is_built_from_declared_values_only() -> None:
+    """The bug this exists to prevent already happened once, at 97.5 degrees.
+
+    Two properties, and the second is why the index is there. A label must not
+    move when a value moves in its last bits -- two headings a machine cannot
+    tell apart get the same text. And a label must still be unique when that
+    happens, because it keys a dict that lands in a committed report; the index
+    is what guarantees that, whatever the formatting does.
+    """
+    assert route_label("fan", 3, 97.5) == route_label("fan", 3, 97.49999999999999)
+    assert route_label("fan", 3, 97.5) != route_label("fan", 4, 97.5)
+    assert route_label("fan", 3, 97.5) != route_label("course", 3, 97.5)
+    assert "97.5" in route_label("fan", 3, 97.5)
+
+
+def test_a_route_label_never_carries_a_computed_start_point() -> None:
+    """A course's start is reached by flowing, so it is not stable enough to key on."""
+    surface = torus(2.0, 1.0)
+    courses = offset_courses(
+        surface, u0=0.3, v0=0.2, heading=0.6, spacing=0.1, count=5,
+        length=1.0, n_steps=100,
     )
-    assert "97.5" in route_label(u0=0.3, v0=0.2, heading_degrees=97.5)
-    assert route_label(u0=0.3, v0=0.2, heading_degrees=97.49999999999999) == route_label(
-        u0=0.3, v0=0.2, heading_degrees=97.5
-    )
+    for label, envelope in courses.items():
+        assert f"{envelope.start[0]:.3f}" not in label
+        assert f"{envelope.start[1]:.3f}" not in label
+    # The offsets are (i - (n-1)/2) * spacing: exact small integers against a
+    # declared spacing, and identical on every machine.
+    assert set(courses) == {
+        route_label("course", index, offset)
+        for index, offset in enumerate((-0.2, -0.1, 0.0, 0.1, 0.2))
+    }
 
 
 def test_a_heading_fan_shares_a_start_and_an_offset_family_does_not() -> None:

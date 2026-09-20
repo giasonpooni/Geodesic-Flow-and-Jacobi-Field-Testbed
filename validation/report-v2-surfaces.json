@@ -2889,17 +2889,17 @@
               }
             ],
             "front": [
-              "u0.300/v0.200/135.0deg",
-              "u0.300/v0.200/270.0deg"
+              "fan/03/+135",
+              "fan/06/+270"
             ],
             "front_size": 2,
             "dominated": {
-              "u0.300/v0.200/0.0deg": "u0.300/v0.200/45.0deg",
-              "u0.300/v0.200/45.0deg": "u0.300/v0.200/90.0deg",
-              "u0.300/v0.200/90.0deg": "u0.300/v0.200/270.0deg",
-              "u0.300/v0.200/180.0deg": "u0.300/v0.200/45.0deg",
-              "u0.300/v0.200/225.0deg": "u0.300/v0.200/135.0deg",
-              "u0.300/v0.200/315.0deg": "u0.300/v0.200/90.0deg"
+              "fan/00/+0": "fan/01/+45",
+              "fan/01/+45": "fan/02/+90",
+              "fan/02/+90": "fan/06/+270",
+              "fan/04/+180": "fan/01/+45",
+              "fan/05/+225": "fan/03/+135",
+              "fan/07/+315": "fan/02/+90"
             },
             "note": "nothing on the front is beaten on every objective at once; choosing among them needs a declared preference, which is not a property of the geometry"
           },
@@ -2911,7 +2911,12 @@
               "worst_observed": 159.556938914,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.300/v0.200/0.0deg",
+              "label": "fan/00/+0",
+              "start": {
+                "u": 0.3,
+                "v": 0.2,
+                "heading": 0.0
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -2939,7 +2944,12 @@
               "worst_observed": 312.647964598,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.300/v0.200/45.0deg",
+              "label": "fan/01/+45",
+              "start": {
+                "u": 0.3,
+                "v": 0.2,
+                "heading": 0.785398163397
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -2967,7 +2977,12 @@
               "worst_observed": 465.646958524,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.300/v0.200/90.0deg",
+              "label": "fan/02/+90",
+              "start": {
+                "u": 0.3,
+                "v": 0.2,
+                "heading": 1.57079632679
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -2995,7 +3010,12 @@
               "worst_observed": 414.236010558,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.300/v0.200/135.0deg",
+              "label": "fan/03/+135",
+              "start": {
+                "u": 0.3,
+                "v": 0.2,
+                "heading": 2.35619449019
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -3023,7 +3043,12 @@
               "worst_observed": 235.87565815,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.300/v0.200/180.0deg",
+              "label": "fan/04/+180",
+              "start": {
+                "u": 0.3,
+                "v": 0.2,
+                "heading": 3.14159265359
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -3051,7 +3076,12 @@
               "worst_observed": 414.236010558,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.300/v0.200/225.0deg",
+              "label": "fan/05/+225",
+              "start": {
+                "u": 0.3,
+                "v": 0.2,
+                "heading": 3.92699081699
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -3079,7 +3109,12 @@
               "worst_observed": 465.646958524,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.300/v0.200/270.0deg",
+              "label": "fan/06/+270",
+              "start": {
+                "u": 0.3,
+                "v": 0.2,
+                "heading": 4.71238898038
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -3107,7 +3142,12 @@
               "worst_observed": 312.647964598,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.300/v0.200/315.0deg",
+              "label": "fan/07/+315",
+              "start": {
+                "u": 0.3,
+                "v": 0.2,
+                "heading": 5.49778714378
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -3220,17 +3260,17 @@
               }
             ],
             "front": [
-              "u0.099/v0.296/35.5deg"
+              "course/07/+0.35"
             ],
             "front_size": 1,
             "dominated": {
-              "u0.492/v0.100/32.2deg": "u0.439/v0.129/32.9deg",
-              "u0.439/v0.129/32.9deg": "u0.384/v0.158/33.6deg",
-              "u0.384/v0.158/33.6deg": "u0.328/v0.186/34.1deg",
-              "u0.328/v0.186/34.1deg": "u0.272/v0.214/34.6deg",
-              "u0.272/v0.214/34.6deg": "u0.215/v0.242/35.0deg",
-              "u0.215/v0.242/35.0deg": "u0.157/v0.269/35.3deg",
-              "u0.157/v0.269/35.3deg": "u0.099/v0.296/35.5deg"
+              "course/00/-0.35": "course/01/-0.25",
+              "course/01/-0.25": "course/02/-0.15",
+              "course/02/-0.15": "course/03/-0.05",
+              "course/03/-0.05": "course/04/+0.05",
+              "course/04/+0.05": "course/05/+0.15",
+              "course/05/+0.15": "course/06/+0.25",
+              "course/06/+0.25": "course/07/+0.35"
             },
             "note": "nothing on the front is beaten on every objective at once; choosing among them needs a declared preference, which is not a property of the geometry"
           },
@@ -3242,7 +3282,12 @@
               "worst_observed": 201.251499422,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.492/v0.100/32.2deg",
+              "label": "course/00/-0.35",
+              "start": {
+                "u": 0.492463006614,
+                "v": 0.0999095758492,
+                "heading": 0.561267911125
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -3270,7 +3315,12 @@
               "worst_observed": 213.379515312,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.439/v0.129/32.9deg",
+              "label": "course/01/-0.25",
+              "start": {
+                "u": 0.438673385632,
+                "v": 0.129045100211,
+                "heading": 0.574350502954
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -3298,7 +3348,12 @@
               "worst_observed": 225.56675579,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.384/v0.158/33.6deg",
+              "label": "course/02/-0.15",
+              "start": {
+                "u": 0.383853043765,
+                "v": 0.157721767651,
+                "heading": 0.585816973065
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -3326,7 +3381,12 @@
               "worst_observed": 237.696217227,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.328/v0.186/34.1deg",
+              "label": "course/03/-0.05",
+              "start": {
+                "u": 0.328144142244,
+                "v": 0.185995871735,
+                "heading": 0.595673407965
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -3354,7 +3414,12 @@
               "worst_observed": 249.663301287,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.272/v0.214/34.6deg",
+              "label": "course/04/+0.05",
+              "start": {
+                "u": 0.27168555637,
+                "v": 0.2139252933,
+                "heading": 0.603926680193
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -3382,7 +3447,12 @@
               "worst_observed": 261.377376277,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.215/v0.242/35.0deg",
+              "label": "course/05/+0.15",
+              "start": {
+                "u": 0.214613208006,
+                "v": 0.241569093167,
+                "heading": 0.610583716282
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -3410,7 +3480,12 @@
               "worst_observed": 272.762284081,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.157/v0.269/35.3deg",
+              "label": "course/06/+0.25",
+              "start": {
+                "u": 0.157060478016,
+                "v": 0.26898718607,
+                "heading": 0.615650883557
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -3438,7 +3513,12 @@
               "worst_observed": 283.7559949,
               "boundary_clearance": null,
               "path_length": 6.0,
-              "label": "u0.099/v0.296/35.5deg",
+              "label": "course/07/+0.35",
+              "start": {
+                "u": 0.0991586814351,
+                "v": 0.296240082827,
+                "heading": 0.619133496615
+              },
               "observability": {
                 "scale_basis": "tolerance-box",
                 "path_length": 6.0,
@@ -3498,9 +3578,10 @@
         "detail": []
       },
       "families_differ": {
-        "shared_labels": 0,
-        "heading_fan_routes": 8,
-        "offset_course_routes": 8
+        "compared_by": "start point, since the labels are disjoint by prefix",
+        "shared_starts": 0,
+        "distinct_fan_starts": 1,
+        "distinct_course_starts": 8
       },
       "note": "the two families exercise different columns of Phi; a route chosen on one says nothing about the other"
     },
@@ -15227,9 +15308,17 @@
     },
     {
       "id": "route-families-are-different-families",
-      "statement": "offsetting the start point does not rediscover the heading fan; the two exercise different columns of Phi",
+      "statement": "offsetting the start point does not rediscover the heading fan; the two exercise different columns of Phi, compared by start point rather than by a label the families prefix differently",
       "value": 0.0,
       "threshold": 0.0,
+      "comparison": "<=",
+      "passed": true
+    },
+    {
+      "id": "heading-fan-shares-one-start",
+      "statement": "and a fan is a fan: every one of its routes leaves the same point, so it moves only the b column",
+      "value": 1.0,
+      "threshold": 1.0,
       "comparison": "<=",
       "passed": true
     },
@@ -15987,12 +16076,12 @@
     }
   ],
   "summary": {
-    "n_checks": 166,
+    "n_checks": 167,
     "n_failed": 0,
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "7e32f6b5a24950e9c4e659935610ee768a63899994b9023fbe9e71803881c626",
+  "content_hash": "4d53e857f453bbde8618358c6e6c11fdc5a7b05275facc78a71cd02c0ca1903c",
   "environment": {
     "package_version": "0.2.0",
     "python": "3.11.15",

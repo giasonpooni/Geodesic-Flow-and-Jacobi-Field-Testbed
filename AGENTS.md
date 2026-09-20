@@ -197,7 +197,26 @@
 - **Every float in a committed artefact is canonicalised**
   (`engine/canonical.py`, twelve significant digits, no signed zero) before it
   is serialised or hashed. A content hash that moves because a BLAS reduction
-  summed in a different order is not an identity. Rounding is relative, so a
+  summed in a different order is not an identity.
+- **`tools/e2e.py` is the end-to-end gate, and it varies something each cycle.**
+  Hash seed, BLAS thread count and working directory, because a single run
+  agrees with itself by construction and cannot see a dependence on any of
+  them. It drives the shipped entry points as subprocesses, not imports -- an
+  imported command shares this process's interpreter and directory, which are
+  two of the three things being varied. `--baseline committed` compares with
+  the tracked artefacts and is meaningful only where they were generated;
+  `--baseline self` compares every cycle with the first and is what CI runs.
+- **A content hash is an identity within one environment and nowhere else.**
+  It answers "has anything changed since this was last run here", which is what
+  `tools/e2e.py` asserts across a hundred cycles of varying hash seed, BLAS
+  thread count and working directory. It cannot answer "do two numpy builds
+  agree", because they do not in the last digits and no rounding rule makes
+  them: four builds here give four hashes. The cross-environment claim is that
+  every *reported value* agrees to a declared tolerance
+  (`AGREEMENT_RTOL`/`AGREEMENT_ATOL` in `tests/test_committed_report.py`), which
+  is true, is stronger than "the hashes differ or they do not", and says how far
+  the artefact is allowed to drift. Do not assert hash equality in the test
+  suite; assert it in the end-to-end harness, where the environment is fixed. Rounding is relative, so a
   1e-16 residual is still recorded as 1e-16, and no declared threshold is
   anywhere near the floor. A consistency check on *reported* values may
   therefore not demand better than `10^-(CANONICAL_DIGITS - 1)`. Anything a

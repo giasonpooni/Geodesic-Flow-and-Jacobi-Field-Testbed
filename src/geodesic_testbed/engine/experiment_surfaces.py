@@ -598,6 +598,11 @@ def measure_route_planning(config: SurfaceConfig, cases) -> dict[str, Any]:
                 values
                 | {
                     "label": label,
+                    "start": {
+                        "u": float(envelope.start[0]),
+                        "v": float(envelope.start[1]),
+                        "heading": float(envelope.start[2]),
+                    },
                     "observability": gramian.to_dict(),
                     "min_resolvability_after_start": float(np.min(profile[1:])),
                     "focus_points": record.focus_events(),
@@ -734,14 +739,26 @@ def _families_differ(families: dict[str, Any]) -> dict[str, Any]:
     If offsetting the start point produced the same routes as fanning the
     heading, one of the two columns of ``Phi`` would never be exercised and the
     whole reason for generating beyond a fan would be gone.
+
+    Compared by *start point*, not by label. The labels are now prefixed by
+    their family and so are disjoint by construction, which would make a
+    comparison of them a test of the prefix rather than of the geometry.
     """
-    labels = {name: {row["label"] for row in payload["detail"]}
-              for name, payload in families.items()}
-    fan, courses = labels["heading-fan"], labels["offset-courses"]
+    # Compared exactly, not rounded. Rounding to a fixed number of decimals
+    # would reintroduce the very thing the route labels were just fixed to
+    # avoid -- two starts merging or separating on the last bit. A fan's
+    # starts are the *same float*, so they compare equal exactly, and the
+    # courses are spaced far enough apart that nothing is near a tie.
+    starts = {
+        name: {(row["start"]["u"], row["start"]["v"]) for row in payload["detail"]}
+        for name, payload in families.items()
+    }
+    fan, courses = starts["heading-fan"], starts["offset-courses"]
     return {
-        "shared_labels": len(fan & courses),
-        "heading_fan_routes": len(fan),
-        "offset_course_routes": len(courses),
+        "compared_by": "start point, since the labels are disjoint by prefix",
+        "shared_starts": len(fan & courses),
+        "distinct_fan_starts": len(fan),
+        "distinct_course_starts": len(courses),
     }
 
 
@@ -1954,9 +1971,19 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
         _check(
             "route-families-are-different-families",
             "offsetting the start point does not rediscover the heading fan; the "
-            "two exercise different columns of Phi",
-            float(planning["families_differ"]["shared_labels"]),
+            "two exercise different columns of Phi, compared by start point "
+            "rather than by a label the families prefix differently",
+            float(planning["families_differ"]["shared_starts"]),
             0.0,
+        )
+    )
+    checks.append(
+        _check(
+            "heading-fan-shares-one-start",
+            "and a fan is a fan: every one of its routes leaves the same point, "
+            "so it moves only the b column",
+            float(planning["families_differ"]["distinct_fan_starts"]),
+            1.0,
         )
     )
     for family, payload in planning["families"].items():

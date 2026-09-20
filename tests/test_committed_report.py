@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from geodesic_testbed.engine.canonical import canonical_float
+from geodesic_testbed.engine.canonical import canonical_float, content_hash
 from geodesic_testbed.engine.experiment import REPORT_SCHEMA, SUPERSEDES
 from geodesic_testbed.engine.spaceforms import SpaceForm
 
@@ -90,26 +90,124 @@ def test_the_committed_surface_report_is_not_stale(
     assert committed_surface_report["config"] == surface_report["config"]
 
 
-def test_the_committed_report_hash_is_reproducible(committed: dict, report: dict) -> None:
-    """Recomputing the report reproduces the committed content hash exactly.
+#: Below this a value is a *residual* -- a difference of nearly equal numbers,
+#: a Wronskian drift, an Euler-identity leftover -- and its last digits belong
+#: to the platform's ``sin``, ``cosh`` and BLAS rather than to this code. Two
+#: numpy builds disagree about such a value by a hundred per cent and both are
+#: right, so comparing them by value says nothing. Its *verdict* against its
+#: own declared threshold is compared instead, which is the thing the artefact
+#: actually claims.
+AGREEMENT_FLOOR = 1.0e-6
 
-    This is what canonicalising every float to a fixed number of significant
-    digits buys, and it is only worth anything if it is asserted. Without it
-    the hash drifts on the last two or three digits of a BLAS reduction, an
-    ``svd`` or a ``trapezoid`` -- quantities that did not change -- and a
-    "content hash" that changes when the content did not is not an identity.
+#: How far a value above that floor may move. A genuine regression moves such
+#: a number by far more; a different libm moves it by far less.
+AGREEMENT_RTOL = 1.0e-6
 
-    Compared by *identity*, unlike the check-by-check comparison above: the
-    numbers may legitimately move between numpy builds, and the claim here is
-    precisely that they may not move by more than the canonicalisation hides.
+
+def _disagreements(fresh, committed, path: str = "") -> list[tuple[str, float, float]]:
+    """Every value above the floor that moved further than the tolerance."""
+    if isinstance(committed, dict) and isinstance(fresh, dict):
+        found = []
+        for key in committed:
+            if key in fresh:
+                found += _disagreements(fresh[key], committed[key], f"{path}/{key}")
+        return found
+    if isinstance(committed, list) and isinstance(fresh, list):
+        found = []
+        for index, (left, right) in enumerate(zip(fresh, committed, strict=False)):
+            found += _disagreements(left, right, f"{path}[{index}]")
+        return found
+    if isinstance(committed, float) and isinstance(fresh, float):
+        scale = max(abs(fresh), abs(committed))
+        if scale < AGREEMENT_FLOOR:
+            return []
+        if abs(fresh - committed) <= AGREEMENT_RTOL * scale:
+            return []
+        return [(path, fresh, committed)]
+    return []
+
+
+def _assert_agrees(fresh: dict, committed: dict, what: str) -> None:
+    volatile = {"environment", "content_hash"}
+    moved = _disagreements(
+        {k: v for k, v in fresh.items() if k not in volatile},
+        {k: v for k, v in committed.items() if k not in volatile},
+    )
+    worst = sorted(
+        moved, key=lambda item: abs(item[1] - item[2]) / abs(item[2]), reverse=True
+    )[:10]
+    assert not moved, (
+        f"{len(moved)} value(s) above {AGREEMENT_FLOOR:g} in the {what} report "
+        f"moved further than rtol={AGREEMENT_RTOL:g}. Worst:\n"
+        + "\n".join(
+            f"  {path}: {value!r} vs committed {old!r}" for path, value, old in worst
+        )
+    )
+
+
+def _assert_same_verdicts(fresh: dict, committed: dict, what: str) -> None:
+    """Every check reaches the same conclusion, by identifier.
+
+    The claim that survives a change of numpy build. A residual may sit at
+    8e-14 here and 9e-14 there against a threshold of 1e-13 and the artefact
+    means the same thing in both places -- which is precisely what a threshold
+    is for, and precisely what a comparison of the values themselves cannot
+    express.
     """
-    assert report["content_hash"] == committed["content_hash"]
+    fresh_verdicts = {check["id"]: check["passed"] for check in fresh["checks"]}
+    old_verdicts = {check["id"]: check["passed"] for check in committed["checks"]}
+    assert set(fresh_verdicts) == set(old_verdicts), (
+        f"the {what} report declares different checks than the committed one"
+    )
+    flipped = {
+        identifier: (old_verdicts[identifier], verdict)
+        for identifier, verdict in fresh_verdicts.items()
+        if verdict != old_verdicts[identifier]
+    }
+    assert not flipped, f"{what}: checks changed verdict: {flipped}"
 
 
-def test_the_committed_surface_report_hash_is_reproducible(
+def test_the_committed_report_agrees_with_a_fresh_one(
+    committed: dict, report: dict
+) -> None:
+    """Every value large enough for the comparison to mean something."""
+    _assert_agrees(report, committed, "constant-curvature")
+
+
+def test_the_committed_surface_report_agrees_with_a_fresh_one(
     committed_surface_report: dict, surface_report: dict
 ) -> None:
-    assert surface_report["content_hash"] == committed_surface_report["content_hash"]
+    _assert_agrees(surface_report, committed_surface_report, "surfaces")
+
+
+def test_every_committed_check_reaches_the_same_verdict(
+    committed: dict, report: dict,
+    committed_surface_report: dict, surface_report: dict,
+) -> None:
+    """What the artefact claims, and the claim that crosses a numpy build."""
+    _assert_same_verdicts(report, committed, "constant-curvature")
+    _assert_same_verdicts(surface_report, committed_surface_report, "surfaces")
+
+
+def test_the_content_hash_identifies_the_report_it_was_computed_from(
+    committed: dict, committed_surface_report: dict
+) -> None:
+    """The hash is recomputable from the artefact, and is not a decoration.
+
+    What it is *not* is a cross-platform identity. It answers "has anything in
+    this report changed since it was last written here", which is the question
+    ``tools/e2e.py`` asks a hundred times over on one machine, and it cannot
+    answer "do two numpy builds agree" -- they do not, in the last digits, and
+    nothing can make them. Four builds of numpy produced four hashes here.
+    """
+    for document in (committed, committed_surface_report):
+        core = {
+            key: value
+            for key, value in document.items()
+            if key not in ("environment", "summary", "content_hash")
+        }
+        assert document["content_hash"] == content_hash(core)
+        assert len(document["content_hash"]) == 64
 
 
 def test_every_float_in_a_committed_report_is_canonical(committed: dict) -> None:
@@ -126,3 +224,67 @@ def test_every_float_in_a_committed_report_is_canonical(committed: dict) -> None
             assert node == canonical_float(node), node
 
     walk({key: value for key, value in committed.items() if key != "environment"})
+
+
+def test_the_agreement_comparison_catches_a_value_that_really_moved(
+    committed: dict,
+) -> None:
+    """A tolerance nothing can fail is decoration, so this makes one fail.
+
+    Three cases, and the third is the point: a value above the floor nudged by
+    more than the tolerance must be reported, a value below the floor is not
+    compared at all, and a nudge in the last digits of a real value -- which is
+    what a different libm does -- must not be reported.
+    """
+    import copy
+
+    def moved(mutate) -> list[str]:
+        mutant = copy.deepcopy(committed)
+        mutate(mutant)
+        return [path for path, _, _ in _disagreements(mutant, committed)]
+
+    large = next(
+        check for check in committed["checks"]
+        if check["value"] is not None and abs(check["value"]) > AGREEMENT_FLOOR
+    )
+    small = next(
+        check for check in committed["checks"]
+        if check["value"] is not None and 0.0 < abs(check["value"]) < AGREEMENT_FLOOR
+    )
+
+    def bump_a_real_value(document: dict) -> None:
+        for check in document["checks"]:
+            if check["id"] == large["id"]:
+                check["value"] *= 1.0 + 1.0e-3
+
+    def bump_a_residual(document: dict) -> None:
+        for check in document["checks"]:
+            if check["id"] == small["id"]:
+                check["value"] *= 1000.0
+
+    def nudge_the_last_digits(document: dict) -> None:
+        for check in document["checks"]:
+            if isinstance(check["value"], float):
+                check["value"] *= 1.0 + 1.0e-13
+
+    assert moved(bump_a_real_value), "a 1e-3 relative move went unreported"
+    assert not moved(bump_a_residual), (
+        "a residual below the floor was compared by value; its last digits "
+        "belong to the platform and comparing them would make the test flaky"
+    )
+    assert not moved(nudge_the_last_digits), (
+        "a 1e-13 relative nudge was reported; that is what a different libm "
+        "does, and reporting it would make the comparison unusable"
+    )
+
+
+def test_a_flipped_verdict_is_what_the_comparison_must_catch(
+    committed: dict,
+) -> None:
+    """The residuals are not compared by value, so this is what protects them."""
+    import copy
+
+    mutant = copy.deepcopy(committed)
+    mutant["checks"][0]["passed"] = not mutant["checks"][0]["passed"]
+    with pytest.raises(AssertionError, match="changed verdict"):
+        _assert_same_verdicts(mutant, committed, "mutated")

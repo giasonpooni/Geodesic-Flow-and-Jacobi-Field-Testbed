@@ -318,15 +318,23 @@ def combined_clearance(envelope: PathEnvelope, *regions: Any) -> Array:
 # -- generating routes -----------------------------------------------------
 
 
-def route_label(*, u0: float, v0: float, heading_degrees: float) -> str:
-    """A stable name for a route, off every rounding boundary.
+def route_label(family: str, index: int, quantity: float) -> str:
+    """A stable name for a route: its family, its index, and what generated it.
 
-    Three decimal places on the start and one on the heading, because a label
-    built from ``f"{x:.0f}"`` of a value that lands exactly on ``.5`` is one
-    thing on one platform and another on the next -- which has already happened
-    here once, to the recommended heading of the torus scan.
+    Built from **declared** values only -- the family, the position in the
+    sweep, and the heading or offset the sweep asked for -- and never from
+    anything the solver computed. A start point reached by flowing a
+    perpendicular geodesic differs in its last bits between platforms, and a
+    label formatted from it can therefore round to a different string on a
+    different machine. That label then lands in a committed report and moves
+    its content hash, which is the failure this repository has already had once
+    and fixed once, at the 97.5-degree heading of the torus scan.
+
+    The index alone would be enough to be stable, and is not enough to be
+    read; the quantity alone would be readable and not stable. Both, and the
+    index is what makes collisions impossible whatever the formatting does.
     """
-    return f"u{float(u0):.3f}/v{float(v0):.3f}/{float(heading_degrees):.1f}deg"
+    return f"{family}/{int(index):02d}/{float(quantity):+.6g}"
 
 
 def heading_fan(
@@ -349,8 +357,10 @@ def heading_fan(
         length=length, n_steps=n_steps,
     )
     return {
-        route_label(u0=u0, v0=v0, heading_degrees=float(degree)): envelope
-        for degree, envelope in zip(degrees, envelopes, strict=True)
+        route_label("fan", index, float(degree)): envelope
+        for index, (degree, envelope) in enumerate(
+            zip(degrees, envelopes, strict=True)
+        )
     }
 
 
@@ -396,7 +406,7 @@ def offset_courses(
     offsets = (np.arange(count) - (count - 1) / 2.0) * float(spacing)
 
     courses: dict[str, PathEnvelope] = {}
-    for offset in offsets:
+    for index, offset in enumerate(offsets):
         if offset == 0.0:
             start_u, start_v, direction = u0, v0, tangent
         else:
@@ -422,14 +432,10 @@ def offset_courses(
             headings=[float(surface.heading_of(start_u, start_v, *direction))],
             length=length, n_steps=n_steps,
         )[0]
-        courses[
-            route_label(
-                u0=float(start_u), v0=float(start_v),
-                heading_degrees=float(
-                    np.rad2deg(surface.heading_of(start_u, start_v, *direction))
-                ),
-            )
-        ] = envelope
+        # Keyed by the offset that was *asked for*, not by the point the flow
+        # landed on: the offset is (i - (n-1)/2) * spacing, exact small
+        # integers against a declared spacing, and identical on every machine.
+        courses[route_label("course", index, float(offset))] = envelope
     return courses
 
 

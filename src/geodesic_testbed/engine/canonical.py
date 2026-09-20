@@ -12,6 +12,19 @@ reports a difference where there is none, and a content hash stops meaning
 Rounding is *relative*, so it does not flatten small numbers: an error of
 2.22e-16 is still recorded as 2.22e-16. What it removes is the trailing noise
 below the level at which any threshold here is declared.
+
+**What this buys, and what it does not.** Within one environment it makes the
+content hash an identity: the same code on the same machine gives the same
+bytes whatever the hash seed, the BLAS thread count or the working directory,
+and ``tools/e2e.py`` asserts exactly that, a hundred cycles at a time.
+
+Across environments it buys nothing, and no rounding rule could. ``sin``,
+``cosh``, ``exp`` and every BLAS reduction are the platform's, they differ in
+their last bits between builds, and an ODE integrated over two thousand steps
+carries that difference upward. Four numpy builds here produce four different
+content hashes. So the cross-environment claim is not a hash at all: it is that
+every *reported value* agrees to a declared tolerance, which is both true and
+more informative, and ``tests/test_committed_report.py`` is where it is made.
 """
 
 from __future__ import annotations

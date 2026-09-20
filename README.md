@@ -288,6 +288,34 @@ uv run python examples/write_reference_report.py          # application referenc
 `--update-committed` refreshes the tracked reports and figures. The command
 exits non-zero if any declared check fails, so it gates CI by itself.
 
+### Running it until nothing moves
+
+```bash
+uv run python tools/e2e.py --runs 100              # ~16 min
+uv run python tools/e2e.py --runs 3 --profile full # adds stage two and pytest
+```
+
+Running a deterministic pipeline twice proves nothing, and a hundred times
+proves nothing more — unless something changes between the runs. Each cycle
+drives every shipped entry point and varies three things that a single run
+cannot vary against itself: the interpreter's **hash seed**, the **BLAS thread
+count** (1, 2 and 4 in rotation, because a threaded reduction adds its partial
+sums in whatever order they finish), and the **working directory**. Then it
+requires the artefacts to be identical, and the pipeline to be idempotent —
+run twice into two directories, compare the bytes.
+
+**100 of 100 consecutive cycles passed**, and 3 of 3 at the full profile.
+
+A content hash is an identity *within one environment* and nothing more. Four
+numpy builds here produce four different content hashes, because the last
+digits of `sin`, `cosh`, `svd` and every BLAS reduction belong to the
+platform's libm and no rounding rule aligns them. So `--baseline self` is what
+CI uses — every cycle against the first cycle's own output — while the claim
+made against the *tracked* reports is that every check reaches the same
+verdict, and every value large enough for a relative comparison to mean
+anything agrees to 1e-6. Residuals below that floor are not compared by value,
+because their last digits are the platform's; their verdicts are.
+
 ## Using it
 
 ```python
