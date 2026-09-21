@@ -334,3 +334,25 @@ shared history.
   dynamic, so `pip install -e` and the built wheel exercise different metadata
   paths. CI builds the wheel, installs it into an empty environment and asks it
   what version it is.
+
+- **A differential control states two hypotheses, not one.** The plate and the
+  rolled cylinder have the same transfer map and *not* the same ambient-chord
+  prediction -- the cylinder's transverse normal curvature is why its validity
+  envelope is 15.7% tighter. So the intrinsic null is about `Phi` and the
+  observation-space null is `r_D = (y_c - y_p) - (yhat_c - yhat_p)`. Testing
+  the raw difference against zero would reject a correct runtime on a coupon
+  pair it predicts perfectly.
+- **Cancellation is measured, never assumed.** A parameter shared by two
+  coupons contributes `(J_c - J_p) C_theta (J_c - J_p)^T` to their difference,
+  which is zero only where both felt it identically. Combining two scalar
+  uncertainties in quadrature assumes independence, which is the opposite of
+  the cancellation a differential control claims; with no declared joint
+  covariance and no shared-parameter Jacobians, the control reports
+  `differential_covariance_not_established` and computes no statistic.
+- **Pair on achieved, compare on whitened.** Trials pair on achieved
+  perturbations inside their own declared uncertainty, never on the command,
+  and every field that must agree before two trials can be differenced --
+  observation mode and version, units, coordinate and datum frames, filter
+  identity, operator digest and causality, calibration relationship, arclength
+  grid -- is checked first. The comparison then uses the whitened residual and
+  the two-sided chi-square band, not a maximum over a combined scalar.

@@ -36,10 +36,42 @@ point: the programme is what would make a disagreement mean something, not
 what decides whether there is one.
 
 `intrinsic_flatness_control(plate, cylinder)` is the differential comparison
-the first stage is built around -- a cylinder is visibly curved and
-intrinsically flat, and the runtime says its path sensitivity equals the
-plate's to 1e-13. Calibration offset, registration shift and fixture datum are
-common to the two coupons and cancel in the difference.
+the first stage is built around. A cylinder is visibly curved and
+intrinsically flat, and the runtime computes its transfer map equal to the
+plate's to 1e-13. Two things about that are easy to overstate.
+
+**The measured separations are not expected to be identical.** They are
+identical in `Phi`; at finite perturbation the cylinder has a transverse
+normal curvature the plate does not, so the two ambient-chord predictions
+differ at second order -- the same effect that makes the cylinder's validity
+envelope 15.7% tighter. The intrinsic null and the observation-space null are
+separate hypotheses, and the second is tested on
+
+```text
+r_D = (y_c - y_p) - (yhat_c - yhat_p)
+```
+
+rather than on `y_c - y_p` against zero, which would reject a correct runtime
+on a coupon pair it predicts perfectly.
+
+**A shared error does not cancel merely by being named in both budgets.** For
+a parameter `theta` common to the two coupons the difference carries
+`(J_c - J_p) C_theta (J_c - J_p)^T`, which vanishes only where both coupons
+felt it identically. A calibration scale applied through the same transform
+does; a fixture datum re-established when the second coupon was mounted does
+not. So the differential covariance is
+`Sigma_p + Sigma_c - Sigma_pc - Sigma_cp`, built from either a declared joint
+covariance or a `SharedDifferential` carrying both Jacobians, and without
+either the control reports `differential_covariance_not_established` rather
+than combining two scalar uncertainties in quadrature -- which would assume
+independence, the opposite of the cancellation being claimed.
+`SharedDifferential.uncancelled_fraction()` reports how much survived the
+subtraction, so the cancellation is measured rather than asserted.
+
+Trials are paired on **achieved** perturbations within their own declared
+uncertainty, and a pair whose observation mode, units, frames, filter identity,
+calibration relationship or arclength grid differ is refused: the difference of
+two different quantities has no null hypothesis.
 
 ## Filtering
 

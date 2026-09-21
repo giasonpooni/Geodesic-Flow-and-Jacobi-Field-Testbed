@@ -10,9 +10,13 @@ name: verify
 # What *does* depend on the interpreter is the contract layer: imports, dataclass
 # behaviour, tomllib, typing. So the split is by what varies, not by what costs.
 
+# push on main only, plus pull_request. A branch with an open PR used to run
+# the whole eight-job workflow twice on the same SHA -- once for the push and
+# once for the PR -- which is sixteen successful checks saying one thing. This
+# keeps PR verification and post-merge verification and drops the duplicate.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 

@@ -9,6 +9,9 @@ plots and no evidence.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
+import numpy as np
 import pytest
 
 from geodesic_testbed import MeasurementRecord, Perturbation, Uncertainty
@@ -17,6 +20,7 @@ from geodesic_testbed.engine.campaign import (
     CouponProgram,
     CouponStage,
     PerturbationPlan,
+    SharedDifferential,
     conformance,
     default_program,
     intrinsic_flatness_control,
@@ -37,6 +41,7 @@ def _trial(
     scale: float = 1.0,
     separation=None,
     mode: str = "ambient-euclidean-chord",
+    measurement_covariance=None,
 ) -> MeasurementRecord:
     return MeasurementRecord(
         coupon_id=coupon,
@@ -59,6 +64,7 @@ def _trial(
         as_built_scan_digest="sha256:ccc",
         raw_data_digest=f"sha256:{run}",
         prediction_report_digest="sha256:eee",
+        measurement_covariance=measurement_covariance,
         perturbation=Perturbation(
             commanded_lateral=lateral,
             commanded_heading=heading,
@@ -256,40 +262,226 @@ def test_a_trial_that_names_no_stage_cannot_be_evidence_for_one() -> None:
 # -- the flatness control --------------------------------------------------
 
 
-def test_the_flatness_control_compares_matched_conditions() -> None:
+#: Both coupons feel the calibration scale identically; only the cylinder's
+#: fixture was re-established when it was mounted. The first cancels in the
+#: difference and the second does not, which is the whole point of measuring
+#: the cancellation rather than asserting it.
+def _shared(samples: int = 3, *, fixture_differs: bool = True) -> SharedDifferential:
+    calibration = np.ones((samples, 1))
+    fixture_plate = np.zeros((samples, 1))
+    fixture_cylinder = np.full((samples, 1), 1.0 if fixture_differs else 0.0)
+    return SharedDifferential(
+        names=("calibration-scale", "fixture-datum"),
+        kinds=("calibration-transform", "fixture-datum"),
+        covariance=np.diag([4e-4, 9e-4]),
+        plate_jacobian=np.hstack([calibration, fixture_plate]),
+        cylinder_jacobian=np.hstack([calibration, fixture_cylinder]),
+        basis="a certificate and a fixture repeatability study",
+    )
+
+
+def _independent(samples: int = 3, sigma: float = 0.02):
+    return (np.eye(samples) * sigma**2).tolist()
+
+
+def test_the_intrinsic_and_observation_nulls_are_separate_hypotheses() -> None:
+    """The transfer maps agree; the ambient chords do not, and must not.
+
+    Testing ``y_c - y_p`` against zero would reject a correct runtime on a
+    coupon pair it predicts perfectly, because the cylinder has a transverse
+    normal curvature the plate does not.
+    """
     plate = [_trial(stage="flat-plate", coupon="p1", run="p1", lateral=0.5)]
     cylinder = [_trial(stage="rolled-cylinder", coupon="c1", run="c1", lateral=0.5)]
     result = intrinsic_flatness_control(plate, cylinder)
+
+    assert "same transfer map" in result["intrinsic_null"]
+    assert "not tested" in result["observation_null"]
     assert result["matched_pairs"] == 1
-    assert result["worst_difference_over_uncertainty"] == pytest.approx(0.0)
-    assert "cancel" in result["note"]
+    assert result["differential_covariance"] == "differential_covariance_not_established"
+    assert result["worst_reduced_chi_square"] is None
+    assert result["status"] == "not-started"
 
 
-def test_the_flatness_control_scales_a_disagreement_by_the_combined_uncertainty() -> None:
-    plate = [_trial(stage="flat-plate", coupon="p1", run="p1")]
-    cylinder = [
-        _trial(
-            stage="rolled-cylinder", coupon="c1", run="c1",
-            separation=[0.0, 1.82, 3.54],
-        )
+def test_the_residual_is_measured_against_the_predicted_difference_not_zero() -> None:
+    """``r_D = (y_c - y_p) - (yhat_c - yhat_p)``.
+
+    A coupon pair whose observed difference is exactly the predicted chord
+    correction has residual zero and must pass, even though the two measured
+    separations are nowhere near identical.
+    """
+    predicted = np.array([0.0, 0.05, 0.11])
+    # The cylinder reads the plate plus the predicted chord correction, plus a
+    # residual of about one sigma -- which is what a consistent trial looks
+    # like. An exactly zero residual is a different outcome, tested below.
+    plate = [
+        _trial(stage="flat-plate", coupon="p1", run="p1",
+               separation=[0.0, 1.72, 3.44], measurement_covariance=_independent())
     ]
-    result = intrinsic_flatness_control(plate, cylinder)
-    combined = result["pairs"][0]["combined_uncertainty"]
-    assert result["pairs"][0]["max_abs_difference"] == pytest.approx(0.1)
-    assert result["worst_difference_over_uncertainty"] == pytest.approx(0.1 / combined)
+    cylinder = [
+        _trial(stage="rolled-cylinder", coupon="c1", run="c1",
+               separation=[0.03, 1.73, 3.57], measurement_covariance=_independent())
+    ]
+    result = intrinsic_flatness_control(
+        plate, cylinder, predicted_difference=predicted, shared=_shared()
+    )
+    row = result["pairs"][0]
+    assert result["all_consistent"] is True
+    assert row["max_abs_residual"] < 0.05
+
+    # Against zero instead, the same pair would look like a 0.13 disagreement:
+    # nearly three times the residual the correct null leaves.
+    assert row["max_abs_observed_difference"] > 2.5 * row["max_abs_residual"]
+
+
+def test_a_residual_of_exactly_zero_is_too_good_and_the_band_says_so() -> None:
+    """The lower limit is not decoration.
+
+    A measured difference that reproduces the prediction to the last digit,
+    against a declared uncertainty of tens of microns, is evidence that the
+    uncertainty is overstated or that the two sides are not independent -- not
+    evidence of agreement.
+    """
+    predicted = np.array([0.0, 0.05, 0.11])
+    plate = [
+        _trial(stage="flat-plate", coupon="p1", run="p1",
+               separation=[0.0, 1.72, 3.44], measurement_covariance=_independent())
+    ]
+    cylinder = [
+        _trial(stage="rolled-cylinder", coupon="c1", run="c1",
+               separation=[0.0, 1.77, 3.55], measurement_covariance=_independent())
+    ]
+    result = intrinsic_flatness_control(
+        plate, cylinder, predicted_difference=predicted, shared=_shared()
+    )
+    row = result["pairs"][0]
+    assert row["max_abs_residual"] == pytest.approx(0.0, abs=1e-12)
+    assert row["statistic"]["verdict"] == "covariance-too-large"
+    assert result["all_consistent"] is False
+
+
+def test_a_real_disagreement_still_fails() -> None:
+    predicted = np.array([0.0, 0.05, 0.11])
+    plate = [
+        _trial(stage="flat-plate", coupon="p1", run="p1",
+               separation=[0.0, 1.72, 3.44], measurement_covariance=_independent())
+    ]
+    cylinder = [
+        _trial(stage="rolled-cylinder", coupon="c1", run="c1",
+               separation=[0.0, 2.77, 4.55], measurement_covariance=_independent())
+    ]
+    result = intrinsic_flatness_control(
+        plate, cylinder, predicted_difference=predicted, shared=_shared()
+    )
+    assert result["all_consistent"] is False
+    assert result["pairs"][0]["statistic"]["verdict"] == "residual-too-large"
+
+
+def test_without_a_declared_cross_covariance_nothing_is_tested() -> None:
+    """Quadrature assumes independence, which is the opposite of cancellation."""
+    predicted = np.zeros(3)
+    plate = [_trial(stage="flat-plate", coupon="p1", run="p1")]
+    cylinder = [_trial(stage="rolled-cylinder", coupon="c1", run="c1")]
+    result = intrinsic_flatness_control(plate, cylinder, predicted_difference=predicted)
+    assert result["differential_covariance"] == "differential_covariance_not_established"
+    assert result["pairs"][0]["statistic"] is None
+    assert result["all_consistent"] is None
+
+
+def test_a_declared_joint_covariance_is_enough_on_its_own() -> None:
+    predicted = np.zeros(3)
+    plate = [_trial(stage="flat-plate", coupon="p1", run="p1")]
+    cylinder = [_trial(stage="rolled-cylinder", coupon="c1", run="c1")]
+    result = intrinsic_flatness_control(
+        plate, cylinder,
+        predicted_difference=predicted,
+        joint_covariance=np.eye(3) * 4e-4,
+    )
+    assert result["differential_covariance"] == "established"
+    assert result["pairs"][0]["statistic"] is not None
+
+
+def test_cancellation_is_measured_rather_than_asserted() -> None:
+    """A shared parameter cancels only where both coupons felt it identically.
+
+    The calibration scale is common to both and drops out. The fixture datum
+    was re-established when the cylinder was mounted, so it does not -- and the
+    reported fraction says which situation the control is actually in.
+    """
+    both_common = _shared(fixture_differs=False)
+    assert both_common.uncancelled_fraction() == pytest.approx(0.0, abs=1e-15)
+
+    partly_common = _shared(fixture_differs=True)
+    assert partly_common.uncancelled_fraction() > 0.1, (
+        "a fixture that was re-established does not cancel, and a control that "
+        "assumed it did would understate its own uncertainty"
+    )
+    surviving = partly_common.difference_block()
+    assert np.allclose(surviving, 9e-4 * np.ones((3, 3)))
+
+
+def test_pairing_uses_achieved_perturbations_and_not_commanded_ones() -> None:
+    """Two runs can share a command and receive different starting poses."""
+    plate = [_trial(stage="flat-plate", coupon="p1", run="p1", heading=0.0175)]
+    drifted = _trial(stage="rolled-cylinder", coupon="c1", run="c1", heading=0.0175)
+    drifted = replace(
+        drifted,
+        perturbation=Perturbation(
+            commanded_lateral=0.0,
+            commanded_heading=0.0175,
+            # Same command, a starting pose two hundred sigma away.
+            achieved_heading=0.0175 * 0.99 + 2e-3,
+            achieved_lateral=0.0,
+            achieved_uncertainty_lateral=1e-3,
+            achieved_uncertainty_heading=1e-5,
+        ),
+    )
+    with pytest.raises(ValueError, match="achieved perturbations differ"):
+        intrinsic_flatness_control(plate, [drifted])
+
+
+def test_a_trial_with_no_achieved_perturbation_cannot_be_paired() -> None:
+    plate = [_trial(stage="flat-plate", coupon="p1", run="p1")]
+    cylinder = [_trial(stage="rolled-cylinder", coupon="c1", run="c1", achieved=False)]
+    with pytest.raises(ValueError, match="achieved perturbations are not reported"):
+        intrinsic_flatness_control(plate, cylinder)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("observation_mode", "first-order-tangent-separation"),
+        ("units", {"length": "m", "angle": "radian"}),
+        ("coordinate_frame", "some-other-frame"),
+        ("datum_frame", "fixture-B"),
+        ("calibration_id", "bench-cal-2025-01"),
+        ("reconstruction_version", "recon-9.9"),
+    ),
+)
+def test_two_trials_that_are_not_differenceable_are_refused(field: str, value) -> None:
+    """The difference of two different quantities has no null hypothesis."""
+    plate = [_trial(stage="flat-plate", coupon="p1", run="p1")]
+    cylinder = [replace(_trial(stage="rolled-cylinder", coupon="c1", run="c1"),
+                        **{field: value})]
+    with pytest.raises(ValueError, match="differenceable"):
+        intrinsic_flatness_control(plate, cylinder)
+
+
+def test_a_filtered_trial_is_not_differenceable_against_an_unfiltered_one() -> None:
+    plate = [_trial(stage="flat-plate", coupon="p1", run="p1")]
+    cylinder = [replace(
+        _trial(stage="rolled-cylinder", coupon="c1", run="c1"),
+        filter_identifier="rts-smoother", filter_version="1.2.0",
+        filter_operator_digest="sha256:f", filter_causal=False,
+    )]
+    with pytest.raises(ValueError, match="differenceable"):
+        intrinsic_flatness_control(plate, cylinder)
 
 
 def test_the_flatness_control_needs_both_coupons() -> None:
     plate = [_trial(stage="flat-plate", coupon="p1", run="p1")]
     with pytest.raises(ValueError, match="needs trials from both"):
         intrinsic_flatness_control(plate, [])
-
-
-def test_the_flatness_control_refuses_unmatched_conditions() -> None:
-    plate = [_trial(stage="flat-plate", coupon="p1", run="p1", heading=0.0175)]
-    cylinder = [_trial(stage="rolled-cylinder", coupon="c1", run="c1", heading=0.035)]
-    with pytest.raises(ValueError, match="matched conditions"):
-        intrinsic_flatness_control(plate, cylinder)
 
 
 def test_a_conforming_set_still_claims_no_physical_result() -> None:
