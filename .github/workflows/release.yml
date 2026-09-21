@@ -1,0 +1,324 @@
+name: release
+
+# Publication, kept separate from generation on purpose.
+#
+# `tools/release_manifest.py` decides what a release *is*: it hashes declared
+# files and writes the claim. It has no network, no credentials and no clock,
+# and `tests/test_release_manifest.py` reads that out of its syntax tree.
+#
+# This workflow decides what gets *uploaded*, and it is the only thing here
+# that can write to the repository. It re-hashes every byte against the
+# manifest immediately before the upload and refuses the whole release if any
+# one of them differs -- which is a real gate precisely because a different
+# authority produced the claim.
+#
+# The release is created as a DRAFT. Everything mechanical is done by then:
+# the tag is checked against the version, the wheel is built, the digests
+# match, the assets are attached. What is left is the one judgement a workflow
+# should not make on its own -- that this is the release the maintainer meant
+# to publish -- and that is a click.
+#
+# Every action is pinned to a full commit sha rather than a moving major tag.
+# A tag is a pointer its owner can move; `@v7` is a promise about compatibility,
+# not about bytes, and this is the one workflow in the repository that can
+# write. The trailing comment names the release each sha was at when it was
+# reviewed, so an upgrade is a diff someone reads rather than a silent
+# substitution. `.github/workflows/ci.yml` is deliberately left on major tags:
+# it has no write permission, and pinning it is a separate, wider change.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "An existing tag to publish, e.g. v0.3.0"
+        required: true
+
+# Read-only at the top. The one job that needs to write says so itself, so a
+# step added to the wrong job cannot quietly inherit the ability to publish.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build and manifest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
+      version: ${{ steps.identity.outputs.version }}
+      commit: ${{ steps.identity.outputs.commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      # The tag, the version in the source, and the version the distributions
+      # will carry are three claims that have to be one claim. This fails
+      # before anything is built, so the failure names the disagreement rather
+      # than arriving as a rejected upload after a tag already exists.
+      - name: Tag, commit and version agree
+        id: identity
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag || github.ref_name }}"
+          COMMIT="$(git rev-parse HEAD)"
+          VERSION="$(python -c "import re,pathlib; \
+            print(re.search(r'^RUNTIME_VERSION = \"([^\"]+)\"', \
+            pathlib.Path('src/geodesic_testbed/engine/contract.py').read_text(), \
+            re.M).group(1))")"
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::tag $TAG does not name RUNTIME_VERSION $VERSION (expected v$VERSION)"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+          echo "$TAG -> $VERSION at $COMMIT"
+
+      - name: Build the distributions
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      # The wheel a user receives is the thing worth interrogating; an
+      # editable install exercises a different metadata path entirely.
+      - name: Install the wheel into a clean environment and interrogate it
+        run: |
+          python -m venv release-check
+          release-check/bin/pip install --upgrade pip
+          release-check/bin/pip install dist/*.whl
+          release-check/bin/python - <<'PY'
+          from importlib.metadata import metadata, version
+          import geodesic_testbed as g
+          built = version("curved-surface-geodesic-sensitivity")
+          assert g.__version__ == g.RUNTIME_VERSION == built, (g.__version__, built)
+          fields = metadata("curved-surface-geodesic-sensitivity")
+          assert fields["License-Expression"] == "MPL-2.0", dict(fields)
+          assert not fields.get_all("License"), fields.get_all("License")
+          print(f"wheel {built}, License-Expression: MPL-2.0")
+          PY
+
+      # Evidence is the committed reports, not a fresh run: their content
+      # hashes are what the release notes cite, and `verify` on main already
+      # regenerates them and compares. Naming them here binds the tag to the
+      # exact bytes that were checked.
+      - name: Write the release manifest
+        run: >-
+          python tools/release_manifest.py generate
+          --version "${{ steps.identity.outputs.version }}"
+          --tag "${{ steps.identity.outputs.tag }}"
+          --commit "${{ steps.identity.outputs.commit }}"
+          --distribution dist/curved_surface_geodesic_sensitivity-${{ steps.identity.outputs.version }}-py3-none-any.whl
+          --distribution dist/curved_surface_geodesic_sensitivity-${{ steps.identity.outputs.version }}.tar.gz
+          --evidence validation/report-v1.json
+          --evidence validation/report-v2-surfaces.json
+          --out dist/release-manifest.json
+
+      # Generation and verification in the same job would prove nothing, but
+      # this is not that: it catches a build that is not reproducible in place
+      # before the payload is handed to a job that can publish it.
+      - name: Verify the manifest against what was just built
+        run: >-
+          python tools/release_manifest.py verify
+          --manifest dist/release-manifest.json
+          --expect-tag "${{ steps.identity.outputs.tag }}"
+          --expect-commit "${{ steps.identity.outputs.commit }}"
+          --expect-version "${{ steps.identity.outputs.version }}"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-payload
+          path: |
+            dist/
+            validation/report-v1.json
+            validation/report-v2-surfaces.json
+          if-no-files-found: error
+
+  publish:
+    name: publish draft release
+    needs: build
+    runs-on: ubuntu-latest
+    # The only write capability in this file, on the only job that needs it.
+    permissions:
+      contents: write
+    steps:
+      # The tools come from the tagged commit, not from the payload: a payload
+      # that could also supply its own verifier would be verifying itself.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-payload
+          path: payload
+
+      - name: Verify every asset against the manifest
+        run: >-
+          python tools/release_manifest.py verify
+          --base payload
+          --manifest payload/dist/release-manifest.json
+          --expect-tag "${{ needs.build.outputs.tag }}"
+          --expect-commit "${{ needs.build.outputs.commit }}"
+          --expect-version "${{ needs.build.outputs.version }}"
+
+      # And again, in the uploader itself, on the bytes it is about to send.
+      # The step above could pass and a later step could still replace a file;
+      # this hashes every asset, refuses the whole release if one differs, and
+      # only then creates anything.
+      #
+      # What that does and does not guarantee, stated exactly:
+      #
+      #   * No incomplete release is ever PUBLISHED. Nothing is uploaded until
+      #     every file has been read and checked, and what is created is a
+      #     draft that a person has to publish.
+      #   * A draft is created before its assets are uploaded, so a failure
+      #     mid-upload does leave an incomplete draft. This deletes its own
+      #     draft when an upload raises, but a run killed outright -- cancelled,
+      #     runner lost -- cannot run cleanup at all.
+      #   * So a rerun is made idempotent instead: it deletes an existing DRAFT
+      #     for the tag and starts again. It refuses outright if a PUBLISHED
+      #     release already exists for the tag, because that is a release
+      #     someone has already stood behind and is not this workflow's to
+      #     replace.
+      - name: Create the draft release and attach the verified assets
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const crypto = require('crypto');
+
+            const manifestPath = 'payload/dist/release-manifest.json';
+            const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+            const payload = manifest.payload;
+            if (payload.schema !== 'geodesic-runtime-release.v1') {
+              throw new Error(`unsupported manifest schema: ${payload.schema}`);
+            }
+            if (payload.release.tag !== '${{ needs.build.outputs.tag }}'
+                || payload.release.commit !== '${{ needs.build.outputs.commit }}') {
+              throw new Error('manifest does not name the tag and commit being published');
+            }
+
+            // Read and hash everything BEFORE creating the release. A release
+            // that exists with some of its assets is worse than no release.
+            const assets = [];
+            const problems = [];
+            for (const entry of payload.artefacts) {
+              const file = path.join('payload', entry.path);
+              if (!fs.existsSync(file)) { problems.push(`missing: ${entry.path}`); continue; }
+              const data = fs.readFileSync(file);
+              const digest = crypto.createHash('sha256').update(data).digest('hex');
+              if (data.length !== entry.size_bytes) {
+                problems.push(`size differs: ${entry.path}`);
+              }
+              if (digest !== entry.sha256) {
+                problems.push(`digest differs: ${entry.path} is ${digest}, manifest says ${entry.sha256}`);
+              }
+              assets.push({ name: entry.asset_name, data });
+            }
+            if (problems.length) {
+              throw new Error(`refusing to publish:\n  ${problems.join('\n  ')}`);
+            }
+            assets.push({ name: 'release-manifest.json', data: fs.readFileSync(manifestPath) });
+
+            const lines = payload.artefacts.map(
+              (entry) => `| \`${entry.asset_name}\` | ${entry.role} | ${entry.size_bytes} | \`${entry.sha256}\` |`
+            );
+            const evidence = payload.artefacts
+              .filter((entry) => entry.report)
+              .map((entry) => `- \`${entry.asset_name}\`: ${entry.report.declared_checks} declared checks, `
+                + `${entry.report.failed_checks} failed, content hash \`${entry.report.content_hash}\``);
+
+            const body = [
+              `\`${payload.release.tag}\` is commit \`${payload.release.commit}\`.`,
+              '',
+              '| asset | role | bytes | sha256 |',
+              '| --- | --- | ---: | --- |',
+              ...lines,
+              '',
+              '**Evidence**',
+              ...evidence,
+              '',
+              `Manifest digest: \`${manifest.digest}\` (schema \`${payload.schema}\`).`,
+              'Every asset above was re-hashed against the manifest immediately before upload.',
+              '',
+              'Licensed under MPL-2.0.',
+            ].join('\n');
+
+            // A rerun is idempotent; a published release is untouchable.
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner, repo, per_page: 100,
+            });
+            const prior = releases.find((item) => item.tag_name === payload.release.tag);
+            if (prior && !prior.draft) {
+              throw new Error(
+                `a published release already exists for ${payload.release.tag}; `
+                + 'refusing to replace it'
+              );
+            }
+            if (prior) {
+              await github.rest.repos.deleteRelease({ owner, repo, release_id: prior.id });
+              core.info(`deleted an earlier draft for ${payload.release.tag}`);
+            }
+
+            const release = await github.rest.repos.createRelease({
+              owner,
+              repo,
+              tag_name: payload.release.tag,
+              target_commitish: payload.release.commit,
+              name: payload.release.tag,
+              body,
+              draft: true,
+              prerelease: false,
+            });
+
+            // From here a draft exists. If an upload fails, take it back down
+            // rather than leaving a half-populated draft for the next run to
+            // puzzle over -- and never let the cleanup's own failure hide the
+            // error that caused it.
+            try {
+              for (const asset of assets) {
+                await github.rest.repos.uploadReleaseAsset({
+                  owner,
+                  repo,
+                  release_id: release.data.id,
+                  name: asset.name,
+                  data: asset.data,
+                  headers: {
+                    'content-type': 'application/octet-stream',
+                    'content-length': asset.data.length,
+                  },
+                });
+                core.info(`uploaded ${asset.name} (${asset.data.length} bytes)`);
+              }
+            } catch (error) {
+              try {
+                await github.rest.repos.deleteRelease({ owner, repo, release_id: release.data.id });
+                core.warning(`upload failed; deleted the incomplete draft for ${payload.release.tag}`);
+              } catch (cleanup) {
+                core.error(
+                  `upload failed AND the incomplete draft could not be deleted: ${cleanup.message}. `
+                  + 'Delete it by hand before rerunning.'
+                );
+              }
+              throw error;
+            }
+            core.notice(`draft release ${payload.release.tag} ready at ${release.data.html_url}`);
