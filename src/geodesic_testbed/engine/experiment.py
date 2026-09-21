@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The experiment: four sweeps, one report, explicit pass/fail checks.
 
 The testbed answers four questions, in order of increasing ambition.
@@ -37,7 +38,6 @@ attached, so the report either passes or it does not.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import platform
 from dataclasses import asdict, dataclass, field
@@ -47,6 +47,8 @@ import numpy as np
 
 from .. import __version__
 from .analysis import fit_power_law, successive_orders
+from .canonical import CANONICAL_DIGITS, content_hash
+from .canonical import jsonable as _jsonable
 from .flows import (
     geodesic_position_error,
     integrate_geodesic,
@@ -65,6 +67,7 @@ from .transfer import (
     transfer_from_trajectory,
     transfer_rhs,
 )
+from .uncertainty import curvature_sensitivity
 
 REPORT_SCHEMA = "geodesic-jacobi-report-v3"
 SUPERSEDES = "geodesic-jacobi-report-v2"
@@ -389,7 +392,7 @@ def sweep_wronskian(config: ExperimentConfig) -> list[dict[str, Any]]:
 # sweep 2c: what det Phi = 1 costs a route planner
 # ---------------------------------------------------------------------------
 def sweep_transfer_determinant(config: ExperimentConfig) -> list[dict[str, Any]]:
-    """The reciprocal-singular-value consequence of the conserved Wronskian.
+    """The conserved Wronskian, and its consequence for a route planner.
 
     Scaling the transfer map by the tolerance box, ``S^-1 Phi S``, makes its
     entries pure ratios so that paths can be compared -- and leaves the
@@ -400,6 +403,17 @@ def sweep_transfer_determinant(config: ExperimentConfig) -> list[dict[str, Any]]
     That is the precise sense in which a low ``max |b|`` is error
     redistribution rather than robustness, so it is measured rather than
     asserted, on a range of tolerance boxes with very different aspect ratios.
+
+    **The invariant is checked directly, not through the singular values.**
+    ``sigma_1 sigma_2 = |det Phi|`` is an identity, and testing ``det Phi = 1``
+    by forming that product tests the SVD as much as the flow: ``sigma_1``
+    comes back with a relative error of order ``eps``, so on the ``10^5``
+    aspect-ratio box the product is accurate only to about ``10^-12`` and the
+    threshold is really measuring how badly conditioned the box was. The
+    determinant of the 2x2 itself is two products and a subtraction and holds
+    to machine precision on every box, so that is what carries the check.
+    The product error is still reported, as a measurement of the SVD rather
+    than of the geometry.
     """
     boxes = ((1e-3, 1e-3), (1e-2, 1e-4), (1e-5, 1e-1))
     rows: list[dict[str, Any]] = []
@@ -412,29 +426,39 @@ def sweep_transfer_determinant(config: ExperimentConfig) -> list[dict[str, Any]]
             a=phi.a, a_rate=phi.a_rate, b=phi.b, b_rate=phi.b_rate,
             domain="constant-curvature",
         )
+        determinant_error = float(np.max(np.abs(record.determinant - 1.0)))
+        scaled_determinant_error = 0.0
         product_error = 0.0
         smallest = float("inf")
         per_box = []
         for lateral, heading in boxes:
+            scaled = float(np.max(np.abs(record.scaled_determinant(lateral, heading) - 1.0)))
             singular = record.scaled_singular_values(lateral, heading)
-            product_error = max(
-                product_error, float(np.max(np.abs(singular[:, 0] * singular[:, 1] - 1.0)))
-            )
+            product = float(np.max(np.abs(singular[:, 0] * singular[:, 1] - 1.0)))
+            scaled_determinant_error = max(scaled_determinant_error, scaled)
+            product_error = max(product_error, product)
             smallest = min(smallest, float(np.min(singular[:, 0])))
             per_box.append(
                 {
                     "max_lateral": lateral,
                     "max_heading": heading,
+                    "aspect_ratio": float(max(lateral, heading) / min(lateral, heading)),
                     "amplification_score": float(np.max(singular[:, 0])),
                     "min_largest_singular_value": float(np.min(singular[:, 0])),
+                    "scaled_determinant_error": scaled,
+                    "singular_value_product_error": product,
                 }
             )
         rows.append(
             {
                 "curvature": form.K,
                 "curvature_label": form.label,
-                "identity": "sigma_1 sigma_2 = |det Phi| = 1",
-                "product_error": product_error,
+                "identity": "det Phi = a b' - a' b = 1, and sigma_1 sigma_2 = |det Phi|",
+                "determinant_error": determinant_error,
+                "scaled_determinant_error": scaled_determinant_error,
+                #: Reported, not decisive: this is the SVD's accuracy on a
+                #: badly conditioned box, not the flow's accuracy.
+                "singular_value_product_error": product_error,
                 "min_largest_singular_value": smallest,
                 "boxes": per_box,
             }
@@ -742,6 +766,77 @@ def sweep_path_sensitivity(config: ExperimentConfig) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # sweep 5: the conjugate point on the sphere
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# sweep 2e: what a curvature error costs, through the Jacobi Green's function
+# ---------------------------------------------------------------------------
+def sweep_curvature_sensitivity(config: ExperimentConfig) -> list[dict[str, Any]]:
+    """The uncertainty budget's curvature term, against a re-integration.
+
+    If the surface the path was flowed along has ``K + dK`` and the part has
+    ``K``, the variation equation picks up a source and the prediction moves by
+
+    ``dj(s) = -int_0^s [b(s) a(t) - a(s) b(t)] dK j(t) dt``
+
+    -- an integral over the record's own samples, with no Wronskian in the
+    denominator because ``det Phi = 1`` exactly. That is the whole reason the
+    cost of a mis-fitted surface is computable downstream from a transfer
+    record and nothing else.
+
+    It is checked the only way a sensitivity can be: by actually perturbing the
+    curvature and re-integrating. The residual is the ``dK^2`` term, so it has
+    to fall linearly as ``dK`` shrinks, and that slope is the check -- a
+    formula that was merely close would not have it.
+    """
+    rows: list[dict[str, Any]] = []
+    grid = np.linspace(0.0, config.arc_length, 2001)
+    for form in all_space_forms():
+        base = constant_curvature_transfer(grid, form.K)
+        record = TransferRecord(
+            arclength=grid,
+            gaussian_curvature=np.full_like(grid, form.K),
+            a=base.a, a_rate=base.a_rate, b=base.b, b_rate=base.b_rate,
+            domain="constant-curvature",
+        )
+        sensitivity = curvature_sensitivity(record, 0.0, 1.0)
+        levels = []
+        for delta in (1e-5, 1e-6, 1e-7):
+            perturbed = constant_curvature_transfer(grid, form.K + delta)
+            measured = perturbed.b - base.b
+            predicted = delta * sensitivity
+            scale = max(float(np.max(np.abs(measured))), 1e-300)
+            levels.append(
+                {
+                    "delta_curvature": float(delta),
+                    "max_abs_measured": float(np.max(np.abs(measured))),
+                    "relative_residual": float(np.max(np.abs(predicted - measured))) / scale,
+                }
+            )
+        # The order is read from the two *coarsest* perturbations. The finest
+        # one is there to show where the floor is, and it is on it: at
+        # dK = 1e-7 the difference of two transfer maps has cancelled seven
+        # digits, so its residual is partly roundoff and fitting through it
+        # would measure the subtraction rather than the formula.
+        coarse, fine = levels[0], levels[1]
+        ratio = coarse["relative_residual"] / max(fine["relative_residual"], 1e-300)
+        order = float(
+            np.log(ratio)
+            / np.log(coarse["delta_curvature"] / fine["delta_curvature"])
+        )
+        rows.append(
+            {
+                "curvature": form.K,
+                "curvature_label": form.label,
+                "kernel": "G(s, t) = b(s) a(t) - a(s) b(t), det Phi = 1",
+                "worst_relative_residual": max(
+                    level["relative_residual"] for level in levels
+                ),
+                "residual_order_in_delta": order,
+                "levels": levels,
+            }
+        )
+    return rows
+
+
 def study_conjugate_point(config: ExperimentConfig) -> dict[str, Any]:
     form = SpaceForm(1.0)
     span = config.conjugate_span_multiple * np.pi
@@ -836,17 +931,6 @@ def _lowest_decade_slope(epsilons: np.ndarray, values: np.ndarray) -> float | No
         return None
     slope, _ = np.polyfit(np.log10(epsilons[low]), np.log10(values[low]), 1)
     return float(slope)
-
-
-def _grid_index(grid: np.ndarray, s_value: float, span: float, n_steps: int) -> int:
-    """Index of ``s_value`` on a uniform grid, refusing to silently snap to a neighbour."""
-    index = int(round(s_value / (span / n_steps)))
-    if not (0 <= index < grid.size) or not np.isclose(grid[index], s_value, rtol=0.0, atol=1e-9):
-        raise ValueError(
-            f"sample arc length {s_value} does not lie on a grid of {n_steps} steps over "
-            f"[0, {span}]"
-        )
-    return index
 
 
 def _grid_index(grid: np.ndarray, s_value: float, span: float, n_steps: int) -> int:
@@ -1108,10 +1192,19 @@ def collect_checks(results: dict[str, Any], config: ExperimentConfig) -> list[di
         checks.append(
             _check(
                 f"transfer-determinant/{row['curvature_label']}",
-                "the scaled transfer's singular values are reciprocal at every arc "
-                "length, because conjugation leaves det Phi = 1 alone",
-                row["product_error"],
-                1e-10,
+                "det Phi = a b' - a' b is 1 at every arc length, formed directly "
+                "rather than as a product of singular values",
+                row["determinant_error"],
+                1e-13,
+            )
+        )
+        checks.append(
+            _check(
+                f"transfer-determinant-scaled/{row['curvature_label']}",
+                "and conjugating by the tolerance box leaves it alone, on boxes "
+                "with aspect ratios from 1 to 10^4",
+                row["scaled_determinant_error"],
+                1e-13,
             )
         )
         checks.append(
@@ -1145,6 +1238,26 @@ def collect_checks(results: dict[str, Any], config: ExperimentConfig) -> list[di
         )
 
     conjugate = results["conjugate_point"]
+    for row in results["curvature_sensitivity"]:
+        checks.append(
+            _check(
+                f"curvature-sensitivity/{row['curvature_label']}",
+                "the Green's-function sensitivity to a curvature bias reproduces an "
+                "actual re-integration at the perturbed curvature",
+                row["worst_relative_residual"],
+                1e-4,
+            )
+        )
+        checks.append(
+            _check(
+                f"curvature-sensitivity-order/{row['curvature_label']}",
+                "and its residual falls linearly in dK, which is what makes it the "
+                "derivative rather than something merely close to it",
+                abs(row["residual_order_in_delta"] - 1.0),
+                0.05,
+            )
+        )
+
     checks.append(
         _check(
             "conjugate-point/jacobi-zero",
@@ -1183,33 +1296,6 @@ def collect_checks(results: dict[str, Any], config: ExperimentConfig) -> list[di
 # ---------------------------------------------------------------------------
 # report
 # ---------------------------------------------------------------------------
-def _jsonable(value: Any) -> Any:
-    """Normalise to strict JSON: numpy scalars become Python, non-finite becomes null.
-
-    ``NaN`` and ``Infinity`` are not JSON, and a report that only some parsers
-    can read is not machine readable.  They arise here legitimately -- an order
-    fit has nothing to fit when a method is already exact -- so they are
-    recorded as ``null``.
-    """
-    if isinstance(value, dict):
-        return {str(key): _jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonable(item) for item in value]
-    if isinstance(value, np.ndarray):
-        return _jsonable(value.tolist())
-    if isinstance(value, (np.floating, np.integer)):
-        value = value.item()
-    if isinstance(value, float) and not np.isfinite(value):
-        return None
-    return value
-
-
-def content_hash(payload: dict[str, Any]) -> str:
-    return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    ).hexdigest()
-
-
 def run_experiment(config: ExperimentConfig | None = None) -> dict[str, Any]:
     """Run every sweep and assemble the machine-readable report."""
     config = config or ExperimentConfig()
@@ -1221,6 +1307,7 @@ def run_experiment(config: ExperimentConfig | None = None) -> dict[str, Any]:
         "focus_refinement": sweep_focus_refinement(config),
         "first_order_validity": sweep_first_order_validity(config),
         "path_sensitivity": sweep_path_sensitivity(config),
+        "curvature_sensitivity": sweep_curvature_sensitivity(config),
         "conjugate_point": study_conjugate_point(config),
     }
     checks = collect_checks(results, config)
@@ -1230,8 +1317,14 @@ def run_experiment(config: ExperimentConfig | None = None) -> dict[str, Any]:
             "supersedes": SUPERSEDES,
             "schema_changes": [
                 "observation_modes: support is now per domain, not one boolean",
-                "adds results.transfer_determinant: reciprocal singular values of "
-                "the scaled transfer map",
+                "adds results.curvature_sensitivity: the uncertainty budget's "
+                "curvature term, checked against a re-integration",
+                f"every float is canonicalised to {CANONICAL_DIGITS} significant "
+                "digits before hashing, so the content hash is reproducible "
+                "across platforms",
+                "transfer_determinant: the invariant is checked as det Phi "
+                "directly, not as a product of singular values, which measured "
+                "the SVD's conditioning rather than the flow's accuracy",
                 "adds results.focus_refinement: Hermite-refined focus location "
                 "against a linear one",
                 "conjugate_point: adds the refined root's uncertainty and names "

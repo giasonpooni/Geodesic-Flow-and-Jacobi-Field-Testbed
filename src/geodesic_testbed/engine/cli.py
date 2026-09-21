@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Command line entry point: run the experiments, write the reports, draw the figures."""
 
 from __future__ import annotations

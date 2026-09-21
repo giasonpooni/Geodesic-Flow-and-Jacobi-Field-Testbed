@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The 2x2 transfer map from a starting pose error to a downstream one.
 
 A heading error is only half of how a path can start wrong. The other half is
@@ -48,10 +49,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from fractions import Fraction
-from numbers import Real
 from typing import Any
 
 import numpy as np
+
+from .contract import (
+    validated_covariance,
+    validated_covariance_stack,
+)
 
 Array = np.ndarray
 
@@ -60,11 +65,8 @@ Array = np.ndarray
 COMPONENTS = ("a", "a_rate", "b", "b_rate")
 INITIAL_STATE = (1.0, 0.0, 0.0, 1.0)
 
-# These are dimensionless numerical eligibility tolerances, not uncertainty
-# floors. Historical report/operation identities and retained matrices do not
-# change when the validator rejects a formerly admitted invalid covariance.
-COVARIANCE_SYMMETRY_ATOL = 1e-12
-COVARIANCE_PSD_ATOL = 1e-12
+# Re-exported so callers that already import them from here keep working.
+# They are declared with the validator, which is the only thing that reads them.
 
 
 @dataclass(frozen=True)
@@ -310,23 +312,6 @@ class TransferMap:
         return bool(events) and events[0].arc_length < float(self.arc_length[-1])
 
 
-def _finite_numeric_array(value, name: str) -> Array:
-    """Copy real numeric data without silently coercing booleans or strings."""
-    try:
-        if not isinstance(value, np.ndarray) or value.dtype.kind not in "fiu":
-            raw = np.asarray(value, dtype=object)
-            if any(isinstance(item, (bool, np.bool_)) or not isinstance(item, Real)
-                   for item in raw.flat):
-                raise ValueError(f"{name} must contain real numbers, not booleans or strings")
-        with np.errstate(over="raise", invalid="raise", under="raise"):
-            result = np.array(value, dtype=float, copy=True)
-    except (TypeError, OverflowError, FloatingPointError) as exc:
-        raise ValueError(f"{name} must contain finite real numbers") from exc
-    if not np.all(np.isfinite(result)):
-        raise ValueError(f"{name} must be finite")
-    return result
-
-
 def _covariance_product(operator: Array, covariance: Array, name: str) -> Array:
     """Evaluate a congruence without emitting nonfinite covariance claims."""
     try:
@@ -376,75 +361,23 @@ def _reject_lost_variance(
 
 
 def _validated_covariance(covariance, name: str = "covariance", size: int | None = 2) -> Array:
-    """Validate covariance in dimensionless correlation coordinates, without repair.
+    """The shared validator, applied to a starting-pose covariance.
 
-    Congruence by ``Phi`` preserves indefiniteness as faithfully as it preserves
-    anything else, so a matrix that is not a covariance in goes to something
-    that is not a covariance out, silently and with plausible-looking numbers.
-    Strict nonnegative variances and exactly-zero null rows precede the check
-    of both stored triangles. The returned copy retains every supplied value.
-    Singular PSD matrices are valid; no diagonal floor or jitter is added.
+    Delegated rather than reimplemented. The checks are a boundary concern and
+    live in :mod:`~geodesic_testbed.engine.contract`; a second copy here would
+    eventually disagree with that one, and the laxer of the two would decide.
     """
-    covariance = _finite_numeric_array(covariance, name)
-    if covariance.ndim != 2 or covariance.shape[0] != covariance.shape[1] or not covariance.size:
-        raise ValueError(f"{name} must be a non-empty square matrix")
-    if size is not None and covariance.shape != (size, size):
-        raise ValueError(f"{name} must be {size}x{size}")
-    return _validate_covariance_values(covariance, name)
+    return validated_covariance(covariance, name, size)
 
 
 def _validated_covariance_stack(covariance, name: str) -> Array:
-    """Validate every matrix in a computed covariance stack without repair.
+    """Validate every matrix in a computed covariance stack, without repair.
 
     Input eligibility is not enough: a congruence can amplify input roundoff
-    or tolerated asymmetry. The returned values must satisfy the same gate
-    in their own output coordinates, including after measurement noise is added.
+    or tolerated asymmetry. The values that come *out* must satisfy the same
+    gate in their own coordinates, including after measurement noise is added.
     """
-    covariance = _finite_numeric_array(covariance, name)
-    if (covariance.ndim < 2 or covariance.shape[-2] != covariance.shape[-1]
-            or not covariance.size):
-        raise ValueError(f"{name} must contain non-empty square covariance matrices")
-    return _validate_covariance_values(covariance, name)
-
-
-def _validate_covariance_values(covariance: Array, name: str) -> Array:
-    """Shared value check for a square matrix or a batch of square matrices."""
-    diagonal = np.diagonal(covariance, axis1=-2, axis2=-1)
-    if np.any(diagonal < 0.0):
-        raise ValueError(f"{name} must be positive semidefinite: negative variance")
-    null = diagonal == 0.0
-    if np.any((covariance != 0.0) & (null[..., :, None] | null[..., None, :])):
-        raise ValueError(f"{name}: zero variance requires an exactly zero row and column")
-    if np.all(null):
-        return covariance
-    # Null axes are already proven to be exactly zero. A unit denominator
-    # leaves them zero during normalization; it does not add variance or jitter.
-    roots = np.sqrt(np.where(null, 1.0, diagonal))
-    # Divide by the larger root first: neither products of variances nor an
-    # intermediate division by a tiny root can overflow for valid correlations.
-    larger = np.maximum(roots[..., :, None], roots[..., None, :])
-    smaller = np.minimum(roots[..., :, None], roots[..., None, :])
-    try:
-        with np.errstate(over="raise", invalid="raise", divide="raise"):
-            correlation = covariance / larger / smaller
-    except FloatingPointError as exc:
-        raise ValueError(f"{name} has nonfinite normalized correlation") from exc
-    if not np.all(np.isfinite(correlation)):
-        raise ValueError(f"{name} has nonfinite normalized correlation")
-    if np.any(np.abs(correlation) > 1.0 + COVARIANCE_PSD_ATOL):
-        raise ValueError(f"{name} must be positive semidefinite in correlation coordinates")
-    if not np.allclose(correlation, np.swapaxes(correlation, -1, -2),
-                       rtol=0.0, atol=COVARIANCE_SYMMETRY_ATOL):
-        raise ValueError(f"{name} must be symmetric in correlation coordinates")
-    try:
-        for triangle in ("L", "U"):
-            eigenvalues = np.linalg.eigvalsh(correlation, UPLO=triangle)
-            if (not np.all(np.isfinite(eigenvalues))
-                    or np.any(eigenvalues < -COVARIANCE_PSD_ATOL)):
-                raise ValueError(f"{name} must be positive semidefinite in correlation coordinates")
-    except np.linalg.LinAlgError as exc:
-        raise ValueError(f"{name} covariance validation did not converge") from exc
-    return covariance
+    return validated_covariance_stack(covariance, name)
 
 
 def constant_curvature_transfer(arc_length, curvature: float) -> TransferMap:

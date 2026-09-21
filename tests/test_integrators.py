@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Integrator tests, on a problem with nothing to do with geometry."""
 
 from __future__ import annotations

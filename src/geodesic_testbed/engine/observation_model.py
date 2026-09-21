@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """From a transfer map to what an instrument would actually see.
 
 The transfer map says how a starting-pose error propagates:
@@ -62,14 +63,12 @@ from typing import Any
 
 import numpy as np
 
+from .contract import finite_numeric_array as _finite_numeric_array
+from .contract import validated_covariance as _validated_covariance
+from .contract import validated_covariance_stack as _validated_covariance_stack
 from .observation import mode as observation_mode
 from .record import TransferRecord, to_transfer_record
-from .transfer import (
-    _covariance_product,
-    _finite_numeric_array,
-    _validated_covariance,
-    _validated_covariance_stack,
-)
+from .transfer import _covariance_product
 
 Array = np.ndarray
 

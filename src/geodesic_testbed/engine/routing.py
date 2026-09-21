@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Choosing a route from constraints the application actually has.
 
 Ranking candidate paths by ``max |b(s)|`` alone selects for paths that pass
@@ -37,6 +38,7 @@ from typing import Any
 
 import numpy as np
 
+from .contract import validated_covariance
 from .observation_model import ObservationModel
 from .record import TransferRecord, to_transfer_record
 from .tracking import AcquisitionSpec, TrackingOutcome, evaluate_tracking
@@ -57,6 +59,8 @@ class CoverageSpec:
             value = float(getattr(self, name))
             if not np.isfinite(value) or value <= 0.0:
                 raise ValueError(f"{name} must be finite and positive")
+        if not np.isfinite(float(self.initial_heading_delta)):
+            raise ValueError("initial_heading_delta must be finite")
 
 
 @dataclass(frozen=True)
@@ -77,9 +81,43 @@ class RouteConstraints:
     max_path_length: float | None = None
     coverage: CoverageSpec | None = None
 
+    #: Limits that are only meaningful above zero. A tolerance of zero admits
+    #: nothing and is almost always a default that was never filled in; a
+    #: negative one admits nothing while reading as a limit. Both are refused
+    #: here rather than silently making every route infeasible.
+    _POSITIVE_LIMITS = (
+        "max_cross_track_error",
+        "max_heading_error",
+        "max_path_length",
+    )
+    #: Limits where zero is a real declaration -- "touch the boundary but do
+    #: not cross it" -- so only negativity and non-finiteness are refused.
+    _NONNEGATIVE_LIMITS = ("min_boundary_clearance",)
+
     def __post_init__(self) -> None:
         if self.min_coverage_margin is not None and self.coverage is None:
             raise ValueError("a coverage margin needs a CoverageSpec to measure against")
+        for name in self._POSITIVE_LIMITS:
+            declared = getattr(self, name)
+            if declared is None:
+                continue
+            value = float(declared)
+            if not np.isfinite(value) or value <= 0.0:
+                raise ValueError(
+                    f"{name} must be finite and positive when declared; {value!r} "
+                    "admits no route and is not a limit"
+                )
+        for name in self._NONNEGATIVE_LIMITS:
+            declared = getattr(self, name)
+            if declared is None:
+                continue
+            value = float(declared)
+            if not np.isfinite(value) or value < 0.0:
+                raise ValueError(f"{name} must be finite and nonnegative when declared")
+        if self.min_coverage_margin is not None and not np.isfinite(
+            float(self.min_coverage_margin)
+        ):
+            raise ValueError("min_coverage_margin must be finite when declared")
 
     def required_inputs(self) -> tuple[str, ...]:
         """Data a caller must supply for these constraints to be evaluable."""
@@ -208,6 +246,30 @@ def assess_route(
 
     record: TransferRecord = to_transfer_record(source)
     grid = record.arclength
+    # Presence was checked above; that a constraint's evidence is *usable* is a
+    # separate question with the same answer. A boundary array of the wrong
+    # length silently pairs clearances with the wrong arc lengths, and a
+    # covariance of the wrong shape fails somewhere deeper with a message about
+    # matrices rather than about this route.
+    if boundary_clearance is not None:
+        clearance_samples = np.asarray(boundary_clearance, dtype=float)
+        if clearance_samples.ndim != 1 or clearance_samples.shape != grid.shape:
+            raise ValueError(
+                f"route {label!r}: boundary_clearance has shape "
+                f"{np.shape(boundary_clearance)} but the record has {grid.shape[0]} "
+                "samples; a clearance must be given on the record's own arclength "
+                "grid, or it is paired with the wrong arc lengths"
+            )
+        if not np.all(np.isfinite(clearance_samples)):
+            raise ValueError(
+                f"route {label!r}: boundary_clearance must be finite; a "
+                "non-finite clearance compares as satisfied against any limit"
+            )
+        boundary_clearance = clearance_samples
+    if initial_covariance is not None:
+        initial_covariance = validated_covariance(
+            initial_covariance, f"route {label!r}: C0"
+        )
     cross_track = record.cross_track_error(max_lateral, max_heading)
     heading = record.heading_error(max_lateral, max_heading)
     # Reported, never decisive: |a| and |b| carry length per unit of starting
@@ -265,7 +327,13 @@ def assess_route(
                     else tracking.max_resolvability
                 ),
                 margin=(
-                    (tracking.min_resolvability_while_tracked or 0.0)
+                    # ``or 0.0`` here would turn a genuine resolvability of
+                    # exactly zero into the same margin as no measurement.
+                    (
+                        tracking.min_resolvability_while_tracked
+                        if tracking.min_resolvability_while_tracked is not None
+                        else 0.0
+                    )
                     - float(constraints.acquisition.hold_threshold)
                     if tracking.satisfied
                     else -abs(float(constraints.acquisition.hold_threshold))

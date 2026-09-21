@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Run the experiment without installing the package.
 
     PYTHONPATH=src python examples/run_experiment.py

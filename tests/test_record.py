@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The public transfer record: one type both halves of the project speak."""
 
 from __future__ import annotations
@@ -9,10 +10,10 @@ from geodesic_testbed import constant_curvature_trace
 from geodesic_testbed.engine.envelope import integrate_path
 from geodesic_testbed.engine.record import (
     RECORD_SCHEMA,
-    FirstOrderValidity,
     SupportsTransferRecord,
     TransferRecord,
     Units,
+    ValidityEnvelope,
     digest,
     to_transfer_record,
 )
@@ -154,7 +155,7 @@ def test_units_are_carried_rather_than_assumed() -> None:
 
 
 def test_not_established_validity_says_so_in_both_places() -> None:
-    validity = FirstOrderValidity.not_established("no reference")
+    validity = ValidityEnvelope.not_established("no reference")
     assert not validity.established
     assert validity.to_dict()["established"] is False
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Fitting helpers: they are load-bearing, so they get their own tests."""
 
 from __future__ import annotations

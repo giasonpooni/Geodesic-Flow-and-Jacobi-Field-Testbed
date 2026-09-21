@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The two routes to a Jacobi field, and their agreement."""
 
 from __future__ import annotations

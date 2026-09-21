@@ -6,8 +6,8 @@ geodesic drift from a nominal one — and over what range is the first-order
 
 Everything below is produced by `examples/run_experiment.py` and recorded in
 [`validation/report-v1.json`](../validation/report-v1.json), schema
-`geodesic-jacobi-report-v2`, with a pass/fail threshold attached to each claim:
-**126 declared checks, 0 failed.**
+`geodesic-jacobi-report-v3`, with a pass/fail threshold attached to each claim:
+**143 declared checks, 0 failed.**
 
 ---
 

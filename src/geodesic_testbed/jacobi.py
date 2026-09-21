@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Analytical and numerical transverse Jacobi-field propagation.
 
 For a unit-speed geodesic on a surface, the scalar transverse variation
@@ -23,10 +24,14 @@ from numpy.typing import ArrayLike, NDArray
 
 from .engine.integrators import integrate_on_grid
 from .engine.record import (
-    FirstOrderValidity,
+    CalibrationBinding,
+    Provenance,
     Resolution,
+    StartingCovariance,
     TransferRecord,
     Units,
+    UpstreamArtefact,
+    ValidityEnvelope,
     digest,
 )
 from .engine.spaceforms import asin_k, sin_k
@@ -113,6 +118,10 @@ class JacobiTrace:
         units: Units | None = None,
         observation_mode: str = "intrinsic-surface-distance",
         relative_tolerance: float = 1.0e-6,
+        covariance: StartingCovariance | None = None,
+        calibration: CalibrationBinding | None = None,
+        upstream: tuple[UpstreamArtefact, ...] = (),
+        provenance: Provenance | None = None,
     ) -> TransferRecord:
         """Present this trace as the public transfer record.
 
@@ -129,13 +138,22 @@ class JacobiTrace:
             limit = (
                 float(np.sqrt(24.0 * relative_tolerance) / worst) if worst > 0.0 else None
             )
-            validity = FirstOrderValidity(
+            validity = ValidityEnvelope(
                 basis="closed-form: relative error is cn_K(s)^2 eps^2 / 24",
                 relative_tolerance=float(relative_tolerance),
+                tolerance_basis="declared by the caller of as_transfer_record",
                 max_heading=limit,
+                directions=("heading",),
+                pointwise_error=float(relative_tolerance),
+                reference="closed-form",
+                note=(
+                    "the heading column only. The lateral column has its own "
+                    "coefficient and is not bounded by this, which is why the "
+                    "direction is named rather than assumed"
+                ),
             )
         else:
-            validity = FirstOrderValidity.not_established(
+            validity = ValidityEnvelope.not_established(
                 "curvature varies along the path; no closed-form eps^2 coefficient"
             )
         return TransferRecord(
@@ -166,6 +184,31 @@ class JacobiTrace:
             validity=validity,
             observation_mode=observation_mode,
             domain="constant-curvature" if constant else "declared-curvature-profile",
+            covariance=covariance
+            or StartingCovariance.not_declared(
+                "computed from a declared curvature profile; no starting pose "
+                "distribution exists here"
+            ),
+            provenance=(
+                provenance
+                or Provenance(
+                    note="Jacobi transfer from a declared curvature profile"
+                )
+            ).with_upstream(*upstream),
+            calibration=calibration
+            or CalibrationBinding.unbound("no instrument took part in this computation"),
+            # No geometry and no chart, and both absences are the right answer:
+            # a curvature profile is not an embedding, so there are no points to
+            # sample, no frame to write down in ambient coordinates and no
+            # parameterisation to run off the edge of. A consumer needing a
+            # position must go to a record built from a surface.
+            geometry=None,
+            chart=None,
+            path_type="geodesic",
+            path_type_basis=(
+                "declared: K(s) is given as the curvature along a geodesic, which "
+                "is what makes j'' + K j = 0 the right equation"
+            ),
         )
 
     def as_dict(self) -> dict[str, object]:

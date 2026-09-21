@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The sensitivity envelope, and the two independent routes to a Jacobi field."""
 
 from __future__ import annotations

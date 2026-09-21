@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Numerical engine: geodesic flow, Jacobi transfer maps, verification reports.
 
 This subpackage is the verified numerical core. The application contracts that

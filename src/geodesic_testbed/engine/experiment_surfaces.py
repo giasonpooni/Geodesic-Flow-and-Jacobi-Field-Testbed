@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Stage two: the same two objects on surfaces where the curvature varies.
 
 The constant-curvature stage could check every number against a closed form.
@@ -39,6 +40,7 @@ them, and the difference is reported.
 
 from __future__ import annotations
 
+import json
 import platform
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
@@ -47,8 +49,10 @@ import numpy as np
 
 from .. import __version__
 from .analysis import fit_power_law, successive_orders
+from .contract import GeometryUncertainty, Units
 from .envelope import (
     PathEnvelope,
+    estimate_convergence,
     finite_difference_jacobi,
     finite_difference_lateral,
     integrate_path,
@@ -58,6 +62,24 @@ from .envelope import (
 from .experiment import _check, _jsonable, content_hash
 from .observation import catalogue as observation_catalogue
 from .observation_model import ObservationModel
+from .path_artefact import ARTEFACT_DOMAIN, PATH_GEOMETRY_SCHEMA
+from .planning import (
+    ChartBoundary,
+    Objective,
+    combined_clearance,
+    heading_fan,
+    observability_gramian,
+    offset_courses,
+    pareto_front,
+    stacked_observability,
+)
+from .prediction import (
+    chord_from_intrinsic,
+    chord_from_tangent,
+    first_order_prediction,
+    has_closed_form_separation,
+    intrinsic_from_tangent,
+)
 from .routing import CoverageSpec, RouteConstraints, rank_routes
 from .surfaces import (
     Chart,
@@ -70,6 +92,15 @@ from .surfaces import (
     torus,
 )
 from .tracking import AcquisitionSpec
+from .uncertainty import (
+    budget,
+    calibration_transform,
+    fixture_datum,
+    path_registration,
+    sensor_noise,
+    starting_pose,
+    surface_reconstruction,
+)
 
 REPORT_SCHEMA = "geodesic-jacobi-surfaces-v3"
 SUPERSEDES = "geodesic-jacobi-surfaces-v2"
@@ -157,6 +188,43 @@ class SurfaceConfig:
     two_route_steps: int = 1000
     fit_floor: float = 1e-8
     fit_ceiling: float = 1e-3
+
+    #: Two resolutions, four times apart, so that the error budget's own order
+    #: can be read off it: a budget that does not fall as h^4 is not measuring
+    #: the truncation error of a fourth-order method.
+    budget_step_counts: tuple[int, ...] = (160, 640)
+    #: Below this a "true error" is the reference's own accumulated rounding,
+    #: and comparing an estimate against it compares two pieces of noise.
+    budget_roundoff_floor: float = 1e-12
+    jet_sensitivity_steps: int = 400
+    jet_relative_steps: tuple[float, ...] = (1e-2, 1e-3, 1e-4, 1e-5, 1e-6)
+    chain_steps: int = 800
+    #: Small enough that the second-order corrections dominate, large enough
+    #: that the finite-difference reference is not cancellation-limited.
+    chain_epsilons: tuple[float, ...] = (5e-3, 2.5e-3)
+
+    #: The declared example campaign the uncertainty budget is assembled from.
+    #: Every one of these is a *declaration*, not a measurement: nothing here
+    #: has been on a bench, and the budget exists to show the shape of the
+    #: arithmetic and which term would dominate, not to characterise hardware.
+    budget_path_steps: int = 400
+    scan_position_sigma: float = 2.0e-4
+    scan_normal_sigma: float = 1.0e-4
+    scan_curvature_sigma: float = 1.0e-3
+    fixture_lateral_sigma: float = 2.0e-4
+    fixture_heading_sigma: float = 1.0e-4
+    calibration_offset_sigma: float = 5.0e-5
+    registration_sigma: float = 2.0e-3
+    sensor_correlation_length: float = 0.05
+
+    #: Route planning. The limits are what make each objective dimensionless;
+    #: they are declared here and they decide nothing on their own -- the front
+    #: is reported, and collapsing it needs weights nobody has declared.
+    planning_route_count: int = 8
+    planning_course_spacing: float = 0.1
+    planning_amplification_limit: float = 5.0
+    planning_observability_limit: float = 1.0e3
+    planning_clearance_limit: float = 0.05
 
     transverse_tolerances: tuple[float, ...] = (1e-3, 1e-2)
     heading_scan_count: int = 24
@@ -468,6 +536,644 @@ def measure_self_convergence(config: SurfaceConfig, cases) -> list[dict[str, Any
 # ---------------------------------------------------------------------------
 # 4. the cost of not supplying analytic derivatives
 # ---------------------------------------------------------------------------
+def measure_route_planning(config: SurfaceConfig, cases) -> dict[str, Any]:
+    """Route selection with every declared quantity kept apart.
+
+    Four things this establishes, none of which a single ranking scalar can.
+
+    **Accumulated observability is not sampled resolvability.** The Gramian
+    ``int Phi^T H^T R^-1 H Phi ds`` answers a question about the whole path
+    that ``rho(s)`` answers about a sample, and its worst eigenvalue names the
+    direction of starting-pose error the route says least about. Its *density*
+    -- per unit path length -- is scale invariant, which is the property a
+    route criterion has to have and the reason the accumulated figure is
+    reported beside it rather than instead of it.
+
+    **The offset family is not the heading family.** A fan over headings
+    exercises the ``b`` column; a set of parallel courses offset from a seed
+    exercises ``a``. The two columns focus in different places, so a route
+    family chosen on one says nothing about the other, and this sweep reports
+    both.
+
+    **Boundaries are computed from the declared part.** The chart's own edge,
+    through the surface metric, rather than a clearance array supplied on a
+    grid that might not match.
+
+    **The answer is a front.** The routes nothing else beats on every declared
+    objective at once, with the dominated ones and what beat them. Collapsing
+    that needs weights, and the weights would then be the decision.
+    """
+    case = next(entry for entry in cases if entry.key == config.heading_scan_key)
+    observation, initial_covariance = _instrument(config)
+    lateral = config.route_tolerance_lateral
+    heading = config.route_tolerance_heading
+
+    families: dict[str, dict[str, Any]] = {}
+    for family, routes in (
+        (
+            "heading-fan",
+            heading_fan(
+                case.surface, u0=case.u0, v0=case.v0,
+                count=config.planning_route_count,
+                length=config.heading_scan_length,
+                n_steps=config.heading_scan_steps,
+            ),
+        ),
+        (
+            "offset-courses",
+            offset_courses(
+                case.surface, u0=case.u0, v0=case.v0, heading=case.heading,
+                spacing=config.planning_course_spacing,
+                count=config.planning_route_count,
+                length=config.heading_scan_length,
+                n_steps=config.heading_scan_steps,
+            ),
+        ),
+    ):
+        boundary = ChartBoundary(case.surface)
+        rows: dict[str, dict[str, float]] = {}
+        detail: list[dict[str, Any]] = []
+        for label, envelope in routes.items():
+            record = envelope.as_transfer_record(
+                observation_mode="ambient-euclidean-chord"
+            )
+            gramian = observability_gramian(
+                record, observation, max_lateral=lateral, max_heading=heading
+            )
+            clearance = combined_clearance(envelope, boundary)
+            rho = observation.resolvability(record, initial_covariance)
+            profile = np.min(rho, axis=1) if rho.ndim > 1 else rho
+            values = {
+                "amplification": record.amplification_score(lateral, heading),
+                "cross_track_error": float(
+                    np.max(record.cross_track_error(lateral, heading))
+                ),
+                "heading_error": float(np.max(record.heading_error(lateral, heading))),
+                "worst_observed": float(gramian.eigenvalues[0]),
+                "boundary_clearance": float(np.min(clearance)),
+                "path_length": float(record.arclength[-1] - record.arclength[0]),
+            }
+            rows[label] = values
+            detail.append(
+                values
+                | {
+                    "label": label,
+                    "start": {
+                        "u": float(envelope.start[0]),
+                        "v": float(envelope.start[1]),
+                        "heading": float(envelope.start[2]),
+                    },
+                    "observability": gramian.to_dict(),
+                    "min_resolvability_after_start": float(np.min(profile[1:])),
+                    "focus_points": record.focus_events(),
+                    "chart_complete": bool(record.chart.complete),
+                }
+            )
+        objectives = _planning_objectives(config)
+        families[family] = {
+            "routes": len(rows),
+            "objectives": [o.to_dict() for o in objectives],
+            "front": pareto_front(rows, objectives),
+            "detail": [
+                {key: value for key, value in row.items() if key != "focus_points"}
+                for row in detail
+            ],
+            "observability_anisotropy": [
+                row["observability"]["anisotropy"] for row in detail
+            ],
+        }
+
+    return {
+        "case": case.key,
+        "surface": case.surface.name,
+        "families": families,
+        "scale_invariance": _gramian_scale_invariance(config),
+        "monotone": _gramian_monotonicity(config, case),
+        "front_is_really_undominated": _front_is_sound(families),
+        "families_differ": _families_differ(families),
+        "note": (
+            "the two families exercise different columns of Phi; a route chosen "
+            "on one says nothing about the other"
+        ),
+    }
+
+
+def _gramian_scale_invariance(config: SurfaceConfig) -> dict[str, Any]:
+    """The same physical situation at twice the size, in information density.
+
+    The accumulated Gramian doubles, and should: twice the path really does
+    carry twice the information. Per unit path length it must not move at all,
+    and that is the property a route criterion needs -- the same reason ``rho``
+    is checked this way and a threshold on ``|b|`` cannot be.
+    """
+    densities = []
+    totals = []
+    for factor in (1.0, 2.0):
+        envelope = integrate_path(
+            sphere(factor), u0=np.pi / 2, v0=0.0, heading=0.6,
+            length=3.0 * factor, n_steps=config.heading_scan_steps,
+        )
+        record = envelope.as_transfer_record(observation_mode="ambient-euclidean-chord")
+        gramian = observability_gramian(
+            record,
+            ObservationModel.transverse_only(
+                config.route_measurement_sigma * factor,
+                mode="ambient-euclidean-chord",
+            ),
+            max_lateral=config.route_tolerance_lateral * factor,
+            max_heading=config.route_tolerance_heading,
+        )
+        densities.append(np.linalg.eigvalsh(gramian.per_unit_length))
+        totals.append(np.linalg.eigvalsh(gramian.total))
+    reference = np.maximum(np.abs(densities[0]), 1e-300)
+    return {
+        "identity": "W / L is unchanged when the whole situation is drawn at twice the size",
+        "density_relative_difference": float(
+            np.max(np.abs(densities[1] - densities[0]) / reference)
+        ),
+        "accumulated_ratio": float(np.max(totals[1] / np.maximum(totals[0], 1e-300))),
+        "expected_accumulated_ratio": 2.0,
+        "densities": [values.tolist() for values in densities],
+    }
+
+
+def _gramian_monotonicity(config: SurfaceConfig, case) -> dict[str, Any]:
+    """Information accumulates: ``W(s2) - W(s1)`` is positive semi-definite.
+
+    Not a tautology about the code -- it is a statement that the integrand
+    ``Phi^T H^T R^-1 H Phi`` is itself positive semi-definite everywhere, which
+    is what makes the Gramian a measure of information rather than an integral
+    that happens to grow.
+    """
+    envelope = integrate_path(
+        case.surface, u0=case.u0, v0=case.v0, heading=case.heading,
+        length=config.heading_scan_length, n_steps=config.heading_scan_steps,
+    )
+    record = envelope.as_transfer_record(observation_mode="ambient-euclidean-chord")
+    observation, _ = _instrument(config)
+    gramian = observability_gramian(
+        record, observation,
+        max_lateral=config.route_tolerance_lateral,
+        max_heading=config.route_tolerance_heading,
+    )
+    increments = np.diff(gramian.cumulative, axis=0)
+    smallest = float(np.min(np.linalg.eigvalsh(increments)))
+    return {
+        "identity": "W(s2) - W(s1) is positive semi-definite for s2 > s1",
+        "most_negative_increment_eigenvalue": smallest,
+        "samples": int(increments.shape[0]),
+    }
+
+
+def _front_is_sound(families: dict[str, Any]) -> dict[str, Any]:
+    """Every route said to be dominated really is, on every objective at once.
+
+    The front is the deliverable, so the claim behind it is checked rather than
+    trusted: for each dominated route, the route named as beating it must be no
+    worse on every declared objective and strictly better on one.
+    """
+    violations = []
+    for family, payload in families.items():
+        values = {row["label"]: row for row in payload["detail"]}
+        objectives = payload["objectives"]
+        for loser, winner in payload["front"]["dominated"].items():
+            better_everywhere = True
+            strictly_better_somewhere = False
+            for objective in objectives:
+                name, direction = objective["name"], objective["direction"]
+                mine, theirs = values[loser][name], values[winner][name]
+                if direction == "higher-is-better":
+                    mine, theirs = -mine, -theirs
+                if theirs > mine:
+                    better_everywhere = False
+                if theirs < mine:
+                    strictly_better_somewhere = True
+            if not (better_everywhere and strictly_better_somewhere):
+                violations.append({"family": family, "loser": loser, "winner": winner})
+    return {"violations": len(violations), "detail": violations}
+
+
+def _families_differ(families: dict[str, Any]) -> dict[str, Any]:
+    """The offset family is not the heading family rediscovered.
+
+    If offsetting the start point produced the same routes as fanning the
+    heading, one of the two columns of ``Phi`` would never be exercised and the
+    whole reason for generating beyond a fan would be gone.
+
+    Compared by *start point*, not by label. The labels are now prefixed by
+    their family and so are disjoint by construction, which would make a
+    comparison of them a test of the prefix rather than of the geometry.
+    """
+    # Compared exactly, not rounded. Rounding to a fixed number of decimals
+    # would reintroduce the very thing the route labels were just fixed to
+    # avoid -- two starts merging or separating on the last bit. A fan's
+    # starts are the *same float*, so they compare equal exactly, and the
+    # courses are spaced far enough apart that nothing is near a tie.
+    starts = {
+        name: {(row["start"]["u"], row["start"]["v"]) for row in payload["detail"]}
+        for name, payload in families.items()
+    }
+    fan, courses = starts["heading-fan"], starts["offset-courses"]
+    return {
+        "compared_by": "start point, since the labels are disjoint by prefix",
+        "shared_starts": len(fan & courses),
+        "distinct_fan_starts": len(fan),
+        "distinct_course_starts": len(courses),
+    }
+
+
+def _planning_objectives(config: SurfaceConfig) -> tuple[Objective, ...]:
+    """The declared quantities, each with the limit that makes it dimensionless."""
+    return (
+        Objective(
+            "amplification", "lower-is-better", limit=config.planning_amplification_limit,
+            note="worst dimensionless gain of the tolerance box anywhere on the path",
+        ),
+        Objective(
+            "cross_track_error", "lower-is-better",
+            limit=config.route_max_cross_track_error,
+        ),
+        Objective(
+            "heading_error", "lower-is-better", limit=config.route_max_heading_error,
+        ),
+        Objective(
+            "worst_observed", "higher-is-better",
+            limit=config.planning_observability_limit,
+            note="smallest eigenvalue of the dimensionless accumulated Gramian",
+        ),
+        Objective(
+            "boundary_clearance", "higher-is-better",
+            limit=config.planning_clearance_limit,
+        ),
+        Objective(
+            "path_length", "lower-is-better", limit=config.heading_scan_length,
+        ),
+    )
+
+
+def measure_uncertainty_budget(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
+    """The whole budget on each path, and which term actually dominates.
+
+    Every number here comes from the declared instrument and the declared
+    tolerance box -- the same ones the route decision uses -- plus a declared
+    registration and fixture. Nothing is fitted and nothing is a limit: the
+    output is a breakdown, and what an acceptable total is belongs to a
+    protocol.
+
+    Two things it establishes that no single figure can. The **systematic
+    fraction**: how much of the worst-sample variance is one unknown repeated,
+    which is exactly the part that averaging more samples along the path does
+    not touch. And **rank**: a budget of purely systematic terms is singular,
+    because a perfectly correlated error is perfectly predictable, so a
+    campaign that forgot to declare its sensor's noise finds out here rather
+    than in a Cholesky failure three layers down.
+    """
+    lateral = config.route_tolerance_lateral
+    heading = config.route_tolerance_heading
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        envelope = integrate_path(
+            case.surface, u0=case.u0, v0=case.v0, heading=case.heading,
+            length=case.length, n_steps=config.budget_path_steps,
+        )
+        record = envelope.as_transfer_record(observation_mode="ambient-euclidean-chord")
+        scanned = record.with_geometry_uncertainty(
+            GeometryUncertainty(
+                position=config.scan_position_sigma,
+                normal=config.scan_normal_sigma,
+                curvature=config.scan_curvature_sigma,
+                basis="assumed",
+                note="a declared example scan, not a measured one",
+            )
+        )
+        assembled = budget(
+            scanned,
+            starting_pose(
+                scanned,
+                np.diag(
+                    [
+                        config.route_lateral_sigma**2,
+                        float(np.deg2rad(config.route_heading_sigma_degrees)) ** 2,
+                    ]
+                ),
+                basis="the declared instrument's starting-pose uncertainty",
+            ),
+            surface_reconstruction(scanned, lateral, heading),
+            fixture_datum(
+                scanned,
+                lateral_sigma=config.fixture_lateral_sigma,
+                heading_sigma=config.fixture_heading_sigma,
+                basis="declared",
+            ),
+            calibration_transform(
+                scanned, sigma=config.calibration_offset_sigma, basis="declared"
+            ),
+            path_registration(
+                scanned, lateral, heading,
+                sigma=config.registration_sigma, basis="declared",
+            ),
+            sensor_noise(
+                scanned,
+                sigma=config.route_measurement_sigma,
+                correlation_length=config.sensor_correlation_length,
+                basis="declared",
+            ),
+            note=f"{case.key}: declared example, no measured input",
+        )
+        systematic_only = budget(
+            scanned,
+            *[c for c in assembled.contributions if c.structure == "systematic"],
+        )
+        payload = assembled.to_dict()
+        payload |= {
+            "case": case.key,
+            "surface": case.surface.name,
+            "systematic_only_is_singular": not systematic_only.is_positive_definite(),
+            "starting_pose_share_at_worst": payload["shares_at_worst"]["starting pose"],
+        }
+        rows.append(payload)
+    return rows
+
+
+def measure_prediction_chain(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
+    """Does naming the transformations actually close the gap to a measurement?
+
+    The finite-difference route is an *ambient chord*: it flows two geodesics
+    at plus and minus ``eps`` and measures the straight-line distance between
+    reconstructed 3-D points. The transfer map is a *first-order tangent
+    vector*. Between them sit two second-order corrections, and this sweep asks
+    whether applying them -- as named transformations on a prediction object,
+    rather than as a relabelling -- reproduces the measurement.
+
+    Where the curvature is constant, both corrections are available and the
+    full chain closes: the disagreement falls from the size of the effect to
+    the numerical floor. Where it varies, only the chord correction is
+    computable, ``chord_from_tangent`` applies it and declares that the other
+    is missing, and the residual that remains is exactly the term it declared.
+
+    The comparison is scaled by the largest separation on the path rather than
+    taken pointwise, because the spherical cap crosses its conjugate point: the
+    separation passes through zero there, and a relative error against zero is
+    not a measure of anything.
+    """
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        envelope = integrate_path(
+            case.surface, u0=case.u0, v0=case.v0, heading=case.heading,
+            length=case.length, n_steps=config.chain_steps,
+        )
+        record = envelope.as_transfer_record(observation_mode="ambient-euclidean-chord")
+        closed_form = has_closed_form_separation(record)
+        levels = []
+        for epsilon in config.chain_epsilons:
+            _, measured = finite_difference_jacobi(
+                case.surface, u0=case.u0, v0=case.v0, heading=case.heading,
+                epsilon=float(epsilon), length=case.length, n_steps=config.chain_steps,
+            )
+            # The finite-difference pair is separated by 2 eps, and it reports a
+            # magnitude: it has no sign to lose, which the transfer map does.
+            chord = measured * 2.0 * float(epsilon)
+            tangent = first_order_prediction(record, 0.0, 2.0 * float(epsilon))
+            chain = (
+                chord_from_intrinsic(intrinsic_from_tangent(tangent, record), record)
+                if closed_form
+                else chord_from_tangent(tangent, record)
+            )
+            scale = max(float(np.max(np.abs(tangent.values))), 1e-300)
+            levels.append(
+                {
+                    "epsilon": float(epsilon),
+                    "first_order_disagreement": float(
+                        np.max(np.abs(chord - np.abs(tangent.values)))
+                    )
+                    / scale,
+                    "chain_disagreement": float(
+                        np.max(np.abs(chord - np.abs(chain.values)))
+                    )
+                    / scale,
+                    "stages": list(chain.chain),
+                    "intrinsic_correction": chain.extra["intrinsic_correction"],
+                }
+            )
+        worst_chain = max(level["chain_disagreement"] for level in levels)
+        best_ratio = min(
+            level["first_order_disagreement"] / max(level["chain_disagreement"], 1e-300)
+            for level in levels
+        )
+        rows.append(
+            {
+                "case": case.key,
+                "surface": case.surface.name,
+                "curvature_is_constant": bool(closed_form),
+                "chain": list(levels[0]["stages"]),
+                "intrinsic_correction": levels[0]["intrinsic_correction"],
+                "worst_chain_disagreement": worst_chain,
+                "smallest_improvement_factor": best_ratio,
+                "chain_is_never_worse": all(
+                    level["chain_disagreement"] <= level["first_order_disagreement"]
+                    for level in levels
+                ),
+                "levels": levels,
+            }
+        )
+    return rows
+
+
+def measure_error_budget(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
+    """A path-level error budget: what the step costs, per quantity, per case.
+
+    Two things are measured, and the second is what makes the first evidence.
+
+    **The budget.** ``estimate_convergence`` halves the step and Richardson
+    -extrapolates at the method's order, giving an absolute error estimate for
+    position, the transfer map, the curvature, the focus location and the
+    propagated covariance -- separately, because they do not converge together.
+
+    **Whether the budget is true.** Three of these cases have a closed form for
+    ``b(s)``, so the actual error is available and the estimate can be checked
+    against it rather than trusted. An error estimate that understates the
+    error is worse than no estimate, because it is acted on.
+
+    The comparison is only meaningful where there is a truncation error to
+    resolve: on the plate and the rolled sheet, ``b(s) = s`` is reproduced to
+    roundoff at every step size, so both the estimate and the truth are
+    1e-14-sized and their ratio is a ratio of noise. Those cases are reported
+    with ``resolved: false`` and carry no check, which is the same discipline
+    the convergence sweeps use for an exact method.
+    """
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        entries = []
+        for n_steps in config.budget_step_counts:
+            envelope = integrate_path(
+                case.surface,
+                u0=case.u0,
+                v0=case.v0,
+                heading=case.heading,
+                length=case.length,
+                n_steps=n_steps,
+            )
+            estimate = estimate_convergence(envelope)
+            exact = case.closed_form(envelope.arc_length)
+            truth = (
+                None
+                if exact is None
+                else float(np.max(np.abs(envelope.jacobi_field - exact)))
+            )
+            # Below this the "true error" is the accumulated rounding of the
+            # reference itself, so the ratio compares two pieces of noise.
+            resolved = truth is not None and truth > config.budget_roundoff_floor
+            entries.append(
+                {
+                    "n_steps": int(n_steps),
+                    "step": float(case.length) / n_steps,
+                    "estimate": estimate.to_dict(),
+                    "true_transfer_error": truth,
+                    "resolved": bool(resolved),
+                    "estimate_over_truth": (
+                        float(estimate.transfer / truth) if resolved else None
+                    ),
+                }
+            )
+        coarse, fine = entries[0], entries[-1]
+        refinement = fine["n_steps"] / coarse["n_steps"]
+        observed_order = None
+        if coarse["estimate"]["transfer"] and fine["estimate"]["transfer"]:
+            ratio = coarse["estimate"]["transfer"] / fine["estimate"]["transfer"]
+            if ratio > 1.0:
+                observed_order = float(np.log(ratio) / np.log(refinement))
+        rows.append(
+            {
+                "case": case.key,
+                "surface": case.surface.name,
+                "reference": case.reference,
+                "method": "rk4",
+                "declared_order": 4,
+                "refinement_between_levels": float(refinement),
+                "observed_order": observed_order,
+                "any_resolved": any(entry["resolved"] for entry in entries),
+                "worst_estimate_over_truth": max(
+                    (
+                        abs(entry["estimate_over_truth"] - 1.0)
+                        for entry in entries
+                        if entry["estimate_over_truth"] is not None
+                    ),
+                    default=None,
+                ),
+                "levels": entries,
+            }
+        )
+    return rows
+
+
+def measure_jet_step_sensitivity(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
+    """What the finite-difference jet's step size costs *along a whole path*.
+
+    ``derivative_convergence`` asks whether the jet at one point converges as
+    the differencing step shrinks. That is necessary and it is not the budget:
+    a jet error enters the geodesic equation at every step, and what a consumer
+    needs to know is what it does to the path, to ``Phi``, to the curvature and
+    to the focus after the whole integration.
+
+    So the same path is flowed with the analytic jet and with the fallback at a
+    range of relative steps, and the differences are reported per quantity. The
+    curve has the shape every finite difference has -- truncation falling as
+    the step shrinks, cancellation rising as it shrinks further -- and the
+    interesting number is the best any step achieves, because that is the floor
+    on a surface that has no analytic jet at all.
+    """
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        if _uses_finite_differences(case.surface):
+            continue
+        analytic = integrate_path(
+            case.surface, u0=case.u0, v0=case.v0, heading=case.heading,
+            length=case.length, n_steps=config.jet_sensitivity_steps,
+        )
+        focus = analytic.focus_points()
+        levels = []
+        for relative_step in config.jet_relative_steps:
+            numeric = integrate_path(
+                replace(case.surface, jet=None, fd_relative_step=float(relative_step)),
+                u0=case.u0, v0=case.v0, heading=case.heading,
+                length=case.length, n_steps=config.jet_sensitivity_steps,
+            )
+            numeric_focus = numeric.focus_points()
+            levels.append(
+                {
+                    "fd_relative_step": float(relative_step),
+                    "position": float(
+                        np.max(np.linalg.norm(analytic.points - numeric.points, axis=-1))
+                    ),
+                    "transfer": float(
+                        max(
+                            np.max(np.abs(analytic.lateral_basis - numeric.lateral_basis)),
+                            np.max(np.abs(analytic.lateral_rate - numeric.lateral_rate)),
+                            np.max(np.abs(analytic.jacobi_field - numeric.jacobi_field)),
+                            np.max(
+                                np.abs(
+                                    analytic.jacobi_derivative - numeric.jacobi_derivative
+                                )
+                            ),
+                        )
+                    ),
+                    "curvature": float(
+                        np.max(np.abs(analytic.curvature - numeric.curvature))
+                    ),
+                    "focus": (
+                        abs(focus[0] - numeric_focus[0])
+                        if focus and numeric_focus
+                        else None
+                    ),
+                    "found_the_same_number_of_foci": len(focus) == len(numeric_focus),
+                }
+            )
+        best = min(levels, key=lambda level: level["transfer"])
+        worst = max(levels, key=lambda level: level["transfer"])
+        default = min(
+            levels,
+            key=lambda level: abs(
+                level["fd_relative_step"] - float(case.surface.fd_relative_step)
+            ),
+        )
+        rows.append(
+            {
+                "case": case.key,
+                "surface": case.surface.name,
+                "n_steps": int(config.jet_sensitivity_steps),
+                "default_relative_step": float(case.surface.fd_relative_step),
+                "best_relative_step": best["fd_relative_step"],
+                "best_transfer_error": best["transfer"],
+                "worst_transfer_error": worst["transfer"],
+                "default_transfer_error": default["transfer"],
+                #: How much the declared default gives away against the best
+                #: step for this surface. A default cannot be optimal for every
+                #: surface; what it must not be is arbitrary, and this is the
+                #: number that says which.
+                "default_over_best": (
+                    float(default["transfer"] / best["transfer"])
+                    if best["transfer"] > 0.0
+                    else None
+                ),
+                "default_over_worst": (
+                    float(default["transfer"] / worst["transfer"])
+                    if worst["transfer"] > 0.0
+                    else None
+                ),
+                "spread_factor": (
+                    float(worst["transfer"] / best["transfer"])
+                    if best["transfer"] > 0.0
+                    else None
+                ),
+                "every_step_found_the_same_foci": all(
+                    level["found_the_same_number_of_foci"] for level in levels
+                ),
+                "levels": levels,
+            }
+        )
+    return rows
+
+
 def measure_finite_difference_cost(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for case in cases:
@@ -533,13 +1239,73 @@ def build_envelopes(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
         )
         summary["max_lateral_amplification"] = float(np.max(np.abs(envelope.lateral_basis)))
         summary["lateral_focus_points"] = envelope.transfer_map.focus_points(component="a")
-        record = envelope.as_transfer_record()
+        # The record carries its own error budget, because a consumer deciding
+        # whether a focus at s = 3.1416 is located well enough to plan against
+        # needs the error and not the step size it came from.
+        record = envelope.as_transfer_record(
+            convergence=estimate_convergence(envelope)
+        )
         singular = record.scaled_singular_values(
             config.route_tolerance_lateral, config.route_tolerance_heading
+        )
+        # The invariant, formed as a 2x2 determinant. Reading it off the
+        # product of singular values instead would measure the SVD's accuracy
+        # on the tolerance box's aspect ratio rather than the integrator's on
+        # the surface, and the two differ by two orders of magnitude.
+        summary["scaled_determinant_error"] = float(
+            np.max(
+                np.abs(
+                    record.scaled_determinant(
+                        config.route_tolerance_lateral, config.route_tolerance_heading
+                    )
+                    - 1.0
+                )
+            )
         )
         summary["scaled_singular_value_product_error"] = float(
             np.max(np.abs(singular[:, 0] * singular[:, 1] - 1.0))
         )
+
+        # The path geometry the record now carries, checked rather than added.
+        # Euler's theorem: the normal curvatures in any two orthogonal tangent
+        # directions sum to twice the mean curvature. H comes from the second
+        # fundamental form directly and the two kappa_n from the Darboux frame
+        # along the flowed path, so the identity ties the frame the record
+        # publishes to the surface it claims to be on -- on every surface, with
+        # no closed form required.
+        geometry = envelope.path_geometry()
+        mean = np.asarray(case.surface.mean_curvature(envelope.u, envelope.v), dtype=float)
+        summary["geometry"] = {
+            "euler_identity": "kappa_n(along) + kappa_n(across) = 2H",
+            "euler_residual": float(
+                np.max(
+                    np.abs(
+                        geometry.normal_curvature_along
+                        + geometry.normal_curvature_transverse
+                        - 2.0 * mean
+                    )
+                )
+            ),
+            "frame_orientation_residual": geometry.orientation_residual(),
+            "max_tangent_norm_error": float(
+                np.max(np.abs(np.linalg.norm(geometry.tangent, axis=-1) - 1.0))
+            ),
+            "max_frame_inner_product": float(
+                np.max(
+                    np.abs(
+                        np.einsum("ij,ij->i", geometry.tangent, geometry.surface_normal)
+                    )
+                )
+            ),
+            "normal_curvature_along": {
+                "min": float(np.min(geometry.normal_curvature_along)),
+                "max": float(np.max(geometry.normal_curvature_along)),
+            },
+            "normal_curvature_transverse": {
+                "min": float(np.min(geometry.normal_curvature_transverse)),
+                "max": float(np.max(geometry.normal_curvature_transverse)),
+            },
+        }
         summary["min_scaled_singular_value_max"] = float(np.min(singular[:, 0]))
         summary["amplification_score"] = float(np.max(singular[:, 0]))
         summary["record"] = record.to_dict(include_samples=False) | {
@@ -669,6 +1435,345 @@ def _resolvability_scale_invariance(config: SurfaceConfig) -> dict[str, Any]:
         "max_absolute_difference": difference,
         "max_relative_difference": difference / scale,
         "note": "same physical situation at two sizes; rho must not move",
+    }
+
+
+def measure_imported_path_boundary(config: SurfaceConfig, cases) -> dict[str, Any]:
+    """What survives the crossing when the path arrives as a file.
+
+    The adapter's whole risk is that it is the one place a path this runtime
+    did not compute becomes a transfer record. Four things are measured, and
+    each answers a way that could go wrong without a symptom:
+
+    *anchor* -- an artefact built from each model space still reproduces its
+    closed form after a JSON round trip, so the container did not lose
+    anything the equation reads;
+
+    *interpolation order* -- the declared curvature interpolation is a choice
+    with a convergence rate, measured against a path solved on the surface at
+    ``reference_steps``. The monotone cubic and the piecewise-linear one
+    differ by orders, which is why the policy is a required field;
+
+    *invariance* -- a rigid transform of the artefact leaves the map bit for
+    bit alone, and a change of length unit moves each quantity by its own
+    exponent;
+
+    *refusal* -- an artefact whose producer already failed is not integrated.
+    """
+    from .imported_path import (
+        artefact_from_envelope,
+        transfer_map_from_artefact,
+        transfer_record_from_artefact,
+    )
+    from .path_artefact import PathGeometryArtefact
+
+    units = Units(length="metre", angle="radian")
+
+    def artefact_for(case, n_steps: int, interpolation: str = "pchip-monotone"):
+        envelope = integrate_paths(
+            case.surface,
+            u0=case.u0,
+            v0=case.v0,
+            headings=[case.heading],
+            length=case.length,
+            n_steps=n_steps,
+        )[0]
+        return artefact_from_envelope(
+            envelope,
+            identifier=f"{case.key}-{n_steps}",
+            surface_digest=f"surface:{case.surface.name}",
+            path_digest=f"path:{case.key}:{n_steps}",
+            units=units,
+            curvature_interpolation=interpolation,
+        )
+
+    anchors: list[dict[str, Any]] = []
+    for case in cases:
+        closed = case.closed_form(np.linspace(0.0, case.length, config.n_steps + 1))
+        if closed is None:
+            continue
+        artefact = artefact_for(case, config.n_steps)
+        replayed = PathGeometryArtefact.from_dict(
+            json.loads(json.dumps(artefact.to_dict()))
+        )
+        produced = transfer_map_from_artefact(replayed)
+        record = transfer_record_from_artefact(replayed)
+        anchors.append(
+            {
+                "case": case.key,
+                "reference": case.reference,
+                "samples": int(replayed.samples),
+                "heading_column_error": float(np.max(np.abs(produced.b - closed))),
+                "determinant_error": float(np.max(np.abs(record.determinant - 1.0))),
+                "domain": record.domain,
+                "round_tripped": True,
+            }
+        )
+
+    saddle = next(case for case in cases if case.key == "saddle")
+    reference = integrate_paths(
+        saddle.surface,
+        u0=saddle.u0,
+        v0=saddle.v0,
+        headings=[saddle.heading],
+        length=saddle.length,
+        n_steps=config.reference_steps,
+    )[0].transfer_map
+    target = float(reference.b[-1])
+    counts = tuple(int(n) for n in config.step_counts)
+    interpolation: list[dict[str, Any]] = []
+    for policy in ("pchip-monotone", "linear"):
+        errors = [
+            abs(float(transfer_map_from_artefact(artefact_for(saddle, n, policy)).b[-1]) - target)
+            for n in counts
+        ]
+        order, _ = np.polyfit(
+            np.log(1.0 / np.asarray(counts, dtype=float)), np.log(errors), 1
+        )
+        interpolation.append(
+            {
+                "policy": policy,
+                "step_counts": list(counts),
+                "errors": [float(value) for value in errors],
+                "fitted_order": float(order),
+                "error_at_coarsest": float(errors[0]),
+            }
+        )
+    coarse_ratio = interpolation[1]["error_at_coarsest"] / interpolation[0]["error_at_coarsest"]
+
+    artefact = artefact_for(saddle, config.n_steps)
+    rotation = _rotation_matrix(np.array([0.3, -0.5, 0.8]), 0.9)
+    moved = replace(
+        artefact,
+        position=artefact.position @ rotation.T + np.array([12.0, -3.5, 0.25]),
+        tangent=artefact.tangent @ rotation.T,
+        transverse=artefact.transverse @ rotation.T,
+    )
+    here = transfer_map_from_artefact(artefact)
+    there = transfer_map_from_artefact(moved)
+    rigid_error = float(np.max(np.abs(here.b - there.b)))
+
+    scale = 1000.0
+    rescaled = transfer_map_from_artefact(artefact.converted_to("millimetre", scale))
+    expected = here.b * scale
+    unit_error = float(
+        np.max(np.abs(rescaled.b - expected)) / max(float(np.max(np.abs(expected))), 1.0)
+    )
+
+    failed = replace(
+        artefact,
+        upstream_status="failed",
+        upstream_note="the upstream trace left the patch it was solved on",
+    )
+    try:
+        transfer_map_from_artefact(failed)
+    except ValueError:
+        refused = True
+    else:  # pragma: no cover - the refusal is the point
+        refused = False
+
+    return {
+        "schema": PATH_GEOMETRY_SCHEMA,
+        "domain": ARTEFACT_DOMAIN,
+        "anchors": anchors,
+        "interpolation": interpolation,
+        "linear_over_cubic_at_coarsest": float(coarse_ratio),
+        "rigid_transform_error": rigid_error,
+        "unit_conversion_relative_error": unit_error,
+        "failed_artefact_refused": bool(refused),
+        "note": (
+            "the adapter reads the artefact's arclength and curvature and nothing "
+            "else, which is why a rigid transform is exactly rather than nearly "
+            "invariant"
+        ),
+    }
+
+
+def _rotation_matrix(axis: np.ndarray, angle: float) -> np.ndarray:
+    axis = np.asarray(axis, dtype=float)
+    axis = axis / np.linalg.norm(axis)
+    cross = np.array(
+        [[0.0, -axis[2], axis[1]], [axis[2], 0.0, -axis[0]], [-axis[1], axis[0], 0.0]]
+    )
+    return np.eye(3) + np.sin(angle) * cross + (1.0 - np.cos(angle)) * (cross @ cross)
+
+
+def measure_validity_envelopes(config: SurfaceConfig, cases) -> list[dict[str, Any]]:
+    """Where the linear map stops holding, measured against the flow itself.
+
+    The anchor is the pair of surfaces where the ambient chord and the
+    in-surface separation have the same second-order coefficient: the plate,
+    where the normal curvature is zero and ``cn_K = 1``, and the spherical cap,
+    where every direction is principal with ``kappa_n = 1`` so
+    ``cos^2 + sin^2`` is one. Both coefficients are ``1/24`` and both bounds
+    must come out at ``sqrt(24 tol)``.
+
+    The rolled sheet is the interesting one. It has the plate's transfer map to
+    1e-13 and *not* the plate's envelope, because the measurement is a chord
+    and a cylinder has a transverse normal curvature. That gap is the
+    observation mode expressed as a number rather than as a warning.
+    """
+    from .envelope import (
+        VALIDITY_PROBES,
+        finite_difference_jacobi,
+        measure_validity_envelope,
+    )
+
+    tolerance = 1e-3
+    rows: list[dict[str, Any]] = []
+    for case in cases:
+        envelope = measure_validity_envelope(
+            case.surface,
+            u0=case.u0,
+            v0=case.v0,
+            heading=case.heading,
+            length=case.length,
+            n_steps=config.finite_difference_steps,
+            relative_tolerance=tolerance,
+            tolerance_basis="declared before the probe, at the pilot's metrology floor",
+            source_digest=f"surface:{case.surface.name}",
+        )
+        path = integrate_paths(
+            case.surface,
+            u0=case.u0,
+            v0=case.v0,
+            headings=[case.heading],
+            length=case.length,
+            n_steps=config.finite_difference_steps,
+        )[0]
+        geometry = path.path_geometry()
+        transfer = path.transfer_map
+        chord_coefficient = (
+            transfer.a**2 + geometry.normal_curvature_transverse**2 * transfer.b**2
+        )
+        predicted = float(np.sqrt(24.0 * tolerance / float(np.max(chord_coefficient))))
+        constant = bool(float(np.ptp(path.curvature)) < 1e-12)
+
+        # What the linearisation actually costs *at the bound the fit chose*.
+        # This needs no closed form, so it is the check that reaches the
+        # varying-curvature surfaces -- where the constant-curvature chord
+        # coefficient is simply not the right formula, and says so by being
+        # 43% out on the saddle.
+        bound = float(envelope.max_heading)
+        grid, measured = finite_difference_jacobi(
+            case.surface,
+            u0=case.u0,
+            v0=case.v0,
+            heading=case.heading,
+            epsilon=0.5 * bound,
+            length=case.length,
+            n_steps=config.finite_difference_steps,
+        )
+        reference = np.abs(transfer.b)[: grid.size]
+        scale = np.maximum(np.abs(reference), float(np.max(np.abs(reference))) * 1e-12)
+        error_at_bound = float(np.max(np.abs(measured[: grid.size] - reference) / scale))
+
+        rows.append(
+            {
+                "case": case.key,
+                "constant_curvature": constant,
+                "error_at_bound": error_at_bound,
+                "bound_consistency": abs(error_at_bound / tolerance - 1.0),
+                "relative_tolerance": tolerance,
+                "max_heading": envelope.max_heading,
+                "max_lateral": envelope.max_lateral,
+                "probe_limited": envelope.probe_limited,
+                "probe_limited_directions": list(envelope.probe_limited_directions),
+                "heading_bound_is_measured": envelope.bound_is_measured("heading"),
+                "pointwise_error": envelope.pointwise_error,
+                "route_error": envelope.route_error,
+                "directions": list(envelope.directions),
+                "probe_magnitudes": list(VALIDITY_PROBES),
+                "reference": envelope.reference,
+                "established": envelope.established,
+                "closed_form_chord_bound": predicted,
+                "chord_bound_relative_error": abs(envelope.max_heading - predicted) / predicted,
+                "intrinsic_bound": float(np.sqrt(24.0 * tolerance)),
+                "chord_term_tightening": predicted / float(np.sqrt(24.0 * tolerance)),
+            }
+        )
+    return rows
+
+
+def measure_observability_forms(config: SurfaceConfig, cases) -> dict[str, Any]:
+    """The integral Gramian and the stacked one, and what separates them.
+
+    ``int Phi^T H^T R^-1 H Phi ds`` needs the samples independent; ``A^T R^-1 A``
+    does not, and a filter makes them dependent. On a uniform grid with a
+    stationary ``R`` the two agree to first order in the spacing, and the
+    discrepancy halving as the sampling doubles is the declared check -- a
+    fixed tolerance would only describe one grid.
+
+    The correlated case is the one the integral form cannot express. Ranking
+    routes by it on filtered data counts information that was never collected.
+    """
+    from .output_covariance import NoiseModel
+
+    case = next(item for item in cases if item.key == "spherical-cap")
+    model = ObservationModel.transverse_only(5e-5, mode="ambient-euclidean-chord")
+    noise = NoiseModel.from_observation_model(model, basis="bench characterisation")
+    box = {"max_lateral": 2e-4, "max_heading": float(np.deg2rad(0.1))}
+
+    def record_at(n_steps: int):
+        envelope = integrate_paths(
+            case.surface,
+            u0=case.u0,
+            v0=case.v0,
+            headings=[case.heading],
+            length=case.length,
+            n_steps=n_steps,
+        )[0]
+        return envelope.as_transfer_record(
+            units=Units(length="metre", angle="radian"),
+            observation_mode="ambient-euclidean-chord",
+        )
+
+    counts = (200, 400, 800)
+    gaps = []
+    for n_steps in counts:
+        record = record_at(n_steps)
+        spacing = float(record.arclength[1] - record.arclength[0])
+        integral = observability_gramian(record, model, **box)
+        stacked = stacked_observability(record, model, noise, **box)
+        gaps.append(
+            abs(float(integral.total[0, 0] / (spacing * stacked.total[0, 0])) - 1.0)
+        )
+    halving = [coarse / fine for coarse, fine in zip(gaps, gaps[1:], strict=False)]
+
+    record = record_at(200)
+    samples = record.arclength.size
+    lag = np.exp(-np.abs(np.subtract.outer(np.arange(samples), np.arange(samples))) / 8.0)
+    correlated = NoiseModel(
+        blocks=5e-5**2 * lag,
+        structure="correlated",
+        outputs=("transverse",),
+        basis="a declared filter group delay",
+    )
+    white = stacked_observability(record, model, noise, **box)
+    smoothed = stacked_observability(record, model, correlated, **box)
+
+    integral = observability_gramian(record, model, **box)
+    halves = integral.over(
+        float(record.arclength[0]), 0.5 * float(record.arclength[-1])
+    ) + integral.over(0.5 * float(record.arclength[-1]), float(record.arclength[-1]))
+
+    return {
+        "case": case.key,
+        "step_counts": list(counts),
+        "stacked_versus_integral_gaps": [float(value) for value in gaps],
+        "gap_halving_ratios": [float(value) for value in halving],
+        "worst_halving_error": float(max(abs(value - 2.0) for value in halving)),
+        "finest_gap": float(gaps[-1]),
+        "condition_number": integral.condition_number,
+        "white_information": float(np.trace(white.total)),
+        "correlated_information": float(np.trace(smoothed.total)),
+        "correlated_over_white": float(np.trace(smoothed.total) / np.trace(white.total)),
+        "interval_additivity_error": float(np.max(np.abs(halves - integral.total))),
+        "note": (
+            "the integral form treats R as a noise density and the stacked form as "
+            "the covariance of the measurements taken; only the second admits a "
+            "correlated R, which is what a filter produces"
+        ),
     }
 
 
@@ -828,6 +1933,21 @@ def measure_focus_versus_resolvability(config: SurfaceConfig, cases) -> dict[str
     }
 
 
+def heading_label(degrees: float) -> str:
+    """A stable name for one candidate heading.
+
+    One decimal place, not zero. The scan's headings are multiples of 7.5
+    degrees, so half of them land exactly on a rounding boundary -- and
+    ``f"{97.5:.0f}"`` is ``'98'`` while ``f"{97.49999999999999:.0f}"`` is
+    ``'97'``. Which of the two a ``2 pi k / n`` division produces is a property
+    of the platform's last bit, so with a zero-decimal label the *name of the
+    recommended route* moved between machines, and the figure that looks a
+    route up by name could not find it. A decimal place puts the label off the
+    boundary entirely.
+    """
+    return f"{float(degrees):.1f}deg"
+
+
 def scan_for_robust_heading(config: SurfaceConfig, cases) -> dict[str, Any]:
     """Rank starting headings, then choose among them by declared process limits.
 
@@ -861,7 +1981,7 @@ def scan_for_robust_heading(config: SurfaceConfig, cases) -> dict[str, Any]:
         n_steps=config.heading_scan_steps,
     )
     candidates = {
-        f"{np.rad2deg(heading):.0f}deg": envelope
+        heading_label(np.rad2deg(heading)): envelope
         for heading, envelope in zip(headings, envelopes, strict=True)
     }
 
@@ -1140,14 +2260,229 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
         )
     )
 
+    for row in results["error_budget"]:
+        if row["observed_order"] is not None:
+            checks.append(
+                _check(
+                    f"budget-order/{row['case']}",
+                    "the step-doubling error budget itself falls as h^4, so it is "
+                    "measuring the truncation error of a fourth-order method rather "
+                    "than something else",
+                    abs(row["observed_order"] - row["declared_order"]),
+                    0.15,
+                )
+            )
+        if row["worst_estimate_over_truth"] is not None:
+            checks.append(
+                _check(
+                    f"budget-estimate-matches-the-truth/{row['case']}",
+                    "where a closed form leaves a truncation error to resolve, the "
+                    "estimate reproduces the actual error -- an error estimate that "
+                    "understates the error is worse than none, because it is acted on",
+                    row["worst_estimate_over_truth"],
+                    0.02,
+                )
+            )
+
+    planning = results["route_planning"]
+    checks.append(
+        _check(
+            "gramian-density-is-scale-invariant",
+            "the accumulated observability per unit path length is unchanged when "
+            "the same physical situation is drawn at twice the size -- the "
+            "property a route criterion must have, and a dimensionful score "
+            "cannot",
+            planning["scale_invariance"]["density_relative_difference"],
+            1e-9,
+        )
+    )
+    checks.append(
+        _check(
+            "gramian-accumulates-with-path-length",
+            "while the accumulated figure doubles, because twice the path really "
+            "does carry twice the information",
+            abs(
+                planning["scale_invariance"]["accumulated_ratio"]
+                - planning["scale_invariance"]["expected_accumulated_ratio"]
+            ),
+            1e-9,
+        )
+    )
+    checks.append(
+        _check(
+            "gramian-is-monotone",
+            "W(s2) - W(s1) is positive semi-definite, so the Gramian measures "
+            "information rather than merely growing",
+            -planning["monotone"]["most_negative_increment_eigenvalue"],
+            1e-12,
+        )
+    )
+    checks.append(
+        _check(
+            "pareto-front-is-sound",
+            "every route the front calls dominated is beaten on every declared "
+            "objective at once, and strictly on at least one",
+            float(planning["front_is_really_undominated"]["violations"]),
+            0.0,
+        )
+    )
+    checks.append(
+        _check(
+            "route-families-are-different-families",
+            "offsetting the start point does not rediscover the heading fan; the "
+            "two exercise different columns of Phi, compared by start point "
+            "rather than by a label the families prefix differently",
+            float(planning["families_differ"]["shared_starts"]),
+            0.0,
+        )
+    )
+    checks.append(
+        _check(
+            "heading-fan-shares-one-start",
+            "and a fan is a fan: every one of its routes leaves the same point, "
+            "so it moves only the b column",
+            float(planning["families_differ"]["distinct_fan_starts"]),
+            1.0,
+        )
+    )
+    for family, payload in planning["families"].items():
+        checks.append(
+            _check(
+                f"pareto-front-is-not-everything/{family}",
+                "and the front is a selection rather than the whole set, so the "
+                "declared objectives are actually in tension",
+                float(payload["front"]["front_size"]),
+                float(payload["routes"]) - 0.5,
+            )
+        )
+
+    for row in results["uncertainty_budget"]:
+        checks.append(
+            _check(
+                f"budget-is-invertible/{row['case']}",
+                "the declared budget can whiten a residual: at least one term has "
+                "full rank, which in practice means the sensor's own noise",
+                0.0 if row["positive_definite"] else 1.0,
+                0.0,
+            )
+        )
+        checks.append(
+            _check(
+                f"budget-systematic-terms-are-singular/{row['case']}",
+                "and the systematic terms alone cannot, because a perfectly "
+                "correlated error is perfectly predictable -- the distinction a "
+                "per-sample variance sum would have erased",
+                0.0 if row["systematic_only_is_singular"] else 1.0,
+                0.0,
+            )
+        )
+        checks.append(
+            _check(
+                f"budget-shares-account-for-everything/{row['case']}",
+                "the breakdown sums to the total, so no contribution is unaccounted",
+                abs(sum(row["shares_at_worst"].values()) - 1.0),
+                1e-12,
+            )
+        )
+
+    for row in results["prediction_chain"]:
+        if row["curvature_is_constant"]:
+            checks.append(
+                _check(
+                    f"prediction-chain-closes/{row['case']}",
+                    "naming the two second-order transformations closes the gap to "
+                    "an independently computed ambient chord, from the size of the "
+                    "effect down to the numerical floor",
+                    row["worst_chain_disagreement"],
+                    1e-9,
+                )
+            )
+            checks.append(
+                _check(
+                    f"prediction-chain-is-worth-it/{row['case']}",
+                    "and by three orders of magnitude or more, which is why the "
+                    "transformations are objects and not labels",
+                    row["smallest_improvement_factor"],
+                    1000.0,
+                    comparison=">=",
+                )
+            )
+        else:
+            checks.append(
+                _check(
+                    f"prediction-chain-declares-the-missing-term/{row['case']}",
+                    "where the curvature varies only the chord correction is "
+                    "computable, and the prediction says the other was not applied "
+                    "rather than appearing complete",
+                    0.0 if row["intrinsic_correction"].startswith("not-applied") else 1.0,
+                    0.0,
+                )
+            )
+            checks.append(
+                _check(
+                    f"prediction-chain-never-worse/{row['case']}",
+                    "and the part that is applied never moves the prediction away "
+                    "from the measurement",
+                    0.0 if row["chain_is_never_worse"] else 1.0,
+                    0.0,
+                )
+            )
+
+    for row in results["jet_step_sensitivity"]:
+        checks.append(
+            _check(
+                f"jet-step-foci-are-stable/{row['case']}",
+                "every differencing step in the sweep finds the same number of foci: "
+                "the jet's step may cost accuracy, and it may not invent or erase a "
+                "conjugate point",
+                0.0 if row["every_step_found_the_same_foci"] else 1.0,
+                0.0,
+            )
+        )
+        if row["default_over_worst"] is not None:
+            checks.append(
+                _check(
+                    f"jet-step-default-is-at-the-good-end/{row['case']}",
+                    "the declared relative step is within 1e-3 of the worst step in "
+                    "the sweep, on every surface -- a default cannot be optimal "
+                    "everywhere, but it must not be arbitrary",
+                    row["default_over_worst"],
+                    1e-3,
+                )
+            )
+
     for row in results["envelopes"]:
+        geometry = row["geometry"]
+        checks.append(
+            _check(
+                f"surface-euler-identity/{row['case']}",
+                "the two normal curvatures the record carries sum to 2H, tying the "
+                "frame it publishes to the surface it claims to be on",
+                geometry["euler_residual"],
+                1e-12,
+            )
+        )
+        checks.append(
+            _check(
+                f"surface-frame-is-orthonormal/{row['case']}",
+                "the carried frame is a right-handed Darboux triad: "
+                "transverse = normal x tangent, and the three are orthonormal",
+                max(
+                    geometry["frame_orientation_residual"],
+                    geometry["max_tangent_norm_error"],
+                    geometry["max_frame_inner_product"],
+                ),
+                1e-12,
+            )
+        )
         checks.append(
             _check(
                 f"surface-no-free-robustness/{row['case']}",
-                "det Phi = 1 makes the scaled transfer's singular values reciprocal, "
-                "so no path contracts every starting-pose error at once",
-                row["scaled_singular_value_product_error"],
-                1e-12,
+                "conjugating by the tolerance box leaves det Phi = 1, so no path "
+                "contracts every starting-pose error at once -- checked as the "
+                "determinant itself, not as a product of singular values",
+                row["scaled_determinant_error"],
+                config.wronskian_tolerance,
             )
         )
         checks.append(
@@ -1241,7 +2576,9 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
         label for label, outcome in outcome_by_label.items() if outcome != "TRACKED"
     }
     focus_labels = {
-        f"{row['heading_degrees']:.0f}deg" for row in scan["headings"] if row["passes_a_focus"]
+        heading_label(row["heading_degrees"])
+        for row in scan["headings"]
+        if row["passes_a_focus"]
     }
     checks.append(
         _check(
@@ -1303,6 +2640,188 @@ def collect_checks(results: dict[str, Any], config: SurfaceConfig) -> list[dict[
             "size, which is what a threshold on |b| could never be",
             resolvable["scale_invariance"]["max_relative_difference"],
             1e-9,
+        )
+    )
+
+    imported = results["imported_path_boundary"]
+    for row in imported["anchors"]:
+        checks.append(
+            _check(
+                f"imported-path-anchor/{row['case']}",
+                "a path handed over as a path-geometry-v1 file, written to JSON and "
+                f"read back, still reproduces {row['reference']} through the adapter: "
+                "the boundary loses nothing the Jacobi equation reads",
+                row["heading_column_error"],
+                5e-9,
+            )
+        )
+        checks.append(
+            _check(
+                f"imported-path-determinant/{row['case']}",
+                "and the record it produces holds det Phi = 1, which is the "
+                "invariant an imported path could most easily break by arriving "
+                "on a grid that is not arclength",
+                row["determinant_error"],
+                1e-12,
+            )
+        )
+    for row in imported["interpolation"]:
+        floor = 3.5 if row["policy"] == "pchip-monotone" else 1.8
+        checks.append(
+            _check(
+                f"imported-path-interpolation-order/{row['policy']}",
+                "the declared curvature interpolation converges at its own order "
+                "against a path solved on the surface, so the policy is a "
+                "numerical choice and not a label",
+                row["fitted_order"],
+                floor,
+                comparison=">=",
+            )
+        )
+    checks.append(
+        _check(
+            "imported-path-interpolation-matters",
+            "and at the coarsest sampling the two policies differ by orders of "
+            "magnitude, which is why the artefact requires the field rather than "
+            "defaulting it",
+            imported["linear_over_cubic_at_coarsest"],
+            50.0,
+            comparison=">=",
+        )
+    )
+    checks.append(
+        _check(
+            "imported-path-rigid-invariance",
+            "rotating and translating the artefact leaves the transfer map exactly "
+            "alone, because the adapter reads arclength and curvature and never a "
+            "position -- an adapter that had started differencing positions to "
+            "recover a tangent would not be exact here",
+            imported["rigid_transform_error"],
+            0.0,
+            comparison="<=",
+        )
+    )
+    checks.append(
+        _check(
+            "imported-path-unit-conversion",
+            "and converting metres to millimetres scales b by exactly the same "
+            "factor: a is dimensionless, b is a length, K is an inverse area",
+            imported["unit_conversion_relative_error"],
+            1e-12,
+        )
+    )
+    checks.append(
+        _check(
+            "imported-path-failed-artefact-refused",
+            "an artefact whose producer reports a failed run is refused rather "
+            "than integrated, because a path that is wrong in a way upstream "
+            "already detected looks exactly like one that is not",
+            0.0 if imported["failed_artefact_refused"] else 1.0,
+            0.0,
+            comparison="<=",
+        )
+    )
+
+    for row in results["validity_envelopes"]:
+        checks.append(
+            _check(
+                f"validity-envelope-established/{row['case']}",
+                "the range over which the linear map holds is measured against the "
+                "geodesic flow, central-differenced, rather than asserted",
+                0.0 if row["established"] else 1.0,
+                0.0,
+                comparison="<=",
+            )
+        )
+        if not row["heading_bound_is_measured"]:
+            checks.append(
+                _check(
+                    f"validity-envelope-holds-at-its-bound/{row['case']}",
+                    "the linearisation holds to the declared tolerance at the largest "
+                    "perturbation tested; the bound is the end of the ladder, and the "
+                    "record says so rather than extrapolating past the data",
+                    row["error_at_bound"],
+                    row["relative_tolerance"],
+                )
+            )
+        else:
+            checks.append(
+                _check(
+                    f"validity-envelope-bound-is-self-consistent/{row['case']}",
+                    "and re-probing at exactly the bound the fit chose costs the "
+                    "declared tolerance -- which needs no closed form, so it is the "
+                    "check that reaches the varying-curvature surfaces",
+                    row["bound_consistency"],
+                    0.15,
+                )
+            )
+        if row["constant_curvature"]:
+            checks.append(
+                _check(
+                    f"validity-envelope-matches-the-chord-form/{row['case']}",
+                    "and where K is constant it reproduces "
+                    "sqrt(24 tol / max(a^2 + kappa_n^2 b^2)), the second-order "
+                    "coefficient of an ambient chord -- which is the quantity the "
+                    "probe measures, and not the intrinsic one",
+                    row["chord_bound_relative_error"],
+                    0.02,
+                )
+            )
+    tightening = {
+        row["case"]: row["chord_term_tightening"] for row in results["validity_envelopes"]
+    }
+    checks.append(
+        _check(
+            "validity-envelope-chord-term-is-visible",
+            "the rolled sheet has the plate's transfer map to 1e-13 and a tighter "
+            "validity envelope, because the measurement is a chord and a cylinder "
+            "has a transverse normal curvature the plate does not",
+            tightening["rolled-sheet"],
+            0.95,
+            comparison="<=",
+        )
+    )
+    checks.append(
+        _check(
+            "validity-envelope-is-intrinsic-where-the-chord-adds-nothing",
+            "and on the plate and the spherical cap it is not: a^2 + kappa_n^2 b^2 "
+            "is one on both, from zero normal curvature and from an umbilic point "
+            "respectively",
+            max(abs(tightening[key] - 1.0) for key in ("plate", "spherical-cap")),
+            1e-9,
+        )
+    )
+
+    forms = results["observability_forms"]
+    checks.append(
+        _check(
+            "gramian-stacked-agrees-with-the-integral-form",
+            "A^T R^-1 A times the sample spacing approaches the integral Gramian, "
+            "with the discrepancy halving as the sampling doubles -- the two are "
+            "different objects and this is the conversion between them",
+            forms["worst_halving_error"],
+            0.1,
+        )
+    )
+    checks.append(
+        _check(
+            "gramian-correlated-noise-carries-less",
+            "a correlated R carries strictly less information than an independent "
+            "one of the same variance; the integral form cannot express the "
+            "difference and would count information that was never collected",
+            forms["correlated_over_white"],
+            0.5,
+            comparison="<=",
+        )
+    )
+    checks.append(
+        _check(
+            "gramian-intervals-add-up",
+            "information accumulated over two abutting intervals is the information "
+            "over their union, with the endpoints interpolated rather than snapped "
+            "to the grid",
+            forms["interval_additivity_error"],
+            1e-12,
         )
     )
 
@@ -1384,7 +2903,15 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
         "lateral_route": compare_lateral_route(config, cases),
         "self_convergence": measure_self_convergence(config, cases),
         "finite_difference_cost": measure_finite_difference_cost(config, cases),
+        "error_budget": measure_error_budget(config, cases),
+        "prediction_chain": measure_prediction_chain(config, cases),
+        "uncertainty_budget": measure_uncertainty_budget(config, cases),
+        "route_planning": measure_route_planning(config, cases),
+        "jet_step_sensitivity": measure_jet_step_sensitivity(config, cases),
         "envelopes": build_envelopes(config, cases),
+        "imported_path_boundary": measure_imported_path_boundary(config, cases),
+        "validity_envelopes": measure_validity_envelopes(config, cases),
+        "observability_forms": measure_observability_forms(config, cases),
         "chart_rescaling_invariance": measure_chart_rescaling_invariance(cases),
         "focus_versus_resolvability": measure_focus_versus_resolvability(config, cases),
         "heading_scan": scan_for_robust_heading(config, cases),
@@ -1395,6 +2922,25 @@ def run_surface_experiment(config: SurfaceConfig | None = None) -> dict[str, Any
             "schema": REPORT_SCHEMA,
             "supersedes": SUPERSEDES,
             "schema_changes": [
+                "adds results.route_planning: the accumulated observability "
+                "Gramian, boundaries computed from the declared part, a second "
+                "route family that exercises the a column, and a Pareto front "
+                "instead of a ranking scalar",
+                "adds results.uncertainty_budget: every declared source of error, "
+                "its shape, and which one dominates -- the starting pose is one "
+                "term and rarely the largest",
+                "adds results.prediction_chain: the named transformations from "
+                "Phi dz0 to an ambient chord, against an independent measurement",
+                "adds results.error_budget: a per-quantity step-doubling error "
+                "estimate, checked against the closed forms where one exists",
+                "adds results.jet_step_sensitivity: what the finite-difference "
+                "jet's relative step costs along a whole path, not at one point",
+                "envelopes: adds the path geometry the record now carries -- the "
+                "Darboux frame as vectors and both normal curvatures -- checked "
+                "against Euler's theorem on every surface",
+                "envelopes.record: now the full v2 contract, carrying the path "
+                "geometry, the chart validity, the path type and the convergence "
+                "estimate alongside the transfer map",
                 "heading_scan.route_selection: routes are chosen by declared process "
                 "limits and a sensor acquisition schedule, not by a threshold on |b|",
                 "envelopes: adds chart validity, the transfer record, and the "

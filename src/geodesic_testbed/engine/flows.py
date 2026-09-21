@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The Jacobi equation and the two ways this testbed produces a Jacobi field.
 
 For a unit-speed geodesic on a surface of constant curvature ``K``, a

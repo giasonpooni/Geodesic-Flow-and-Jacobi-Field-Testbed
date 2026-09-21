@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Deterministic reference report for the first tested application slice."""
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from .applications import (
     assess_inspection,
     assess_manufacturing,
 )
+from .engine.canonical import jsonable
 from .jacobi import constant_curvature_trace, finite_angular_separation, integrate_jacobi
 from .tolerances import PathTolerance
 
@@ -145,6 +147,9 @@ def write_reference_report(output_directory: Path) -> tuple[Path, Path]:
     output_directory.mkdir(parents=True, exist_ok=True)
     json_path = output_directory / "reference-report.json"
     markdown_path = output_directory / "reference-report.md"
-    json_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    # Canonicalised for the same reason the experiment reports are: this file
+    # is committed and compared, and full repr precision makes two identical
+    # computations differ on the last digit of a reduction.
+    json_path.write_text(json.dumps(jsonable(report), indent=2) + "\n", encoding="utf-8")
     markdown_path.write_text(format_reference_markdown(report), encoding="utf-8")
     return json_path, markdown_path

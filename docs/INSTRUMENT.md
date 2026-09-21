@@ -28,7 +28,7 @@ Three levels, in increasing order of what they would be worth:
 
 | level | meaning | status here |
 |---|---|---|
-| **Proof of work** | derivation, solver, numerical tests, reproducible reports | **done** — 235 declared checks across two stages: orders 1/2/4 recovered, the `ε²` coefficient matched to 4e-4 relative or better, the conjugate point located to 2e-15, the full 2x2 transfer map with `det Phi = 1` held to 2e-14, and the general parametric solver recovering both columns to 4e-13 before it is trusted on a saddle. [`report-v1.json`](../validation/report-v1.json), [`report-v2-surfaces.json`](../validation/report-v2-surfaces.json) |
+| **Proof of work** | derivation, solver, numerical tests, reproducible reports | **done** — 345 declared checks across two stages: orders 1/2/4 recovered, the `ε²` coefficient matched to 4e-4 relative or better, the conjugate point located to 3e-15, the full 2x2 transfer map with `det Phi = 1` held to 6e-15, and the general parametric solver recovering both columns to 5e-13 before it is trusted on a saddle. [`report-v1.json`](../validation/report-v1.json), [`report-v2-surfaces.json`](../validation/report-v2-surfaces.json) |
 | **Proof of function** | measured physical path separation agrees with the Jacobi prediction inside a quantified error budget | **not attempted** — no physical measurement exists in this repository |
 | **Proof of industrial relevance** | using the sensitivity model produces a better decision: fewer gaps, better coverage, lower endpoint error | **not attempted** |
 

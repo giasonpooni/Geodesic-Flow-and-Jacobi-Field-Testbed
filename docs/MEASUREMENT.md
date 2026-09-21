@@ -19,6 +19,106 @@ industrial validation are supplied by this repository.
 - timestamped encoder and external metrology observations;
 - calibration, fixture, software, and dataset identifiers.
 
+## The programme is declared in code, and has not started
+
+`engine/campaign.py` holds the coupon stages, their dependencies, the
+perturbation plan and the scales, with status `not-started`.
+`conformance(program, trials)` checks a submitted set of `MeasurementRecord`s
+against every structural rule -- both axes perturbed, calibration and
+validation split by *coupon* rather than by run, achieved perturbations
+reported, one observation mode per stage, at least two scales. It is a checker
+rather than a loader, because the programme is what exists and the data is
+what it is waiting for.
+
+Conformance is bookkeeping and never reports agreement. A set of trials can
+satisfy every rule and disagree with the prediction entirely, which is the
+point: the programme is what would make a disagreement mean something, not
+what decides whether there is one.
+
+`evaluate_differential_case(case, plate, cylinder)` and
+`campaign_flatness_control(cases, records)` are the differential comparison the
+first stage is built around. Each plate-cylinder pair carries its own
+`DifferentialCase` — its own predicted difference, covariance and Jacobians —
+because a campaign runs several perturbations, replicates and scales, and one
+array applied to all of them would be broadcast across unlike conditions. A cylinder is visibly curved and
+intrinsically flat, and the runtime computes its transfer map equal to the
+plate's to 1e-13. Two things about that are easy to overstate.
+
+**The measured separations are not expected to be identical.** They are
+identical in `Phi`; at finite perturbation the cylinder has a transverse
+normal curvature the plate does not, so the two ambient-chord predictions
+differ at second order -- the same effect that makes the cylinder's validity
+envelope 15.7% tighter. The intrinsic null and the observation-space null are
+separate hypotheses, and the second is tested on
+
+```text
+r_D = (y_c - y_p) - (yhat_c - yhat_p)
+```
+
+rather than on `y_c - y_p` against zero, which would reject a correct runtime
+on a coupon pair it predicts perfectly.
+
+**A shared error does not cancel merely by being named in both budgets.** For
+a parameter `theta` common to the two coupons the difference carries
+`(J_c - J_p) C_theta (J_c - J_p)^T`, which vanishes only where both coupons
+felt it identically. A calibration scale applied through the same transform
+does; a fixture datum re-established when the second coupon was mounted does
+not. So the differential covariance is
+`Sigma_p + Sigma_c - Sigma_pc - Sigma_cp`, built from either a declared
+`DifferentialCovariance` or a `SharedDifferential` carrying both Jacobians,
+and without either the control reports
+`differential_covariance_not_established` rather than combining two scalar
+uncertainties in quadrature — which would assume independence, the opposite of
+the cancellation being claimed. A caller holding the true `(2n, 2n)` joint
+covariance passes it to `DifferentialCase.from_joint`, which forms
+`Sigma_D = D Sigma_joint D^T` with `D = [-I  I]`.
+
+`SharedDifferential.differential_to_separate_variance_ratio()` reports what the
+subtraction actually did. It is **not a fraction**: zero when both coupons felt
+the parameter identically, one when only one of them felt it, and **two** when
+they felt it oppositely — differencing then amplifies the shared uncertainty
+rather than removing it. It is not clipped, because a value above one is the
+finding.
+
+Each covariance component declares what it contains, and a source named on
+both sides is refused. The independent parts are `IndependentCovariance`
+objects the case declares — never a record's bare `measurement_covariance`.
+That distinction is the whole of the guarantee: an undeclared matrix says how
+big it is and nothing about what is inside it, so lifting one off each record,
+calling it independent and adding a shared block leaves the overlap check with
+nothing on one side to compare. A case that supplies a shared block without
+both declared components is refused at construction.
+
+A case declares either a complete `DifferentialCovariance` or the components
+to build one from, never both: with both, nothing says which produced the
+covariance a verdict was read against.
+
+The provenance fields are verified rather than carried. `grid_digest` is
+required and checked against the trials' own arclength grid, `calibration_ids`
+against the calibrations the trials ran under, and `prediction_digest` against
+the `prediction_report_digest` the trials were compared with. Duplicate run ids
+are refused before any pairing, since a run id is how a case names its
+evidence.
+
+The campaign-wide boolean is reported only when every matched pair was tested.
+`matched_pairs`, `tested_pairs`, `untested_pairs` and `covariance_status` are
+always reported, so one tested pair among eight cannot read as a consistent
+campaign.
+
+Trials are paired on **achieved** perturbations within their own declared
+uncertainty, and a pair whose observation mode, units, frames, filter identity,
+calibration relationship, calibration transform digest, rejection mask or
+outlier rule differ is refused: the difference of two different quantities has
+no null hypothesis. How close two achieved perturbations must be is a policy
+the case declares, not a constant.
+
+A chi-square outside the two-sided band is reported as
+`lower-tail-inconsistent` or `upper-tail-inconsistent`, each with its candidate
+interpretations. A statistic cannot distinguish an overstated covariance from a
+prediction that is not independent of the observation, from parameters fitted
+on the evaluated data, or from fewer effective degrees of freedom than
+declared — so the result lists them rather than naming one.
+
 ## Filtering
 
 Filtering changes the observation model and is confined to the measurement and

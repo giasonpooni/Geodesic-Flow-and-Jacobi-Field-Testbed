@@ -1,4 +1,11 @@
-"""Curved-surface geodesic sensitivity: transfer maps and tolerance contracts."""
+# SPDX-License-Identifier: MPL-2.0
+"""Curved-surface geodesic sensitivity: transfer maps and tolerance contracts.
+
+This is a computational substrate that an instrument may consume, not a module
+inside one. The whole of what it offers outward is the transfer record;
+:mod:`geodesic_testbed.boundary` is that contract on its own, and
+``docs/BOUNDARY.md`` says what stays on each side of it.
+"""
 
 from .applications import (
     InspectionAssessment,
@@ -8,12 +15,46 @@ from .applications import (
     assess_inspection,
     assess_manufacturing,
 )
+from .boundary import read_record, write_record
+from .engine.campaign import (
+    CAMPAIGN_STATUS,
+    ConformanceReport,
+    CouponProgram,
+    CouponStage,
+    DifferentialCase,
+    DifferentialCovariance,
+    IndependentCovariance,
+    PerturbationPlan,
+    SharedDifferential,
+    campaign_flatness_control,
+    conformance,
+    default_program,
+    evaluate_differential_case,
+    grid_digest,
+)
+from .engine.contract import (
+    BOUNDARY_CONTRACT,
+    DEFAULT_FRAME,
+    RUNTIME_VERSION,
+    CalibrationBinding,
+    Frame,
+    Provenance,
+    StartingCovariance,
+    UpstreamArtefact,
+)
+from .engine.envelope import VALIDITY_PROBES, measure_validity_envelope
+from .engine.imported_path import (
+    artefact_from_envelope,
+    transfer_map_from_artefact,
+    transfer_record_from_artefact,
+)
 from .engine.measurement import (
     MEASUREMENT_SCHEMA,
     MeasurementRecord,
     Perturbation,
     Uncertainty,
     compare,
+    prediction_binding,
 )
 from .engine.observation_model import (
     FilteredPrediction,
@@ -23,13 +64,59 @@ from .engine.observation_model import (
     filtered_noise_covariance,
     operator_digest,
 )
+from .engine.output_covariance import (
+    BLOCKS,
+    LatentTruth,
+    NoiseModel,
+    OutputCovariance,
+    SharedParameters,
+    assemble,
+    chi_square_cdf,
+    chi_square_quantile,
+    registration_parameter,
+    stacked_operator,
+)
+from .engine.path_artefact import (
+    PATH_GEOMETRY_SCHEMA,
+    PathGeometryArtefact,
+    SamplingPolicy,
+)
+from .engine.planning import (
+    ChartBoundary,
+    Objective,
+    Observability,
+    ObstacleDiscs,
+    StackedObservability,
+    combined_clearance,
+    heading_fan,
+    observability_gramian,
+    offset_courses,
+    pareto_front,
+    route_label,
+    stacked_observability,
+    weighted_cost,
+)
+from .engine.prediction import (
+    STAGES,
+    Prediction,
+    ResidualStatistics,
+    chord_from_intrinsic,
+    chord_from_tangent,
+    first_order_prediction,
+    has_closed_form_separation,
+    instrument_from_chord,
+    intrinsic_from_tangent,
+    predict_chord,
+    residual_statistics,
+)
 from .engine.record import (
     RECORD_SCHEMA,
-    FirstOrderValidity,
+    SUPPORTED_RECORD_SCHEMAS,
     Resolution,
     SupportsTransferRecord,
     TransferRecord,
     Units,
+    ValidityEnvelope,
     to_transfer_record,
 )
 from .engine.routing import (
@@ -43,6 +130,18 @@ from .engine.routing import (
 from .engine.surfaces import Chart
 from .engine.tracking import AcquisitionSpec, TrackingOutcome, evaluate_tracking
 from .engine.transfer import FocusEvent, TransferMap
+from .engine.uncertainty import (
+    Contribution,
+    UncertaintyBudget,
+    budget,
+    calibration_transform,
+    curvature_sensitivity,
+    fixture_datum,
+    path_registration,
+    sensor_noise,
+    starting_pose,
+    surface_reconstruction,
+)
 from .jacobi import (
     JacobiTrace,
     constant_curvature_trace,
@@ -52,13 +151,71 @@ from .jacobi import (
 from .tolerances import PathTolerance
 
 __all__ = [
+    "BOUNDARY_CONTRACT",
+    "DEFAULT_FRAME",
     "MEASUREMENT_SCHEMA",
     "RECORD_SCHEMA",
+    "RUNTIME_VERSION",
+    "SUPPORTED_RECORD_SCHEMAS",
+    "STAGES",
     "AcquisitionSpec",
+    "CalibrationBinding",
+    "CAMPAIGN_STATUS",
+    "ConformanceReport",
+    "ChartBoundary",
+    "Contribution",
+    "CouponProgram",
+    "Objective",
+    "Observability",
+    "ObstacleDiscs",
+    "combined_clearance",
+    "heading_fan",
+    "observability_gramian",
+    "offset_courses",
+    "pareto_front",
+    "route_label",
+    "weighted_cost",
+    "CouponStage",
+    "PerturbationPlan",
+    "Prediction",
+    "conformance",
+    "default_program",
+    "DifferentialCase",
+    "DifferentialCovariance",
+    "IndependentCovariance",
+    "SharedDifferential",
+    "campaign_flatness_control",
+    "evaluate_differential_case",
+    "grid_digest",
+    "ResidualStatistics",
+    "UncertaintyBudget",
+    "budget",
+    "calibration_transform",
+    "curvature_sensitivity",
+    "fixture_datum",
+    "path_registration",
+    "sensor_noise",
+    "starting_pose",
+    "surface_reconstruction",
+    "chord_from_intrinsic",
+    "chord_from_tangent",
+    "first_order_prediction",
+    "has_closed_form_separation",
+    "instrument_from_chord",
+    "intrinsic_from_tangent",
+    "predict_chord",
+    "residual_statistics",
+    "Frame",
+    "Provenance",
+    "StartingCovariance",
+    "UpstreamArtefact",
+    "prediction_binding",
+    "read_record",
+    "write_record",
     "Chart",
     "ConstraintMargin",
     "CoverageSpec",
-    "FirstOrderValidity",
+    "ValidityEnvelope",
     "FocusEvent",
     "MeasurementRecord",
     "ObservationModel",
@@ -93,6 +250,26 @@ __all__ = [
     "constant_curvature_trace",
     "finite_angular_separation",
     "integrate_jacobi",
+    "BLOCKS",
+    "LatentTruth",
+    "NoiseModel",
+    "OutputCovariance",
+    "PATH_GEOMETRY_SCHEMA",
+    "PathGeometryArtefact",
+    "SamplingPolicy",
+    "SharedParameters",
+    "StackedObservability",
+    "VALIDITY_PROBES",
+    "artefact_from_envelope",
+    "assemble",
+    "chi_square_cdf",
+    "chi_square_quantile",
+    "measure_validity_envelope",
+    "registration_parameter",
+    "stacked_observability",
+    "stacked_operator",
+    "transfer_map_from_artefact",
+    "transfer_record_from_artefact",
 ]
 
-__version__ = "0.1.0"
+__version__ = RUNTIME_VERSION

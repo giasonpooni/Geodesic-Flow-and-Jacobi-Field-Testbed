@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Route selection from declared process limits, not from a chosen number."""
 
 from __future__ import annotations

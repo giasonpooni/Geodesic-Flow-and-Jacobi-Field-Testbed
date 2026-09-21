@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The record a physical trial has to produce for its numbers to count.
 
 Nothing in this repository has been measured. What this module supplies is the
@@ -38,9 +39,11 @@ from typing import Any
 
 import numpy as np
 
+from .contract import CalibrationBinding, validated_covariance
 from .observation import mode as observation_mode
 from .observation_model import FilteredPrediction
-from .transfer import _validated_covariance
+from .output_covariance import OutputCovariance
+from .record import TransferRecord, to_transfer_record
 
 MEASUREMENT_SCHEMA = "path-sensitivity-observation-v1"
 
@@ -224,7 +227,29 @@ class MeasurementRecord:
         if not {"length", "angle"} <= set(self.units):
             raise ValueError("units must declare both 'length' and 'angle'")
         if self.measurement_covariance is not None:
-            _validated_covariance(self.measurement_covariance, "measurement_covariance", size=None)
+# Admitted or refused, never repaired -- the shared validator in
+            # contract.py, with size=None because this covariance is over the
+            # trial's whole observation vector rather than a 2x2 pose.
+            matrix = validated_covariance(
+                self.measurement_covariance, "measurement_covariance", size=None
+            )
+            # Being a covariance is not enough: it has to be a covariance *of
+            # this trial*. A 1x1 on a three-sample run passes every value check
+            # above and is a covariance of something else, so the shape is
+            # bound to the observation vector it claims to describe.
+            expected = len(self.signed_transverse_separation)
+            if not expected:
+                raise ValueError(
+                    "a measurement covariance was declared but the trial carries no "
+                    "measured separations for it to be the covariance of"
+                )
+            if matrix.shape[0] != expected:
+                raise ValueError(
+                    f"measurement_covariance is {matrix.shape[0]}x{matrix.shape[0]} and "
+                    f"this trial measured {expected} separations; a covariance that is "
+                    "not on the observation vector pairs uncertainty with the wrong "
+                    "arc lengths"
+                )
         for name in (
             "geometry_model_digest",
             "calibration_transform_digest",
@@ -250,7 +275,7 @@ class MeasurementRecord:
 
     def to_dict(self) -> dict[str, Any]:
         if self.measurement_covariance is not None:
-            _validated_covariance(self.measurement_covariance, "measurement_covariance", size=None)
+            validated_covariance(self.measurement_covariance, "measurement_covariance", size=None)
         payload = asdict(self)
         payload["schema"] = MEASUREMENT_SCHEMA
         payload["perturbation"] = self.perturbation.to_dict()
@@ -265,12 +290,32 @@ class MeasurementRecord:
         return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
 
 
+def prediction_binding(record: MeasurementRecord) -> CalibrationBinding:
+    """The trial's calibration state, in the contract's vocabulary.
+
+    The instrument names its calibration one way and the boundary contract
+    another; this is the single place the two are translated, so a comparison
+    can ask whether a prediction and a trial share an instrument state without
+    either side learning the other's field names.
+    """
+    return CalibrationBinding(
+        calibration_ids=(record.calibration_id,) if record.calibration_id else (),
+        registration_id=record.calibration_transform_digest,
+        reconstruction_version=record.reconstruction_version,
+        instrument_id=record.geometry_model,
+        note=f"from trial {record.run_id}",
+    )
+
+
 def compare(
     record: MeasurementRecord,
     predicted_separation,
     *,
     mode: str | None = None,
     resolvability_threshold: float | None = None,
+    prediction_source: Any = None,
+    covariance: OutputCovariance | None = None,
+    coverage: float = 0.95,
 ):
     """Residual of a prediction against a trial, refusing a mismatched comparison.
 
@@ -289,18 +334,81 @@ def compare(
     comparison would read as a model failure that is really a
     units-of-measurement error. The filter check: the same, for the smoothing.
 
+    ``covariance`` is the assembled ``Sigma_y`` the residual is judged against
+    -- ``A C0 A^T + J C_theta J^T + R + Sigma_num``, from
+    :mod:`~geodesic_testbed.engine.output_covariance`. When it is supplied, or
+    when the trial declares its own ``measurement_covariance``, the result
+    carries the whitened residual, the chi-square with its degrees of freedom,
+    a *two-sided* acceptance band and the empirical interval coverage. When
+    neither is available the result says so in ``residual_statistics`` rather
+    than leaving the scalars to be read as a verdict: a maximum absolute
+    residual throws away the covariance, cannot be compared between
+    instruments, and cannot be held to any threshold that is not already in
+    the measurement's own units.
+
     ``resolvability_threshold``, when given, is the signal-to-noise bar the
     *instrument protocol* declares. This module reports the ratio and never
     invents the bar.
+
+    ``prediction_source`` is the transfer record the prediction came from. It
+    is optional because a prediction can be handed over as bare numbers, and
+    that is the case worth discouraging: supplying the record lets this
+    function check the two things the numbers cannot carry. Units, because a
+    prediction in metres against a trial in millimetres is a thousandfold error
+    that agrees in shape. And calibration, because a record *bound* to one
+    instrument state and a trial run under another are not comparable however
+    well they agree. A record that declares no calibration is not an error --
+    a prediction from an analytic surface correctly declares none -- but the
+    result says so rather than leaving the reader to assume a tie that was
+    never established.
     """
     if record.measurement_covariance is not None:
-        _validated_covariance(record.measurement_covariance, "measurement_covariance", size=None)
+        validated_covariance(record.measurement_covariance, "measurement_covariance", size=None)
     expected = mode or record.observation_mode
     if expected != record.observation_mode:
         raise ValueError(
             f"prediction is in {expected!r} but the trial measured "
             f"{record.observation_mode!r}; convert one before comparing"
         )
+
+    prediction_record: TransferRecord | None = (
+        None if prediction_source is None else to_transfer_record(prediction_source)
+    )
+    calibration: dict[str, Any] = {
+        "trial": prediction_binding(record).to_dict(),
+        "prediction": (
+            None if prediction_record is None else prediction_record.calibration.to_dict()
+        ),
+        "agreed": None,
+    }
+    if prediction_record is not None:
+        trial_units = dict(record.units)
+        declared = prediction_record.units.to_dict()
+        clashes = [
+            (key, declared[key], trial_units[key])
+            for key in declared
+            if key in trial_units and declared[key] != trial_units[key]
+        ]
+        if clashes:
+            detail = "; ".join(
+                f"the prediction's {key} unit is {mine!r} but the trial's is {theirs!r}"
+                for key, mine, theirs in clashes
+            )
+            raise ValueError(
+                f"{detail}. A comparison in two different units agrees in shape and "
+                "disagrees by a scale factor nothing else here would catch"
+            )
+        bound = prediction_record.calibration
+        if bound.bound:
+            agreed = bound.agrees_with(prediction_binding(record))
+            calibration["agreed"] = agreed
+            if not agreed:
+                raise ValueError(
+                    f"the prediction is bound to calibration {sorted(bound.calibration_ids)} "
+                    f"and the trial ran under {record.calibration_id!r} at reconstruction "
+                    f"{record.reconstruction_version!r}; a prediction bound to a different "
+                    "instrument state is not comparable with this measurement"
+                )
 
     filtered = isinstance(predicted_separation, FilteredPrediction)
     if record.filter_identifier != "none":
@@ -367,6 +475,7 @@ def compare(
             None if resolvability_threshold is None
             else bool(snr >= float(resolvability_threshold))
         ),
+        "calibration": calibration,
         "prediction_report_digest": record.prediction_report_digest,
         "raw_data_digest": record.raw_data_digest,
         "filter": {
@@ -378,10 +487,73 @@ def compare(
         },
     }
     if filtered and predicted_separation.noise_covariance is not None:
-        _validated_covariance(
+        validated_covariance(
             predicted_separation.noise_covariance, "filtered R", predicted.size
         )
         result["filtered_noise_covariance_shape"] = list(
             np.shape(predicted_separation.noise_covariance)
         )
+    result["residual_statistics"] = _residual_statistics(
+        record, residual, covariance=covariance, coverage=coverage
+    )
     return result
+
+
+def _residual_statistics(
+    record: MeasurementRecord,
+    residual: np.ndarray,
+    *,
+    covariance: OutputCovariance | None,
+    coverage: float,
+) -> dict[str, Any]:
+    """The covariance-aware half of the comparison, or a statement of why not.
+
+    A scalar summary of a residual is not a comparison statistic. It cannot be
+    compared between instruments, it has no distribution, and the only bar that
+    can be put against it is one already in the measurement's units -- which is
+    a declared limit smuggled in as arithmetic. What replaces it is the
+    whitened residual and a chi-square with stated degrees of freedom, against
+    a band that is closed at *both* ends.
+    """
+    if covariance is None and record.measurement_covariance is None:
+        return {
+            "available": False,
+            "reason": (
+                "no covariance: the trial declares no measurement_covariance and none "
+                "was assembled for the comparison. The scalars above are a summary of "
+                "the residual and not a statistic about it."
+            ),
+        }
+    total = covariance
+    source = "assembled"
+    if total is None:
+        source = "trial-declared"
+        total = OutputCovariance(
+            arclength=np.asarray(record.arclength, dtype=float),
+            outputs=("signed-transverse-separation",),
+            blocks={
+                "observation-noise": np.asarray(record.measurement_covariance, dtype=float)
+            },
+            note="the covariance the trial itself declared",
+        )
+    if total.degrees_of_freedom != residual.size:
+        raise ValueError(
+            f"the covariance is over {total.degrees_of_freedom} scalars and the "
+            f"residual has {residual.size}; they are not the same comparison"
+        )
+    outcome = total.accepts(residual, coverage=coverage)
+    whitened = total.whiten(residual)
+    return {
+        "available": True,
+        "source": source,
+        "chi_square": outcome["statistic"],
+        "degrees_of_freedom": outcome["degrees_of_freedom"],
+        "reduced_chi_square": outcome["reduced"],
+        "probability_less_than": outcome["probability_less_than"],
+        "band": outcome["band"],
+        "verdict": outcome["verdict"],
+        "accepted": outcome["accepted"],
+        "max_abs_whitened_residual": float(np.max(np.abs(whitened))),
+        "interval_coverage": total.interval_coverage(residual, sigmas=1.0),
+        "shares": outcome["shares"],
+    }
