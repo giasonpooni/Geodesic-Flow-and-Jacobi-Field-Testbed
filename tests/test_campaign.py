@@ -21,12 +21,14 @@ from geodesic_testbed.engine.campaign import (
     CouponStage,
     DifferentialCase,
     DifferentialCovariance,
+    IndependentCovariance,
     PerturbationPlan,
     SharedDifferential,
     campaign_flatness_control,
     conformance,
     default_program,
     evaluate_differential_case,
+    grid_digest,
 )
 
 ARCLENGTH = [0.0, 100.0, 200.0]
@@ -284,7 +286,25 @@ def _shared(samples: int = 3, *, fixture_differs: bool = True) -> SharedDifferen
 
 
 def _independent(samples: int = 3, sigma: float = 0.02):
+    """A bare matrix, for a record's own ``measurement_covariance`` field."""
     return (np.eye(samples) * sigma**2).tolist()
+
+
+#: The arclength grid every trial in this file is on.
+GRID = [0.0, 100.0, 200.0]
+
+
+def _typed_independent(
+    *, sources=("sensor-noise",), sigma: float = 0.02, grid=None, calibration=("bench-cal-2026-09",)
+) -> IndependentCovariance:
+    """A declared independent component: a matrix that says what is inside it."""
+    return IndependentCovariance(
+        matrix=np.eye(3) * sigma**2,
+        basis="a repeatability study on this coupon",
+        sources=sources,
+        calibration_ids=calibration,
+        grid_digest=grid_digest(GRID if grid is None else grid),
+    )
 
 
 def _case(**overrides) -> DifferentialCase:
@@ -292,10 +312,23 @@ def _case(**overrides) -> DifferentialCase:
         "plate_run_id": "p1",
         "cylinder_run_id": "c1",
         "predicted_difference": np.array([0.0, 0.05, 0.11]),
-        "prediction_digest": "sha256:prediction",
+        # _trial() writes this digest into prediction_report_digest, so the
+        # case is bound to the report the trials were compared against.
+        "prediction_digest": "sha256:eee",
     }
     fields.update(overrides)
     return DifferentialCase(**fields)
+
+
+def _built(**overrides) -> DifferentialCase:
+    """A case that builds its covariance from declared components."""
+    fields = {
+        "shared_parameters": _shared(),
+        "plate_independent": _typed_independent(),
+        "cylinder_independent": _typed_independent(),
+    }
+    fields.update(overrides)
+    return _case(**fields)
 
 
 # -- the two nulls ---------------------------------------------------------
@@ -313,12 +346,15 @@ def test_the_residual_is_measured_against_the_predicted_difference_not_zero() ->
                    separation=[0.0, 1.72, 3.44], measurement_covariance=_independent())
     cylinder = _trial(stage="rolled-cylinder", coupon="c1", run="c1",
                       separation=[0.03, 1.73, 3.57], measurement_covariance=_independent())
-    row = evaluate_differential_case(_case(shared_parameters=_shared()), plate, cylinder)
+    row = evaluate_differential_case(_built(), plate, cylinder)
 
     assert row["statistic"]["accepted"] is True
     assert row["max_abs_residual"] < 0.05
     assert row["max_abs_observed_difference"] > 2.5 * row["max_abs_residual"]
-    assert row["prediction_digest"] == "sha256:prediction"
+    assert row["prediction_digest"] == plate.prediction_report_digest, (
+        "the case's predicted difference is bound to the report the trials were "
+        "actually compared against, not to a label of its own"
+    )
 
 
 def test_a_real_disagreement_still_fails() -> None:
@@ -326,7 +362,7 @@ def test_a_real_disagreement_still_fails() -> None:
                    separation=[0.0, 1.72, 3.44], measurement_covariance=_independent())
     cylinder = _trial(stage="rolled-cylinder", coupon="c1", run="c1",
                       separation=[0.0, 2.77, 4.55], measurement_covariance=_independent())
-    row = evaluate_differential_case(_case(shared_parameters=_shared()), plate, cylinder)
+    row = evaluate_differential_case(_built(), plate, cylinder)
     assert row["statistic"]["accepted"] is False
     assert row["statistic"]["verdict"] == "upper-tail-inconsistent"
     assert row["statistic"]["interpretations"]
@@ -346,7 +382,7 @@ def test_a_residual_of_exactly_zero_is_rejected_by_the_lower_tail() -> None:
                    separation=[0.0, 1.72, 3.44], measurement_covariance=_independent())
     cylinder = _trial(stage="rolled-cylinder", coupon="c1", run="c1",
                       separation=[0.0, 1.77, 3.55], measurement_covariance=_independent())
-    row = evaluate_differential_case(_case(shared_parameters=_shared()), plate, cylinder)
+    row = evaluate_differential_case(_built(), plate, cylinder)
 
     assert row["max_abs_residual"] == pytest.approx(0.0, abs=1e-12)
     assert row["statistic"]["verdict"] == "lower-tail-inconsistent"
@@ -377,6 +413,7 @@ def test_a_declared_difference_covariance_is_enough_on_its_own() -> None:
                 matrix=np.eye(3) * 4e-4,
                 basis="a declared differential repeatability study",
                 independent_sources=("sensor-noise",),
+                grid_digest=grid_digest(GRID),
             )
         ),
         plate,
@@ -586,15 +623,16 @@ def test_a_campaign_boolean_is_withheld_while_any_pair_is_untested() -> None:
     cylinder_a = _trial(stage="rolled-cylinder", coupon="c1", run="c1",
                         separation=[0.03, 1.73, 3.57],
                         measurement_covariance=_independent())
-    # The second pair declares no covariance at all, so it cannot be tested.
+    # The second pair declares no covariance components at all, so nothing
+    # establishes a Sigma_D for it and it cannot be tested.
     plate_b = _trial(stage="flat-plate", coupon="p2", run="p2", separation=[0.0, 1.72, 3.44])
     cylinder_b = _trial(stage="rolled-cylinder", coupon="c2", run="c2",
                         separation=[0.03, 1.73, 3.57])
 
     result = campaign_flatness_control(
         [
-            _case(shared_parameters=_shared()),
-            _case(plate_run_id="p2", cylinder_run_id="c2", shared_parameters=_shared()),
+            _built(),
+            _case(plate_run_id="p2", cylinder_run_id="c2"),
         ],
         [plate_a, cylinder_a, plate_b, cylinder_b],
     )
@@ -614,7 +652,7 @@ def test_a_fully_tested_campaign_does_report_a_boolean() -> None:
     cylinder = _trial(stage="rolled-cylinder", coupon="c1", run="c1",
                       separation=[0.03, 1.73, 3.57], measurement_covariance=_independent())
     result = campaign_flatness_control(
-        [_case(shared_parameters=_shared())], [plate, cylinder]
+        [_built()], [plate, cylinder]
     )
     assert result["covariance_status"] == "complete"
     assert result["all_tested_consistent"] is True
@@ -650,11 +688,9 @@ def test_each_pair_is_judged_against_its_own_prediction() -> None:
 
     own = campaign_flatness_control(
         [
-            _case(predicted_difference=np.array([0.0, 0.05, 0.10]),
-                  shared_parameters=_shared()),
-            _case(plate_run_id="p2", cylinder_run_id="c2",
-                  predicted_difference=np.array([0.0, 0.30, 0.60]),
-                  shared_parameters=_shared()),
+            _built(predicted_difference=np.array([0.0, 0.05, 0.10])),
+            _built(plate_run_id="p2", cylinder_run_id="c2",
+                   predicted_difference=np.array([0.0, 0.30, 0.60])),
         ],
         records,
     )
@@ -663,11 +699,9 @@ def test_each_pair_is_judged_against_its_own_prediction() -> None:
 
     shared_prediction = campaign_flatness_control(
         [
-            _case(predicted_difference=np.array([0.0, 0.05, 0.10]),
-                  shared_parameters=_shared()),
-            _case(plate_run_id="p2", cylinder_run_id="c2",
-                  predicted_difference=np.array([0.0, 0.05, 0.10]),
-                  shared_parameters=_shared()),
+            _built(predicted_difference=np.array([0.0, 0.05, 0.10])),
+            _built(plate_run_id="p2", cylinder_run_id="c2",
+                   predicted_difference=np.array([0.0, 0.05, 0.10])),
         ],
         records,
     )
@@ -698,3 +732,121 @@ def test_a_conforming_set_still_claims_no_physical_result() -> None:
     assert default_program().status == "not-started"
     assert "satisfied" in report.to_dict()
     assert "agreement" not in str(report.to_dict())
+
+
+# -- the provenance route that was open ------------------------------------
+
+
+def test_a_bare_record_covariance_cannot_stand_in_for_a_declared_component() -> None:
+    """The hole this closes, stated as the case that used to pass.
+
+    The old fallback lifted both records' ``measurement_covariance``, called
+    them independent and added the shared block -- constructing a
+    ``DifferentialCovariance`` whose ``independent_sources`` was empty. If
+    those matrices already contained the calibration transform and the shared
+    block carried it too, the total held it twice and the overlap check could
+    not fire, because there was nothing on one side of it to compare.
+
+    A bare matrix says how big it is and nothing about what is inside it, so
+    it is no longer accepted at all.
+    """
+    with pytest.raises(ValueError, match="Lifting a bare"):
+        _case(shared_parameters=_shared())
+
+    plate = _trial(stage="flat-plate", coupon="p1", run="p1",
+                   measurement_covariance=_independent())
+    cylinder = _trial(stage="rolled-cylinder", coupon="c1", run="c1",
+                      measurement_covariance=_independent())
+    row = evaluate_differential_case(_case(), plate, cylinder)
+    assert row["differential_covariance"] == "not-established", (
+        "declared measurement covariances on the records are not a differential "
+        "covariance; nothing says whether they are independent of each other"
+    )
+    assert row["statistic"] is None
+
+
+def test_the_same_source_in_both_components_is_refused_through_the_real_path() -> None:
+    """Not only when both lists are populated by hand.
+
+    This is the route that mattered: the independent components declare the
+    calibration transform, the shared block carries it, and the case is
+    refused at declaration rather than producing a total that counts it twice.
+    """
+    with pytest.raises(ValueError, match="carry it twice"):
+        _case(
+            shared_parameters=_shared(),
+            plate_independent=_typed_independent(sources=("calibration-transform",)),
+            cylinder_independent=_typed_independent(sources=("sensor-noise",)),
+        )
+
+
+def test_disjoint_components_give_the_sum_they_should() -> None:
+    plate = _trial(stage="flat-plate", coupon="p1", run="p1",
+                   separation=[0.0, 1.72, 3.44])
+    cylinder = _trial(stage="rolled-cylinder", coupon="c1", run="c1",
+                      separation=[0.03, 1.73, 3.57])
+    shared = _shared()
+    row = evaluate_differential_case(
+        _built(
+            shared_parameters=shared,
+            plate_independent=_typed_independent(sources=("sensor-noise",)),
+            cylinder_independent=_typed_independent(sources=("path-registration",)),
+        ),
+        plate,
+        cylinder,
+    )
+    assert row["differential_covariance"] == "established"
+    assert row["covariance"]["independent_sources"] == ["path-registration", "sensor-noise"]
+    assert row["covariance"]["shared_sources"] == ["calibration-transform", "fixture-datum"]
+    assert set(row["covariance"]["accounts_for"]) == {
+        "sensor-noise", "path-registration", "calibration-transform", "fixture-datum"
+    }
+
+
+def test_a_component_bound_to_the_wrong_grid_calibration_or_report_is_refused() -> None:
+    """Provenance fields nothing verifies are labels."""
+    plate = _trial(stage="flat-plate", coupon="p1", run="p1")
+    cylinder = _trial(stage="rolled-cylinder", coupon="c1", run="c1")
+
+    with pytest.raises(ValueError, match="is for grid"):
+        evaluate_differential_case(
+            _built(plate_independent=_typed_independent(grid=[0.0, 1.0, 2.0])),
+            plate, cylinder,
+        )
+
+    with pytest.raises(ValueError, match="carries no grid_digest"):
+        evaluate_differential_case(
+            _built(plate_independent=IndependentCovariance(
+                matrix=np.eye(3) * 4e-4, basis="a study", sources=("sensor-noise",),
+            )),
+            plate, cylinder,
+        )
+
+    with pytest.raises(ValueError, match="certified against"):
+        evaluate_differential_case(
+            _built(plate_independent=_typed_independent(
+                calibration=("bench-cal-2019-01",))),
+            plate, cylinder,
+        )
+
+    with pytest.raises(ValueError, match="matches no report"):
+        evaluate_differential_case(
+            _built(prediction_digest="sha256:some-other-report"), plate, cylinder
+        )
+
+
+def test_duplicate_run_ids_are_refused_before_anything_is_paired() -> None:
+    """A dictionary keyed on run id would silently keep the last one.
+
+    A run id is how a case names its evidence. Two trials sharing one means
+    the comparison used whichever happened to come second, and nothing in the
+    result would say so.
+    """
+    plate = _trial(stage="flat-plate", coupon="p1", run="p1",
+                   separation=[0.0, 1.72, 3.44])
+    cylinder = _trial(stage="rolled-cylinder", coupon="c1", run="c1",
+                      separation=[0.03, 1.73, 3.57])
+    impostor = _trial(stage="rolled-cylinder", coupon="c9", run="c1",
+                      separation=[9.0, 9.0, 9.0])
+    with pytest.raises(ValueError, match=r"share the run ids \['c1'\]"):
+        campaign_flatness_control([_built()], [plate, cylinder, impostor])

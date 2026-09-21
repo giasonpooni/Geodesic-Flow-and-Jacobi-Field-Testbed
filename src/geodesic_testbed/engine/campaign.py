@@ -713,6 +713,66 @@ class DifferentialCovariance:
 
 
 @dataclass(frozen=True)
+class IndependentCovariance:
+    """One trial's own covariance, with the sources it is declared to contain.
+
+    A bare ``measurement_covariance`` off a record says how big it is and
+    nothing about what is inside it. That is enough to validate and not enough
+    to add: if it already contains the calibration transform, and a shared
+    block carries the calibration transform too, the sum counts it twice and
+    no check on either half can see it.
+
+    So the independent components of a differential covariance are declared
+    here, not lifted from the records. ``sources`` is what this matrix
+    contains; construction of the difference refuses any source that also
+    appears in the shared block.
+    """
+
+    matrix: Array
+    basis: str
+    sources: tuple[str, ...]
+    calibration_ids: tuple[str, ...] = ()
+    grid_digest: str = ""
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        from .contract import validated_covariance
+
+        if not self.basis:
+            raise ValueError(
+                "an independent covariance must say how it was arrived at"
+            )
+        if not self.sources:
+            raise ValueError(
+                "an independent covariance must name the sources it contains; "
+                "an undeclared one cannot be added to a shared block without "
+                "risking counting something twice"
+            )
+        for source in self.sources:
+            if source not in UNCERTAINTY_SOURCES:
+                raise ValueError(f"sources must be in {UNCERTAINTY_SOURCES}")
+        object.__setattr__(
+            self, "matrix", validated_covariance(self.matrix, "Sigma_ind", size=None)
+        )
+        for name in ("sources", "calibration_ids"):
+            object.__setattr__(self, name, tuple(getattr(self, name)))
+
+    @property
+    def samples(self) -> int:
+        return int(self.matrix.shape[0])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "basis": self.basis,
+            "samples": self.samples,
+            "sources": list(self.sources),
+            "calibration_ids": list(self.calibration_ids),
+            "grid_digest": self.grid_digest,
+            "note": self.note,
+        }
+
+
+@dataclass(frozen=True)
 class DifferentialCase:
     """One plate-cylinder pair, with the prediction and covariance that are *its*.
 
@@ -735,6 +795,11 @@ class DifferentialCase:
     prediction_digest: str
     difference_covariance: DifferentialCovariance | None = None
     shared_parameters: SharedDifferential | None = None
+    #: The two trials' own covariances, *with* the sources they contain. Bare
+    #: record covariances are not used: an undeclared matrix cannot be added
+    #: to a shared block without risking counting a source twice.
+    plate_independent: IndependentCovariance | None = None
+    cylinder_independent: IndependentCovariance | None = None
     coverage: float = 0.95
     achieved_match_sigmas: float = DEFAULT_ACHIEVED_MATCH_SIGMAS
     note: str = ""
@@ -764,11 +829,49 @@ class DifferentialCase:
         for other, name in (
             (self.difference_covariance, "difference_covariance"),
             (self.shared_parameters, "shared_parameters"),
+            (self.plate_independent, "plate_independent"),
+            (self.cylinder_independent, "cylinder_independent"),
         ):
             if other is not None and other.samples != predicted.size:
                 raise ValueError(
                     f"{name} is on {other.samples} samples and the predicted "
                     f"difference has {predicted.size}"
+                )
+        # One route or the other. A case carrying both leaves it ambiguous
+        # which one produced the number a verdict was read off, and a reader
+        # cannot tell from the result.
+        if self.difference_covariance is not None and any(
+            component is not None
+            for component in (
+                self.shared_parameters,
+                self.plate_independent,
+                self.cylinder_independent,
+            )
+        ):
+            raise ValueError(
+                "a case declares either a complete difference_covariance or the "
+                "components to build one from, not both: with both, nothing says "
+                "which produced the covariance a verdict was read against"
+            )
+        if self.shared_parameters is not None and (
+            self.plate_independent is None or self.cylinder_independent is None
+        ):
+            raise ValueError(
+                "a shared block needs both trials' independent covariances, "
+                "declared with the sources they contain. Lifting a bare "
+                "measurement_covariance off each record and calling it "
+                "independent is how the same calibration uncertainty ends up in "
+                "the total twice with nothing able to see it."
+            )
+        if self.shared_parameters is not None:
+            overlap = sorted(
+                (set(self.plate_independent.sources) | set(self.cylinder_independent.sources))
+                & set(self.shared_parameters.kinds)
+            )
+            if overlap:
+                raise ValueError(
+                    f"{overlap} is declared in the independent covariances and in "
+                    "the shared block, so the difference would carry it twice"
                 )
 
     @classmethod
@@ -830,6 +933,19 @@ class DifferentialCase:
             ),
             "note": self.note,
         }
+
+
+def grid_digest(arclength) -> str:
+    """A canonical digest of an arclength grid.
+
+    Canonicalised first, so the digest identifies the grid rather than the
+    last bits of whatever computed it. A covariance carries the digest of the
+    grid it belongs to, and pairing it with any other grid is refused: every
+    value check passes for a matrix on the wrong arc lengths.
+    """
+    from .canonical import content_hash
+
+    return content_hash({"arclength": [float(value) for value in arclength]})
 
 
 def _differenceable(left: MeasurementRecord, right: MeasurementRecord) -> list[str]:
@@ -896,38 +1012,92 @@ def _case_covariance(
     """``Sigma_D`` for this pair, or ``None`` when nothing established one.
 
     A declared :class:`DifferentialCovariance` is the whole answer. Otherwise
-    the independent parts come from the two trials' own covariances and the
-    cross terms from the shared block, which collapses the four-term sum to
-    ``Sigma_ind,p + Sigma_ind,c + (J_c - J_p) C (J_c - J_p)^T``.
+    it is built from the two *declared* independent components and the shared
+    block, which collapses the four-term sum to
 
-    ``None`` is the honest answer when neither was supplied. Combining two
-    scalar uncertainties in quadrature would assume independence, which is
-    precisely the opposite of the cancellation a differential control claims.
+    .. code-block:: text
+
+        Sigma_ind,p + Sigma_ind,c + (J_c - J_p) C (J_c - J_p)^T
+
+    The independent parts are the case's, never the records' bare
+    ``measurement_covariance``. That is the difference between a closed
+    double-counting route and a docstring claiming one: an undeclared matrix
+    says how big it is and nothing about what is inside it, so adding it to a
+    shared block that may carry the same source is exactly the mistake the
+    overlap check exists to catch, and it cannot catch it.
+
+    ``None`` is the honest answer when neither route was supplied.
     """
-    from .contract import validated_covariance
-
     if case.difference_covariance is not None:
         return case.difference_covariance
     shared = case.shared_parameters
     if shared is None:
         return None
-    if plate.measurement_covariance is None or cylinder.measurement_covariance is None:
-        return None
-    independent = validated_covariance(
-        plate.measurement_covariance, "Sigma_ind,plate", size=None
-    ) + validated_covariance(
-        cylinder.measurement_covariance, "Sigma_ind,cylinder", size=None
-    )
+    # __post_init__ guarantees both components are present alongside a shared
+    # block, and that their sources are disjoint from its kinds.
+    plate_part = case.plate_independent
+    cylinder_part = case.cylinder_independent
     return DifferentialCovariance(
-        matrix=independent + shared.difference_block(),
+        matrix=plate_part.matrix + cylinder_part.matrix + shared.difference_block(),
         basis=(
-            "the two trials' declared measurement covariances as the independent "
+            f"{plate_part.basis} and {cylinder_part.basis} as the independent "
             f"parts, and {shared.basis} for the shared block"
         ),
+        independent_sources=tuple(
+            sorted(set(plate_part.sources) | set(cylinder_part.sources))
+        ),
         shared_sources=shared.kinds,
-        calibration_ids=(plate.calibration_id,),
+        calibration_ids=tuple(
+            sorted(set(plate_part.calibration_ids) | set(cylinder_part.calibration_ids))
+        ),
+        grid_digest=plate_part.grid_digest,
         note="Sigma_ind,p + Sigma_ind,c + (J_c - J_p) C (J_c - J_p)^T",
     )
+
+
+def _check_bindings(
+    case: DifferentialCase, plate: MeasurementRecord, cylinder: MeasurementRecord
+) -> None:
+    """Hold the declared digests and ids against what the trials actually say.
+
+    Provenance fields that nothing verifies are labels. Each of these is a way
+    a case can be attached to the wrong evidence and produce a plausible
+    number: a covariance on another run's grid, a component certified against
+    a calibration neither trial used, a predicted difference from a different
+    report.
+    """
+    expected_grid = grid_digest(plate.arclength)
+    for component, name in (
+        (case.difference_covariance, "difference_covariance"),
+        (case.plate_independent, "plate_independent"),
+        (case.cylinder_independent, "cylinder_independent"),
+    ):
+        if component is None:
+            continue
+        if not component.grid_digest:
+            raise ValueError(
+                f"{name} carries no grid_digest, so nothing says which arclength "
+                "grid it belongs to; a covariance on the wrong grid pairs "
+                "uncertainty with the wrong arc lengths and passes every value check"
+            )
+        if component.grid_digest != expected_grid:
+            raise ValueError(
+                f"{name} is for grid {component.grid_digest} and these trials are "
+                f"on {expected_grid}"
+            )
+        declared = set(component.calibration_ids)
+        if declared and not declared <= {plate.calibration_id, cylinder.calibration_id}:
+            raise ValueError(
+                f"{name} is certified against {sorted(declared)} and these trials "
+                f"ran under {sorted({plate.calibration_id, cylinder.calibration_id})}"
+            )
+    reports = {plate.prediction_report_digest, cylinder.prediction_report_digest}
+    if case.prediction_digest not in reports:
+        raise ValueError(
+            f"the case's predicted difference cites {case.prediction_digest!r}, and "
+            f"these trials were compared against {sorted(reports)}. A prediction "
+            "digest that matches no report cannot be replayed."
+        )
 
 
 def evaluate_differential_case(
@@ -961,6 +1131,7 @@ def evaluate_differential_case(
             f"{case.plate_run_id!r} and {case.cylinder_run_id!r} cannot be "
             f"differenced: {refusal}"
         )
+    _check_bindings(case, plate, cylinder)
 
     observed = np.asarray(cylinder.signed_transverse_separation, dtype=float) - np.asarray(
         plate.signed_transverse_separation, dtype=float
@@ -1016,6 +1187,16 @@ def campaign_flatness_control(
     ``all_consistent`` read ``True`` while seven were never examined, which is
     the shape of a result that is worse than no result.
     """
+    counts: dict[str, int] = {}
+    for record in records:
+        counts[record.run_id] = counts.get(record.run_id, 0) + 1
+    duplicates = sorted(run_id for run_id, count in counts.items() if count > 1)
+    if duplicates:
+        raise ValueError(
+            f"two or more trials share the run ids {duplicates}. A run id is how a "
+            "case names its evidence, so a duplicate silently decides which trial "
+            "the comparison used"
+        )
     by_run = {record.run_id: record for record in records}
     if not cases:
         raise ValueError(
@@ -1096,10 +1277,12 @@ __all__ = [
     "DIFFERENCEABLE_FIELDS",
     "DifferentialCase",
     "DifferentialCovariance",
+    "IndependentCovariance",
     "PerturbationPlan",
     "SharedDifferential",
     "campaign_flatness_control",
     "conformance",
+    "grid_digest",
     "evaluate_differential_case",
     "default_program",
 ]

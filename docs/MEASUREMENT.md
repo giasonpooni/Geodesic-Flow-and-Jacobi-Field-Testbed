@@ -80,10 +80,25 @@ they felt it oppositely — differencing then amplifies the shared uncertainty
 rather than removing it. It is not clipped, because a value above one is the
 finding.
 
-Each covariance component declares its `independent_sources` and
-`shared_sources`, and a source named on both sides is refused: the same
-calibration uncertainty inside a trial's own covariance and inside the shared
-block is counted twice.
+Each covariance component declares what it contains, and a source named on
+both sides is refused. The independent parts are `IndependentCovariance`
+objects the case declares — never a record's bare `measurement_covariance`.
+That distinction is the whole of the guarantee: an undeclared matrix says how
+big it is and nothing about what is inside it, so lifting one off each record,
+calling it independent and adding a shared block leaves the overlap check with
+nothing on one side to compare. A case that supplies a shared block without
+both declared components is refused at construction.
+
+A case declares either a complete `DifferentialCovariance` or the components
+to build one from, never both: with both, nothing says which produced the
+covariance a verdict was read against.
+
+The provenance fields are verified rather than carried. `grid_digest` is
+required and checked against the trials' own arclength grid, `calibration_ids`
+against the calibrations the trials ran under, and `prediction_digest` against
+the `prediction_report_digest` the trials were compared with. Duplicate run ids
+are refused before any pairing, since a run id is how a case names its
+evidence.
 
 The campaign-wide boolean is reported only when every matched pair was tested.
 `matched_pairs`, `tested_pairs`, `untested_pairs` and `covariance_status` are

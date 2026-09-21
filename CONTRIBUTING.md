@@ -368,7 +368,17 @@ shared history.
   **not a fraction** -- it is two when the coupons felt the parameter
   oppositely, because differencing then amplifies it. Do not clip it. And each
   component declares its sources, so the same one inside a trial's covariance
-  and inside the shared block is refused rather than counted twice.
+  and inside the shared block is refused rather than counted twice. The
+  independent parts are declared `IndependentCovariance` components, never a
+  record's bare `measurement_covariance`: an undeclared matrix says how big it
+  is and nothing about what is inside it, so adding it to a shared block
+  leaves the overlap check with nothing to compare. A case carries either a
+  complete covariance or the components, never both.
+- **Provenance is verified, not carried.** `grid_digest` is checked against
+  the trials' arclength grid, `calibration_ids` against the calibrations they
+  ran under, `prediction_digest` against the report they were compared with,
+  and duplicate run ids are refused before pairing. A field nothing verifies
+  is a label.
 - **Pair on achieved, compare on whitened.** Trials pair on achieved
   perturbations inside their own declared uncertainty, never on the command,
   and every field that must agree before two trials can be differenced --
