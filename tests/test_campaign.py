@@ -282,6 +282,8 @@ def _shared(samples: int = 3, *, fixture_differs: bool = True) -> SharedDifferen
         plate_jacobian=np.hstack([calibration, fixture_plate]),
         cylinder_jacobian=np.hstack([calibration, fixture_cylinder]),
         basis="a certificate and a fixture repeatability study",
+        grid_digest=grid_digest(GRID),
+        calibration_ids=("bench-cal-2026-09",),
     )
 
 
@@ -497,6 +499,7 @@ def test_the_variance_ratio_is_not_a_fraction(
         plate_jacobian=plate_jacobian,
         cylinder_jacobian=cylinder_jacobian,
         basis="a fixture repeatability study",
+        grid_digest=grid_digest(GRID),
     )
     assert shared.differential_to_separate_variance_ratio() == pytest.approx(
         expected, abs=1e-12
@@ -750,7 +753,7 @@ def test_a_bare_record_covariance_cannot_stand_in_for_a_declared_component() -> 
     A bare matrix says how big it is and nothing about what is inside it, so
     it is no longer accepted at all.
     """
-    with pytest.raises(ValueError, match="Lifting a bare"):
+    with pytest.raises(ValueError, match="component route needs both"):
         _case(shared_parameters=_shared())
 
     plate = _trial(stage="flat-plate", coupon="p1", run="p1",
@@ -829,7 +832,7 @@ def test_a_component_bound_to_the_wrong_grid_calibration_or_report_is_refused() 
             plate, cylinder,
         )
 
-    with pytest.raises(ValueError, match="matches no report"):
+    with pytest.raises(ValueError, match="must be the prediction report of both"):
         evaluate_differential_case(
             _built(prediction_digest="sha256:some-other-report"), plate, cylinder
         )
@@ -850,3 +853,119 @@ def test_duplicate_run_ids_are_refused_before_anything_is_paired() -> None:
                       separation=[9.0, 9.0, 9.0])
     with pytest.raises(ValueError, match=r"share the run ids \['c1'\]"):
         campaign_flatness_control([_built()], [plate, cylinder, impostor])
+
+
+# -- the last three contract holes -----------------------------------------
+
+
+def test_a_shared_block_on_another_grid_is_refused() -> None:
+    """``(J_c - J_p)`` is formed sample by sample.
+
+    Two grids that agree only in sample count pair sensitivities with the
+    wrong arc lengths, and every shape check passes for them.
+    """
+    plate = _trial(stage="flat-plate", coupon="p1", run="p1")
+    cylinder = _trial(stage="rolled-cylinder", coupon="c1", run="c1")
+    elsewhere = replace(_shared(), grid_digest=grid_digest([0.0, 1.0, 2.0]))
+    with pytest.raises(ValueError, match="shared_parameters is for grid"):
+        evaluate_differential_case(_built(shared_parameters=elsewhere), plate, cylinder)
+
+    unbound = replace(_shared(), grid_digest="")
+    with pytest.raises(ValueError, match="shared_parameters carries no grid_digest"):
+        evaluate_differential_case(_built(shared_parameters=unbound), plate, cylinder)
+
+    foreign = replace(_shared(), calibration_ids=("bench-cal-2019-01",))
+    with pytest.raises(ValueError, match="shared_parameters is certified against"):
+        evaluate_differential_case(_built(shared_parameters=foreign), plate, cylinder)
+
+
+def test_a_shared_calibration_must_say_which_calibration() -> None:
+    with pytest.raises(ValueError, match="names no calibration"):
+        SharedDifferential(
+            names=("calibration-scale",),
+            kinds=("calibration-transform",),
+            covariance=np.array([[4e-4]]),
+            plate_jacobian=np.ones((3, 1)),
+            cylinder_jacobian=np.zeros((3, 1)),
+            basis="a certificate",
+            grid_digest=grid_digest(GRID),
+        )
+
+
+def test_the_shared_block_contributes_its_provenance_to_the_derived_total() -> None:
+    plate = _trial(stage="flat-plate", coupon="p1", run="p1")
+    cylinder = _trial(stage="rolled-cylinder", coupon="c1", run="c1")
+    row = evaluate_differential_case(_built(), plate, cylinder)
+    assert row["covariance"]["calibration_ids"] == ["bench-cal-2026-09"]
+    assert row["covariance"]["grid_digest"] == grid_digest(GRID)
+
+
+def test_a_prediction_matching_only_one_trial_is_refused() -> None:
+    """Membership passes a comparison that was never made.
+
+    The field declares one prediction, so both trials must have been compared
+    against it. Supporting two per-record reports needs two parent digests,
+    which is the adapter's to introduce -- not this field quietly meaning
+    either.
+    """
+    plate = _trial(stage="flat-plate", coupon="p1", run="p1")
+    cylinder = replace(
+        _trial(stage="rolled-cylinder", coupon="c1", run="c1"),
+        prediction_report_digest="sha256:a-different-report",
+    )
+    with pytest.raises(ValueError, match="describes a comparison that was never made"):
+        evaluate_differential_case(_built(), plate, cylinder)
+
+
+@pytest.mark.parametrize(
+    ("label", "fields"),
+    (
+        ("components with no shared block", ("plate_independent", "cylinder_independent")),
+        ("a shared block with one component", ("shared_parameters", "plate_independent")),
+        ("a shared block alone", ("shared_parameters",)),
+        ("one component alone", ("cylinder_independent",)),
+    ),
+)
+def test_a_partial_component_set_is_refused(label: str, fields: tuple[str, ...]) -> None:
+    """Three states and nothing between them.
+
+    A partial set is ignored by the assembly and comes back not-established,
+    which reads as "nobody supplied a covariance" rather than "what you
+    supplied was not usable" -- the worse of the two, because it looks like an
+    omission nobody made.
+    """
+    available = {
+        "plate_independent": _typed_independent(),
+        "cylinder_independent": _typed_independent(),
+        "shared_parameters": _shared(),
+    }
+    with pytest.raises(ValueError, match="component route needs both"):
+        _case(**{name: available[name] for name in fields})
+
+
+def test_a_complete_covariance_alongside_components_is_refused() -> None:
+    with pytest.raises(ValueError, match="this one has both"):
+        _case(
+            difference_covariance=DifferentialCovariance(
+                matrix=np.eye(3) * 4e-4, basis="a study", grid_digest=grid_digest(GRID)
+            ),
+            plate_independent=_typed_independent(),
+            cylinder_independent=_typed_independent(),
+            shared_parameters=_shared(),
+        )
+
+
+def test_the_three_admitted_states_all_construct() -> None:
+    complete = _case(
+        difference_covariance=DifferentialCovariance(
+            matrix=np.eye(3) * 4e-4, basis="a study", grid_digest=grid_digest(GRID)
+        )
+    )
+    assert complete.difference_covariance is not None
+
+    components = _built()
+    assert components.shared_parameters is not None
+
+    untested = _case()
+    assert untested.difference_covariance is None
+    assert untested.shared_parameters is None

@@ -555,6 +555,13 @@ class SharedDifferential:
     plate_jacobian: Array
     cylinder_jacobian: Array
     basis: str
+    #: The grid these Jacobians are indexed on, and the calibrations they were
+    #: established against. Sample-indexed arrays on a different grid of the
+    #: same length would otherwise pass every shape check: ``(J_c - J_p)`` is
+    #: formed sample by sample, so two grids that merely agree in count pair
+    #: sensitivities with the wrong arc lengths.
+    grid_digest: str = ""
+    calibration_ids: tuple[str, ...] = ()
     note: str = ""
 
     def __post_init__(self) -> None:
@@ -589,8 +596,16 @@ class SharedDifferential:
                 "the two Jacobians are on different grids, so their difference is "
                 "not a difference at matched arc lengths"
             )
+        if "calibration-transform" in self.kinds and not self.calibration_ids:
+            raise ValueError(
+                "this block carries a calibration transform but names no "
+                "calibration; a shared calibration uncertainty that does not say "
+                "which calibration it is cannot be held against the trials that "
+                "claim to share it"
+            )
         object.__setattr__(self, "names", tuple(self.names))
         object.__setattr__(self, "kinds", tuple(self.kinds))
+        object.__setattr__(self, "calibration_ids", tuple(self.calibration_ids))
 
     @property
     def samples(self) -> int:
@@ -631,6 +646,8 @@ class SharedDifferential:
             "kinds": list(self.kinds),
             "basis": self.basis,
             "samples": self.samples,
+            "grid_digest": self.grid_digest,
+            "calibration_ids": list(self.calibration_ids),
             "differential_to_separate_variance_ratio": (
                 self.differential_to_separate_variance_ratio()
             ),
@@ -643,12 +660,15 @@ class DifferentialCovariance:
     """``Sigma_D`` for one pair, with enough provenance to rule out double counting.
 
     ``Sigma_D = Sigma_p + Sigma_c - Sigma_pc - Sigma_cp``. Supplying the result
-    is not enough on its own: when the independent parts come from the two
-    trials' own ``measurement_covariance`` and the cross terms from a shared
-    block, nothing in the records says whether those covariances already
-    contain the sources the shared block also carries. A calibration
-    uncertainty inside both is counted twice, which is not conservative -- it
-    is wrong in the direction that looks like caution.
+    is not enough on its own: when the independent parts and the cross terms
+    come from different places, something has to say whether the first already
+    contains what the second carries. A calibration uncertainty inside both is
+    counted twice, which is not conservative -- it is wrong in the direction
+    that looks like caution. This is why the components are
+    :class:`IndependentCovariance` and :class:`SharedDifferential` objects
+    that declare their sources, and never a record's bare
+    ``measurement_covariance``, which says how big it is and nothing about
+    what is inside it.
 
     So each component declares what it accounts for, and construction refuses
     an overlap. ``grid_digest`` pins the arclength grid the matrix belongs to;
@@ -837,33 +857,35 @@ class DifferentialCase:
                     f"{name} is on {other.samples} samples and the predicted "
                     f"difference has {predicted.size}"
                 )
-        # One route or the other. A case carrying both leaves it ambiguous
-        # which one produced the number a verdict was read off, and a reader
-        # cannot tell from the result.
-        if self.difference_covariance is not None and any(
-            component is not None
-            for component in (
-                self.shared_parameters,
-                self.plate_independent,
-                self.cylinder_independent,
-            )
-        ):
+        # Exactly three states, and nothing between them. A partial one is a
+        # case that looks equipped and is not: components without a shared
+        # block are silently ignored by the assembly and the pair comes back
+        # not-established, which reads as "nobody supplied a covariance"
+        # rather than "the covariance you supplied was not usable".
+        components = {
+            "plate_independent": self.plate_independent,
+            "cylinder_independent": self.cylinder_independent,
+            "shared_parameters": self.shared_parameters,
+        }
+        supplied = {name for name, value in components.items() if value is not None}
+        complete = self.difference_covariance is not None
+        if complete and supplied:
             raise ValueError(
                 "a case declares either a complete difference_covariance or the "
-                "components to build one from, not both: with both, nothing says "
-                "which produced the covariance a verdict was read against"
+                f"components to build one from, not both: this one has both, and "
+                f"{sorted(supplied)} would be ignored. Nothing would then say "
+                "which produced the covariance a verdict was read against."
             )
-        if self.shared_parameters is not None and (
-            self.plate_independent is None or self.cylinder_independent is None
-        ):
+        if supplied and supplied != set(components):
+            missing = sorted(set(components) - supplied)
             raise ValueError(
-                "a shared block needs both trials' independent covariances, "
-                "declared with the sources they contain. Lifting a bare "
-                "measurement_covariance off each record and calling it "
-                "independent is how the same calibration uncertainty ends up in "
-                "the total twice with nothing able to see it."
+                f"this case supplies {sorted(supplied)} and not {missing}. The "
+                "component route needs both independent covariances and the "
+                "shared block together; a partial set is ignored by the assembly "
+                "and comes back not-established, which reads as though nobody "
+                "supplied anything."
             )
-        if self.shared_parameters is not None:
+        if supplied:
             overlap = sorted(
                 (set(self.plate_independent.sources) | set(self.cylinder_independent.sources))
                 & set(self.shared_parameters.kinds)
@@ -1048,7 +1070,11 @@ def _case_covariance(
         ),
         shared_sources=shared.kinds,
         calibration_ids=tuple(
-            sorted(set(plate_part.calibration_ids) | set(cylinder_part.calibration_ids))
+            sorted(
+                set(plate_part.calibration_ids)
+                | set(cylinder_part.calibration_ids)
+                | set(shared.calibration_ids)
+            )
         ),
         grid_digest=plate_part.grid_digest,
         note="Sigma_ind,p + Sigma_ind,c + (J_c - J_p) C (J_c - J_p)^T",
@@ -1071,6 +1097,7 @@ def _check_bindings(
         (case.difference_covariance, "difference_covariance"),
         (case.plate_independent, "plate_independent"),
         (case.cylinder_independent, "cylinder_independent"),
+        (case.shared_parameters, "shared_parameters"),
     ):
         if component is None:
             continue
@@ -1092,11 +1119,18 @@ def _check_bindings(
                 f"ran under {sorted({plate.calibration_id, cylinder.calibration_id})}"
             )
     reports = {plate.prediction_report_digest, cylinder.prediction_report_digest}
-    if case.prediction_digest not in reports:
+    # Set equality, not membership. Membership passes when the case matches one
+    # trial and not the other, which is the ambiguous half of a binding: the
+    # field declares *one* prediction, so both trials must have been compared
+    # against it. Two different per-record reports need two parent digests or a
+    # pair-prediction manifest, which is the adapter's to introduce -- not this
+    # single field quietly meaning either.
+    if reports != {case.prediction_digest}:
         raise ValueError(
             f"the case's predicted difference cites {case.prediction_digest!r}, and "
-            f"these trials were compared against {sorted(reports)}. A prediction "
-            "digest that matches no report cannot be replayed."
+            f"these trials were compared against {sorted(reports)}. One prediction "
+            "digest must be the prediction report of both trials; a digest matching "
+            "one of them describes a comparison that was never made."
         )
 
 
