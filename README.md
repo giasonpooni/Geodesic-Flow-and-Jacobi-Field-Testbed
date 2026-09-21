@@ -543,8 +543,10 @@ and what stays on each side of it,
 the two verification stages in full, [`docs/INSTRUMENT.md`](docs/INSTRUMENT.md)
 the interpretation and validation limits, and
 [`docs/MEASUREMENT.md`](docs/MEASUREMENT.md) the implemented observation,
-filtering and tracking contracts. [CONTRIBUTING.md](CONTRIBUTING.md) records
-the contributor invariants.
+filtering and tracking contracts. [`docs/RELEASE.md`](docs/RELEASE.md) is the
+release identity chain, the separation between generating a manifest and
+publishing one, and the schema freeze policy. [CONTRIBUTING.md](CONTRIBUTING.md)
+records the contributor invariants.
 
 ## Scope
 
