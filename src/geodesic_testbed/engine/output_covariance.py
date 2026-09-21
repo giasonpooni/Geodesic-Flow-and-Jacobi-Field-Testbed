@@ -43,6 +43,16 @@ wrong reason:
     so a total that hides it inside ``R`` will keep passing a comparison that
     the numerics, not the sensor, is limiting.
 
+    **It is a bound, not a distribution, unless the caller says otherwise.**
+    A Richardson estimate of a truncation error is deterministic: the error is
+    whatever it is, and calling it a variance implies a sampling story that
+    does not exist. It is carried in the same matrix arithmetic because that is
+    the only way to add it to the others, and ``numerical_basis`` records which
+    of the two it is. A chi-square computed against a total containing a
+    deterministic bound is not calibrated, and
+    :meth:`OutputCovariance.nis` says so in its result rather than leaving the
+    reader to assume otherwise.
+
 **This module owns the meaning of the terms and not the algebra of
 covariances.** It assembles the operands -- ``A``, ``J_theta``, the declared
 ``C_theta``, ``R`` and ``Sigma_num`` -- names what each one is, and adds them.
@@ -80,6 +90,15 @@ BLOCKS: tuple[str, ...] = (
     "numerical",
 )
 
+#: What ``Sigma_num`` actually is. The arithmetic is the same and the meaning
+#: is not: a probabilistic term makes the chi-square calibrated, a
+#: deterministic bound makes it conservative by an unknown amount.
+NUMERICAL_BASES: tuple[str, ...] = (
+    "not-declared",
+    "deterministic-bound",
+    "probabilistic",
+)
+
 #: At what resolution an instrument's noise was actually characterised.
 #: ``stationary``  -- one ``(m, m)`` block, repeated. The usual starting point.
 #: ``per-sample``  -- ``(n, m, m)``: the noise varies along the path but
@@ -90,18 +109,22 @@ BLOCKS: tuple[str, ...] = (
 NOISE_STRUCTURES: tuple[str, ...] = ("stationary", "per-sample", "correlated")
 
 
-def _symmetrised(matrix: Array, name: str) -> Array:
-    array = np.asarray(matrix, dtype=float)
-    if array.ndim != 2 or array.shape[0] != array.shape[1]:
-        raise ValueError(f"{name} must be a square matrix, not {array.shape}")
-    if not np.all(np.isfinite(array)):
-        raise ValueError(f"{name} must be finite")
-    array = 0.5 * (array + array.T)
-    floor = -1e-10 * max(1.0, float(np.max(np.abs(array))))
-    if float(np.min(np.linalg.eigvalsh(array))) < floor:
-        raise ValueError(f"{name} must be positive semi-definite")
-    array.setflags(write=False)
-    return array
+def _admitted(matrix: Array, name: str) -> Array:
+    """A covariance block, admitted or refused by the shared validator.
+
+    This function used to symmetrise its input before testing it, which is the
+    one thing a covariance gate must not do: ``[[1, 0.2], [0.1, 1]]`` has two
+    stored triangles that disagree -- a caller bug, and the only evidence of it
+    -- and averaging them produced a perfectly plausible ``[[1, 0.15],
+    [0.15, 1]]`` that passed. It also admitted ``diag(1, -1e-12)``, a negative
+    variance, because the eigenvalue floor was scaled to the largest entry.
+
+    Repair is not leniency, it is erasure. Everything here now goes through
+    :func:`~geodesic_testbed.engine.contract.validated_covariance`, which
+    refuses in correlation coordinates and returns the caller's values
+    unaltered.
+    """
+    return validated_covariance(matrix, name, size=None)
 
 
 # -- the instrument's noise ------------------------------------------------
@@ -144,18 +167,20 @@ class NoiseModel:
             raise ValueError("a noise model must name its outputs")
         array = np.asarray(self.blocks, dtype=float)
         if self.structure == "stationary":
-            object.__setattr__(self, "blocks", _symmetrised(array, "R"))
+            object.__setattr__(self, "blocks", _admitted(array, "R"))
             if self.blocks.shape != (width, width):
                 raise ValueError(f"a stationary R must be ({width}, {width})")
         elif self.structure == "per-sample":
             if array.ndim != 3 or array.shape[1:] != (width, width):
                 raise ValueError(f"a per-sample R must be (n, {width}, {width})")
-            stacked = np.stack([_symmetrised(block, "R") for block in array])
+            stacked = np.stack(
+                [_admitted(block, f"R[{index}]") for index, block in enumerate(array)]
+            )
             stacked.setflags(write=False)
             object.__setattr__(self, "blocks", stacked)
             object.__setattr__(self, "samples", int(stacked.shape[0]))
         else:
-            matrix = _symmetrised(array, "R")
+            matrix = _admitted(array, "R")
             if matrix.shape[0] % width:
                 raise ValueError(
                     f"a correlated R must be (n*{width}, n*{width}); "
@@ -433,6 +458,8 @@ class OutputCovariance:
     arclength: Array
     outputs: tuple[str, ...]
     blocks: dict[str, Array]
+    #: Which kind of quantity the ``numerical`` block is, when there is one.
+    numerical_basis: str = "not-declared"
     note: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -447,6 +474,15 @@ class OutputCovariance:
                     f"the {name!r} block is {array.shape} and the stacked vector is "
                     f"({size}, {size}); every term is over the same stack"
                 )
+        if self.numerical_basis not in NUMERICAL_BASES:
+            raise ValueError(f"numerical_basis must be one of {NUMERICAL_BASES}")
+        if "numerical" in self.blocks and self.numerical_basis == "not-declared":
+            raise ValueError(
+                "a numerical block was supplied without saying whether it is a "
+                "deterministic bound or a probabilistic covariance. The arithmetic "
+                "is identical and the meaning is not: only the second makes the "
+                "chi-square calibrated."
+            )
         object.__setattr__(self, "outputs", tuple(self.outputs))
         object.__setattr__(self, "blocks", dict(self.blocks))
 
@@ -460,8 +496,18 @@ class OutputCovariance:
 
     @property
     def total(self) -> Array:
+        """The sum of the blocks, validated in its own coordinates.
+
+        Admitting every input is not enough. ``A C0 A^T`` is a congruence, and
+        a congruence can amplify roundoff or tolerated asymmetry in its
+        operand; the matrix that comes *out* is the one every residual is
+        divided by, so it faces the same gate. A budget of purely systematic
+        terms is singular and passes -- singular is valid here, and no floor or
+        jitter is added to make it invertible.
+        """
         size = self.samples * self.width
-        return sum(self.blocks.values(), start=np.zeros((size, size)))
+        summed = sum(self.blocks.values(), start=np.zeros((size, size)))
+        return validated_covariance(summed, "Sigma_y", size=None)
 
     @property
     def degrees_of_freedom(self) -> int:
@@ -521,12 +567,25 @@ class OutputCovariance:
         whitened = self.whiten(residual)
         statistic = float(whitened @ whitened)
         dof = self.degrees_of_freedom
+        calibrated = self.numerical_basis != "deterministic-bound"
         return {
             "statistic": statistic,
             "degrees_of_freedom": dof,
             "reduced": statistic / dof,
             "probability_less_than": chi_square_cdf(statistic, dof),
             "shares": self.shares(),
+            # A total carrying a deterministic error bound has no sampling
+            # story behind that term, so the tail probability is conservative
+            # by an unknown amount rather than exact. Saying so is cheaper
+            # than having a reader discover it.
+            "calibrated": calibrated,
+            "numerical_basis": self.numerical_basis,
+            "note": (
+                ""
+                if calibrated
+                else "Sigma_num is a deterministic bound, so this probability is "
+                "conservative by an unknown amount and is not a calibrated tail"
+            ),
         }
 
     def nees(self, estimate, truth: LatentTruth, starting_covariance) -> dict[str, Any]:
@@ -614,6 +673,7 @@ class OutputCovariance:
             "outputs": list(self.outputs),
             "degrees_of_freedom": self.degrees_of_freedom,
             "blocks": sorted(self.blocks),
+            "numerical_basis": self.numerical_basis,
             "shares": self.shares(),
             "note": self.note,
             "extra": dict(self.extra),
@@ -635,6 +695,7 @@ def assemble(
     parameters: SharedParameters | None = None,
     noise: NoiseModel,
     numerical=None,
+    numerical_basis: str = "not-declared",
     note: str = "",
 ) -> OutputCovariance:
     """``Sigma_y = A C0 A^T + J C J^T + R + Sigma_num``, as four named blocks.
@@ -689,16 +750,21 @@ def assemble(
     operator = stacked_operator(record, model)
     size = samples * len(model.outputs)
     blocks: dict[str, Array] = {
-        "starting-pose": operator @ initial @ operator.T,
-        "observation-noise": noise.stacked(samples),
+        # Each congruence is validated in its own output coordinates, not only
+        # in its operand's: Phi and J are exact, but the product is where a
+        # tolerated asymmetry in C0 or C_theta would show up amplified.
+        "starting-pose": _admitted(operator @ initial @ operator.T, "A C0 A^T"),
+        "observation-noise": _admitted(noise.stacked(samples), "R"),
     }
     if parameters is not None:
-        blocks["shared-parameters"] = parameters.contribution()
+        blocks["shared-parameters"] = _admitted(
+            parameters.contribution(), "J C_theta J^T"
+        )
     if numerical is not None:
         block = np.asarray(numerical, dtype=float)
         if block.shape == (size,):
             block = np.diag(block)
-        blocks["numerical"] = _symmetrised(block, "Sigma_num")
+        blocks["numerical"] = _admitted(block, "Sigma_num")
         if blocks["numerical"].shape != (size, size):
             raise ValueError(f"Sigma_num must be ({size}, {size}) or a vector of {size}")
 
@@ -706,6 +772,7 @@ def assemble(
         arclength=record.arclength,
         outputs=model.outputs,
         blocks=blocks,
+        numerical_basis=numerical_basis,
         note=note,
         extra={
             "mode": model.mode,

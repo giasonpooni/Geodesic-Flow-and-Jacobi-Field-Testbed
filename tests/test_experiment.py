@@ -17,6 +17,11 @@ from geodesic_testbed.engine.experiment import (
 )
 from geodesic_testbed.engine.spaceforms import SpaceForm
 
+#: Runs a full experiment stage or a perturbation sweep. See the ``numerical``
+#: marker in pyproject.toml: CI runs this file once, on one interpreter, rather
+#: than once per version of an interpreter that cannot change the answer.
+pytestmark = pytest.mark.numerical
+
 EXPECTED_ORDERS = {"euler": 1, "midpoint": 2, "rk4": 4}
 
 

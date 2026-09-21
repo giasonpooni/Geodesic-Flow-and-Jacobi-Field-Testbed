@@ -192,7 +192,7 @@ def artefact_from_envelope(
     surface_digest: str,
     path_digest: str,
     units: Units,
-    curvature_interpolation: str = "pchip-monotone",
+    curvature_interpolation: str,
     sampling: SamplingPolicy | None = None,
     uncertainty: GeometryUncertainty | None = None,
     producer: str = "geodesic-testbed/parametric-surface",
@@ -200,7 +200,13 @@ def artefact_from_envelope(
 ) -> PathGeometryArtefact:
     """Present an envelope's path as the artefact an upstream would send.
 
-    Everything here is read out of what the surface already computed. Nothing
+    ``curvature_interpolation`` has no default here for the same reason the
+    artefact has none: this function stands in for an upstream producer, and a
+    producer that did not state which curve fills ``K`` between its samples has
+    not said enough. Defaulting it here would put the silent choice back one
+    layer up.
+
+    Everything else is read out of what the surface already computed. Nothing
     is estimated and nothing is smoothed: this is a change of container, so
     that the adapter can be anchored against the same closed forms the rest of
     the repository is anchored against. The mean curvature is formed as the

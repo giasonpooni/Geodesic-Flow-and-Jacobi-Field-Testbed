@@ -62,9 +62,12 @@ from typing import Any
 
 import numpy as np
 
-from .contract import validated_covariance
+from .contract import finite_numeric_array as _finite_numeric_array
+from .contract import validated_covariance as _validated_covariance
+from .contract import validated_covariance_stack as _validated_covariance_stack
 from .observation import mode as observation_mode
 from .record import TransferRecord, to_transfer_record
+from .transfer import _covariance_product
 
 Array = np.ndarray
 
@@ -72,10 +75,17 @@ Array = np.ndarray
 STATE_COMPONENTS = ("transverse", "heading")
 
 
-#: One covariance validator for the whole repository, in the contract module
-#: where the vocabulary lives. Two implementations of "is this a covariance"
-#: eventually disagree, and the one that is laxer is the one that gets used.
-_validated_covariance = validated_covariance
+def _sigma_variance(value, name: str) -> float:
+    sigma = _finite_numeric_array(value, name)
+    if sigma.ndim != 0 or sigma <= 0.0:
+        raise ValueError(f"{name} must be finite and positive")
+    try:
+        variance = float(sigma) ** 2
+    except OverflowError as exc:
+        raise ValueError(f"{name} variance exceeds finite floating-point range") from exc
+    if not np.isfinite(variance) or variance == 0.0:
+        raise ValueError(f"{name} variance must be finite and representably positive")
+    return variance
 
 
 @dataclass(frozen=True)
@@ -136,12 +146,10 @@ def filtered_noise_covariance(filter_matrix, noise_covariance) -> Array:
     The result is dense: a filter correlates samples that were independent, and
     pretending otherwise is the error this function exists to make visible.
     """
-    F = np.asarray(filter_matrix, dtype=float)
-    if F.ndim != 2:
+    F = _finite_numeric_array(filter_matrix, "filter matrix")
+    if F.ndim != 2 or 0 in F.shape:
         raise ValueError("the filter must be a matrix over samples")
-    if not np.all(np.isfinite(F)):
-        raise ValueError("the filter matrix must be finite")
-    R = np.asarray(noise_covariance, dtype=float)
+    R = _finite_numeric_array(noise_covariance, "R")
     if R.ndim == 0:
         R = np.eye(F.shape[1]) * float(R)
     elif R.ndim == 1:
@@ -149,7 +157,7 @@ def filtered_noise_covariance(filter_matrix, noise_covariance) -> Array:
     if R.shape != (F.shape[1], F.shape[1]):
         raise ValueError("R must be square and match the filter's input length")
     R = _validated_covariance(R, "R", R.shape[0])
-    return F @ R @ F.T
+    return _covariance_product(F, R, "filtered noise covariance")
 
 
 @dataclass(frozen=True)
@@ -177,11 +185,15 @@ class FilteredPrediction:
     note: str = ""
 
     def __post_init__(self) -> None:
-        values = np.asarray(self.values, dtype=float)
-        if not np.all(np.isfinite(values)):
-            raise ValueError("a filtered prediction must be finite")
+        values = _finite_numeric_array(self.values, "filtered prediction")
+        if values.ndim != 1 or not values.size:
+            raise ValueError("a filtered prediction must be a non-empty sample vector")
         values.setflags(write=False)
         object.__setattr__(self, "values", values)
+        if self.noise_covariance is not None:
+            noise = _validated_covariance(self.noise_covariance, "filtered R", values.size)
+            noise.setflags(write=False)
+            object.__setattr__(self, "noise_covariance", noise)
         if not self.identifier or self.identifier == "none":
             raise ValueError("a filtered prediction must name the filter that made it")
         if not self.version:
@@ -223,12 +235,10 @@ def apply_filter(
     carries ``F R F^T``, because that is what the filtered prediction must be
     compared against.
     """
-    F = np.asarray(filter_matrix, dtype=float)
-    if F.ndim != 2:
+    F = _finite_numeric_array(filter_matrix, "filter matrix")
+    if F.ndim != 2 or 0 in F.shape:
         raise ValueError("the filter must be a matrix over samples")
-    if not np.all(np.isfinite(F)):
-        raise ValueError("the filter matrix must be finite")
-    values = np.asarray(prediction, dtype=float)
+    values = _finite_numeric_array(prediction, "prediction")
     if values.ndim != 1 or values.size != F.shape[1]:
         raise ValueError("the prediction must be one sample per filter input")
     filtered_R = (
@@ -264,8 +274,8 @@ class ObservationModel:
 
     def __post_init__(self) -> None:
         observation_mode(self.mode)
-        matrix = np.asarray(self.matrix, dtype=float)
-        if matrix.ndim != 2 or matrix.shape[1] != 2:
+        matrix = _finite_numeric_array(self.matrix, "H")
+        if matrix.ndim != 2 or matrix.shape[1] != 2 or matrix.shape[0] == 0:
             raise ValueError("H must be (m, 2) in the (transverse, heading) basis")
         if not np.all(np.isfinite(matrix)):
             raise ValueError("H must be finite")
@@ -289,13 +299,11 @@ class ObservationModel:
         note: str = "",
     ) -> ObservationModel:
         """A system that reports transverse deviation and nothing else."""
-        sigma = float(measurement_sigma)
-        if not np.isfinite(sigma) or sigma <= 0.0:
-            raise ValueError("measurement_sigma must be finite and positive")
+        variance = _sigma_variance(measurement_sigma, "measurement_sigma")
         return cls(
             mode=mode,
             matrix=np.array([[1.0, 0.0]]),
-            noise_covariance=np.array([[sigma**2]]),
+            noise_covariance=np.array([[variance]]),
             outputs=("transverse",),
             calibration_id=calibration_id,
             reconstruction_version=reconstruction_version,
@@ -314,14 +322,12 @@ class ObservationModel:
         note: str = "",
     ) -> ObservationModel:
         """A system that tracks both transverse deviation and orientation."""
-        for name, value in (("transverse_sigma", transverse_sigma),
-                            ("heading_sigma", heading_sigma)):
-            if not np.isfinite(value) or float(value) <= 0.0:
-                raise ValueError(f"{name} must be finite and positive")
+        variances = [_sigma_variance(transverse_sigma, "transverse_sigma"),
+                     _sigma_variance(heading_sigma, "heading_sigma")]
         return cls(
             mode=mode,
             matrix=np.eye(2),
-            noise_covariance=np.diag([float(transverse_sigma) ** 2, float(heading_sigma) ** 2]),
+            noise_covariance=np.diag(variances),
             outputs=STATE_COMPONENTS,
             calibration_id=calibration_id,
             reconstruction_version=reconstruction_version,
@@ -330,6 +336,12 @@ class ObservationModel:
 
     # -- prediction --------------------------------------------------------
     def _checked_record(self, source: Any) -> TransferRecord:
+        # Frozen dataclasses do not make NumPy buffers immutable to a caller
+        # that explicitly re-enables writes. Recheck numerical claims at use.
+        matrix = _finite_numeric_array(self.matrix, "H")
+        if matrix.shape != (len(self.outputs), 2) or not self.outputs:
+            raise ValueError("H must retain its declared output rows and two state columns")
+        _validated_covariance(self.noise_covariance, "R", len(self.outputs))
         record = to_transfer_record(source)
         if record.observation_mode != self.mode:
             raise ValueError(
@@ -354,7 +366,15 @@ class ObservationModel:
         record = self._checked_record(source)
         initial = _validated_covariance(initial_covariance, "C0", 2)
         propagated = record.propagate_covariance(initial)
-        return self.matrix @ propagated @ self.matrix.T + self.noise_covariance
+        signal = _covariance_product(self.matrix, propagated, "observed covariance")
+        try:
+            with np.errstate(over="raise", invalid="raise"):
+                result = signal + self.noise_covariance
+        except FloatingPointError as exc:
+            raise ValueError("observed covariance exceeds finite floating-point range") from exc
+        if not np.all(np.isfinite(result)):
+            raise ValueError("observed covariance must be finite")
+        return _validated_covariance_stack(result, "observed covariance")
 
     def resolvability(self, source: Any, initial_covariance) -> Array:
         """``rho(s)``: predicted signal over measurement noise, per output.
@@ -371,10 +391,21 @@ class ObservationModel:
         """
         record = self._checked_record(source)
         initial = _validated_covariance(initial_covariance, "C0", 2)
-        signal = self.matrix @ record.propagate_covariance(initial) @ self.matrix.T
-        signal_sigma = np.sqrt(np.clip(np.einsum("...ii->...i", signal), 0.0, None))
+        signal = _covariance_product(
+            self.matrix, record.propagate_covariance(initial), "observed signal covariance"
+        )
+        signal_sigma = np.sqrt(np.einsum("...ii->...i", signal))
         noise_sigma = np.sqrt(np.diag(self.noise_covariance))
-        return signal_sigma / noise_sigma
+        if np.any(noise_sigma == 0.0):
+            raise ValueError("resolvability requires positive noise variance for each output")
+        try:
+            with np.errstate(over="raise", invalid="raise", divide="raise"):
+                rho = signal_sigma / noise_sigma
+        except FloatingPointError as exc:
+            raise ValueError("resolvability exceeds finite floating-point range") from exc
+        if not np.all(np.isfinite(rho)):
+            raise ValueError("resolvability must be finite")
+        return rho
 
     def unresolvable_span(
         self, source: Any, initial_covariance, *, threshold: float = 1.0

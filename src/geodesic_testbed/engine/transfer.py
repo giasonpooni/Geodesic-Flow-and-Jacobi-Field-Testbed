@@ -47,11 +47,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from fractions import Fraction
 from typing import Any
 
 import numpy as np
 
-from .contract import validated_covariance
+from .contract import (
+    validated_covariance,
+    validated_covariance_stack,
+)
 
 Array = np.ndarray
 
@@ -59,6 +63,9 @@ Array = np.ndarray
 # same block can ride along with either a scalar or a parametric flow.
 COMPONENTS = ("a", "a_rate", "b", "b_rate")
 INITIAL_STATE = (1.0, 0.0, 0.0, 1.0)
+
+# Re-exported so callers that already import them from here keep working.
+# They are declared with the validator, which is the only thing that reads them.
 
 
 @dataclass(frozen=True)
@@ -197,7 +204,7 @@ class TransferMap:
         """
         covariance = _validated_covariance(covariance)
         phi = self.matrices()
-        return phi @ covariance @ np.swapaxes(phi, -1, -2)
+        return _covariance_product(phi, covariance, "propagated covariance")
 
     def focus_events(self, *, component: str = "b") -> list[FocusEvent]:
         """Every focus of one column, located to better than the sample spacing.
@@ -304,20 +311,72 @@ class TransferMap:
         return bool(events) and events[0].arc_length < float(self.arc_length[-1])
 
 
-def _validated_covariance(covariance) -> Array:
-    """A 2x2 starting-pose covariance, or a refusal that says which property failed.
+def _covariance_product(operator: Array, covariance: Array, name: str) -> Array:
+    """Evaluate a congruence without emitting nonfinite covariance claims."""
+    try:
+        with np.errstate(over="raise", invalid="raise", under="raise"):
+            result = operator @ covariance @ np.swapaxes(operator, -1, -2)
+    except FloatingPointError as exc:
+        raise ValueError(f"{name} is outside finite floating-point range") from exc
+    if not np.all(np.isfinite(result)):
+        raise ValueError(f"{name} must be finite")
+    if np.any(np.diagonal(result, axis1=-2, axis2=-1) < 0.0):
+        raise ValueError(f"{name} has a negative computed variance; no clipping is permitted")
+    _reject_lost_variance(operator, covariance, result, name)
+    return _validated_covariance_stack(result, name)
 
-    Congruence by ``Phi`` preserves indefiniteness as faithfully as it preserves
-    anything else, so a matrix that is not a covariance in goes to something
-    that is not a covariance out, silently and with plausible-looking numbers.
-    Symmetry alone does not catch it: ``[[1, 2], [2, 1]]`` is symmetric and has
-    eigenvalues 3 and -1.
 
-    The checks live in :mod:`geodesic_testbed.engine.contract`, because the
-    covariance is a boundary type and two implementations of "is this a
-    covariance" eventually disagree -- with the laxer one deciding.
+def _reject_lost_variance(
+    operator: Array, covariance: Array, result: Array, name: str
+) -> None:
+    """Distinguish exact singular zeros from cancellation to false certainty.
+
+    Only a computed zero diagonal triggers this diagnostic. Evaluate its
+    quadratic form exactly over the supplied floating-point values and refuse
+    if floating arithmetic erased a nonzero value. Never replace the returned
+    covariance with an exact-arithmetic answer or an invented noise floor.
     """
-    return validated_covariance(covariance, "covariance")
+    zeros = np.diagonal(result, axis1=-2, axis2=-1) == 0.0
+    if not np.any(zeros) or not np.any(covariance):
+        return
+    batch_shape = result.shape[:-2]
+    operators = np.broadcast_to(operator, (*batch_shape, *operator.shape[-2:]))
+    covariances = np.broadcast_to(covariance, (*batch_shape, *covariance.shape[-2:]))
+    for location in np.argwhere(zeros):
+        batch_index, row = tuple(location[:-1]), int(location[-1])
+        weights = operators[batch_index][row]
+        active = np.flatnonzero(weights != 0.0)
+        if not active.size:
+            continue
+        matrix = covariances[batch_index]
+        exact_weights = {index: Fraction.from_float(float(weights[index])) for index in active}
+        quadratic = sum(
+            (exact_weights[left] * Fraction.from_float(float(matrix[left, right]))
+             * exact_weights[right] for left in active for right in active),
+            Fraction(0),
+        )
+        if quadratic != 0:
+            raise ValueError(f"{name}: a nonzero declared variance collapsed to zero")
+
+
+def _validated_covariance(covariance, name: str = "covariance", size: int | None = 2) -> Array:
+    """The shared validator, applied to a starting-pose covariance.
+
+    Delegated rather than reimplemented. The checks are a boundary concern and
+    live in :mod:`~geodesic_testbed.engine.contract`; a second copy here would
+    eventually disagree with that one, and the laxer of the two would decide.
+    """
+    return validated_covariance(covariance, name, size)
+
+
+def _validated_covariance_stack(covariance, name: str) -> Array:
+    """Validate every matrix in a computed covariance stack, without repair.
+
+    Input eligibility is not enough: a congruence can amplify input roundoff
+    or tolerated asymmetry. The values that come *out* must satisfy the same
+    gate in their own coordinates, including after measurement noise is added.
+    """
+    return validated_covariance_stack(covariance, name)
 
 
 def constant_curvature_transfer(arc_length, curvature: float) -> TransferMap:

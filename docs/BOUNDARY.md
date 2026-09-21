@@ -259,9 +259,10 @@ that make it readable:
 | field | why it is not optional |
 | --- | --- |
 | `directions` | a probe that perturbs only the heading measures `b` and says nothing about `a`, and the two focus in different places |
-| `reference`, `reference_digest` | what the linear map was compared *against*. On a parametric surface it is the geodesic flow itself, central-differenced — that never touches the Jacobi equation, so it is an independent computation of the same quantity |
+| `reference`, `reference_digest`, `reference_method`, `reference_samples` | what the linear map was compared *against*, and with what numerics. The geodesic flow, central-differenced, never touches the Jacobi equation, so it is an independent **computational route** — not an independent implementation: it shares the surface model, the geodesic right-hand side and the integrator, so their error is common mode and the method has to be declared |
 | `relative_tolerance`, `tolerance_basis` | a tolerance chosen after seeing the residuals is not a tolerance |
 | `convergence` | an envelope whose own numerics are unresolved is a bound on the solver, not on the linearisation |
+| `fits` | the coefficient, the probes the adaptive window kept, their observed slopes, every rejected probe with its reason, and the held-out re-probes. An adaptive selection nobody can inspect is a number with a provenance of "trust me" |
 
 `pointwise_error` and `route_error` are kept apart: a path can be linear at
 every arc length and still accumulate over the route, and a campaign planning
@@ -286,6 +287,23 @@ that formula simply does not apply — it is 43% out on the saddle — so the
 declared check there is a different one, which needs no closed form: re-probe
 at exactly the bound the fit chose and confirm it costs the declared tolerance.
 That holds to 1.3% on every surface.
+
+**The bound is re-probed where the fit did not look.** After fitting, the
+linearisation is measured again at 0.8, 1.0 and 1.2 times the bound, and none
+of those took part in the fit. Because the error goes as `C eps^2` they must
+land at 0.64, 1.00 and 1.44 times the tolerance, and the last is the one that
+can falsify the bound: a bound the linearisation comfortably survives past is
+not where it fails, it is wherever the ladder stopped. Measured, they land
+within 0.2% of those three numbers.
+
+**The integrator is declared because the bound depends on it.** The probe and
+the transfer map it is compared against share an integrator, so its truncation
+error is common mode. With RK4 the bound is stable to a part in ten thousand as
+the step halves. With a second-order method at the same step count it is not:
+it moves by about 2% and does so *non-monotonically* in the step count, which
+is the signature of the adaptive window keeping different probes on different
+runs rather than of a real trend. A bound quoted without `reference_method` and
+`reference_samples` is one whose numerics cannot be judged.
 
 **An imported artefact leaves it `not-established`.** Measuring the envelope
 means flowing neighbouring paths, and the surface they would be flowed on

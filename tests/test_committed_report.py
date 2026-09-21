@@ -16,6 +16,11 @@ from geodesic_testbed.engine.canonical import canonical_float, content_hash
 from geodesic_testbed.engine.experiment import REPORT_SCHEMA, SUPERSEDES
 from geodesic_testbed.engine.spaceforms import SpaceForm
 
+#: Runs a full experiment stage or a perturbation sweep. See the ``numerical``
+#: marker in pyproject.toml: CI runs this file once, on one interpreter, rather
+#: than once per version of an interpreter that cannot change the answer.
+pytestmark = pytest.mark.numerical
+
 ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = ROOT / "validation" / "report-v1.json"
 FIGURE_PATH = ROOT / "figures" / "jacobi-testbed-v1.png"
@@ -117,7 +122,7 @@ def _assert_same_verdicts(fresh: dict, committed: dict, what: str) -> None:
     Verdicts do survive, because that is what a threshold is for: a residual
     may sit at 8e-14 here and 9e-14 there against a limit of 1e-13 and the
     artefact means the same thing in both places. And the coverage is complete
-    rather than lucky -- AGENTS.md requires every quantitative claim in the
+    rather than lucky -- CONTRIBUTING.md requires every quantitative claim in the
     README or the docs to correspond to a declared check with a threshold, so
     a regression large enough to matter is a regression that flips a verdict.
     """

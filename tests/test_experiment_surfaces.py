@@ -14,6 +14,11 @@ from geodesic_testbed.engine.experiment_surfaces import (
     default_cases,
 )
 
+#: Runs a full experiment stage or a perturbation sweep. See the ``numerical``
+#: marker in pyproject.toml: CI runs this file once, on one interpreter, rather
+#: than once per version of an interpreter that cannot change the answer.
+pytestmark = pytest.mark.numerical
+
 
 def test_every_declared_check_passes(surface_report: dict) -> None:
     failed = [check["id"] for check in surface_report["checks"] if not check["passed"]]

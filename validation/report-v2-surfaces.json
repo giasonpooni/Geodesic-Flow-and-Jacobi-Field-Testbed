@@ -2923,12 +2923,25 @@
                 "heading": 0.0
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   159.556938914,
                   91976.4503361
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 159.556938914,
                 "best_observed": 91976.4503361,
                 "anisotropy": 576.449078066,
@@ -2957,12 +2970,25 @@
                 "heading": 0.785398163397
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   312.647964598,
                   3814.27158048
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 312.647964598,
                 "best_observed": 3814.27158048,
                 "anisotropy": 12.1998925705,
@@ -2991,12 +3017,25 @@
                 "heading": 1.57079632679
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   465.646958524,
                   1203.91591283
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 465.646958524,
                 "best_observed": 1203.91591283,
                 "anisotropy": 2.5854692934,
@@ -3025,12 +3064,25 @@
                 "heading": 2.35619449019
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   414.236010558,
                   2878.01419837
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 414.236010558,
                 "best_observed": 2878.01419837,
                 "anisotropy": 6.94776437832,
@@ -3059,12 +3111,25 @@
                 "heading": 3.14159265359
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   235.87565815,
                   57418.4270944
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 235.87565815,
                 "best_observed": 57418.4270944,
                 "anisotropy": 243.42667465,
@@ -3093,12 +3158,25 @@
                 "heading": 3.92699081699
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   414.236010558,
                   2878.01419837
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 414.236010558,
                 "best_observed": 2878.01419837,
                 "anisotropy": 6.94776437832,
@@ -3127,12 +3205,25 @@
                 "heading": 4.71238898038
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   465.646958524,
                   1203.91591283
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 465.646958524,
                 "best_observed": 1203.91591283,
                 "anisotropy": 2.5854692934,
@@ -3161,12 +3252,25 @@
                 "heading": 5.49778714378
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   312.647964598,
                   3814.27158048
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 312.647964598,
                 "best_observed": 3814.27158048,
                 "anisotropy": 12.1998925705,
@@ -3302,12 +3406,25 @@
                 "heading": 0.561267911125
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   201.251499422,
                   18545.6946463
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 201.251499422,
                 "best_observed": 18545.6946463,
                 "anisotropy": 92.1518334006,
@@ -3336,12 +3453,25 @@
                 "heading": 0.574350502954
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   213.379515312,
                   15447.6750701
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 213.379515312,
                 "best_observed": 15447.6750701,
                 "anisotropy": 72.3953048985,
@@ -3370,12 +3500,25 @@
                 "heading": 0.585816973065
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   225.56675579,
                   13189.7357074
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 225.56675579,
                 "best_observed": 13189.7357074,
                 "anisotropy": 58.4737571866,
@@ -3404,12 +3547,25 @@
                 "heading": 0.595673407965
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   237.696217227,
                   11510.0273079
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 237.696217227,
                 "best_observed": 11510.0273079,
                 "anisotropy": 48.4232666475,
@@ -3438,12 +3594,25 @@
                 "heading": 0.603926680193
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   249.663301287,
                   10241.405858
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 249.663301287,
                 "best_observed": 10241.405858,
                 "anisotropy": 41.0208701286,
@@ -3472,12 +3641,25 @@
                 "heading": 0.610583716282
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   261.377376277,
                   9273.8139118
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 261.377376277,
                 "best_observed": 9273.8139118,
                 "anisotropy": 35.4805532288,
@@ -3506,12 +3688,25 @@
                 "heading": 0.615650883557
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   272.762284081,
                   8532.95517942
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 272.762284081,
                 "best_observed": 8532.95517942,
                 "anisotropy": 31.2834863082,
@@ -3540,12 +3735,25 @@
                 "heading": 0.619133496615
               },
               "observability": {
+                "form": "integral",
+                "noise_convention": "continuous-density",
                 "scale_basis": "tolerance-box",
+                "scale": [
+                  [
+                    0.001,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.001
+                  ]
+                ],
                 "path_length": 6.0,
                 "eigenvalues": [
                   283.7559949,
                   7967.72174468
                 ],
+                "numerical_rank": 2,
                 "worst_observed": 283.7559949,
                 "best_observed": 7967.72174468,
                 "anisotropy": 28.0794833867,
@@ -4059,7 +4267,10 @@
             "route_error": null,
             "probe_limited": false,
             "probe_limited_directions": [],
+            "fits": [],
             "reference": "none",
+            "reference_method": "",
+            "reference_samples": null,
             "reference_digest": "",
             "convergence": {
               "basis": "not-established: no step-doubling comparison was run on the validity probe",
@@ -4101,7 +4312,7 @@
           },
           "provenance": {
             "producer": "curved-surface-geodesic-sensitivity-runtime",
-            "producer_version": "0.2.1",
+            "producer_version": "0.3.0",
             "upstream": [],
             "note": "geodesic envelope on plane",
             "extra": {}
@@ -5342,7 +5553,10 @@
             "route_error": null,
             "probe_limited": false,
             "probe_limited_directions": [],
+            "fits": [],
             "reference": "none",
+            "reference_method": "",
+            "reference_samples": null,
             "reference_digest": "",
             "convergence": {
               "basis": "not-established: no step-doubling comparison was run on the validity probe",
@@ -5384,7 +5598,7 @@
           },
           "provenance": {
             "producer": "curved-surface-geodesic-sensitivity-runtime",
-            "producer_version": "0.2.1",
+            "producer_version": "0.3.0",
             "upstream": [],
             "note": "geodesic envelope on cylinder(R=1)",
             "extra": {}
@@ -6642,7 +6856,10 @@
             "route_error": null,
             "probe_limited": false,
             "probe_limited_directions": [],
+            "fits": [],
             "reference": "none",
+            "reference_method": "",
+            "reference_samples": null,
             "reference_digest": "",
             "convergence": {
               "basis": "not-established: no step-doubling comparison was run on the validity probe",
@@ -6684,7 +6901,7 @@
           },
           "provenance": {
             "producer": "curved-surface-geodesic-sensitivity-runtime",
-            "producer_version": "0.2.1",
+            "producer_version": "0.3.0",
             "upstream": [],
             "note": "geodesic envelope on sphere(R=1)",
             "extra": {}
@@ -7925,7 +8142,10 @@
             "route_error": null,
             "probe_limited": false,
             "probe_limited_directions": [],
+            "fits": [],
             "reference": "none",
+            "reference_method": "",
+            "reference_samples": null,
             "reference_digest": "",
             "convergence": {
               "basis": "not-established: no step-doubling comparison was run on the validity probe",
@@ -7967,7 +8187,7 @@
           },
           "provenance": {
             "producer": "curved-surface-geodesic-sensitivity-runtime",
-            "producer_version": "0.2.1",
+            "producer_version": "0.3.0",
             "upstream": [],
             "note": "geodesic envelope on pseudosphere",
             "extra": {}
@@ -9208,7 +9428,10 @@
             "route_error": null,
             "probe_limited": false,
             "probe_limited_directions": [],
+            "fits": [],
             "reference": "none",
+            "reference_method": "",
+            "reference_samples": null,
             "reference_digest": "",
             "convergence": {
               "basis": "not-established: no step-doubling comparison was run on the validity probe",
@@ -9250,7 +9473,7 @@
           },
           "provenance": {
             "producer": "curved-surface-geodesic-sensitivity-runtime",
-            "producer_version": "0.2.1",
+            "producer_version": "0.3.0",
             "upstream": [],
             "note": "geodesic envelope on hyperbolic-paraboloid(a=1)",
             "extra": {}
@@ -10491,7 +10714,10 @@
             "route_error": null,
             "probe_limited": false,
             "probe_limited_directions": [],
+            "fits": [],
             "reference": "none",
+            "reference_method": "",
+            "reference_samples": null,
             "reference_digest": "",
             "convergence": {
               "basis": "not-established: no step-doubling comparison was run on the validity probe",
@@ -10533,7 +10759,7 @@
           },
           "provenance": {
             "producer": "curved-surface-geodesic-sensitivity-runtime",
-            "producer_version": "0.2.1",
+            "producer_version": "0.3.0",
             "upstream": [],
             "note": "geodesic envelope on torus(R=2, r=1)",
             "extra": {}
@@ -16842,9 +17068,9 @@
     "all_passed": true,
     "failed": []
   },
-  "content_hash": "531bc95dbff195855b1682231d9b6bd6927e953f478e7be2bb5d14fe5b860cfa",
+  "content_hash": "479a512e39de41c7fe8072b94a469ce0b147f7d95da626fcc5364983907091b5",
   "environment": {
-    "package_version": "0.2.1",
+    "package_version": "0.3.0",
     "python": "3.11.15",
     "numpy": "2.4.6",
     "platform": "Linux-6.18.44-fc-v37-x86_64-with-glibc2.39"

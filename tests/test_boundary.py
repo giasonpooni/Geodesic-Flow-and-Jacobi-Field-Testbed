@@ -151,8 +151,16 @@ def test_the_application_contracts_do_not_import_the_instrument_side() -> None:
 def test_the_contract_module_carries_no_numerics() -> None:
     """``contract.py`` states the vocabulary and computes nothing with it."""
     imported = _imported_modules("geodesic_testbed.engine.contract")
-    assert imported <= {"__future__", "dataclasses", "typing", "numpy"} | {
-        name for name in imported if name.startswith(("dataclasses.", "typing.", "__future__."))
+    # The standard library and NumPy, and nothing else. ``numbers`` is here
+    # because the shared covariance validator refuses booleans and strings by
+    # asking whether each entry is a ``Real`` -- a type question, not a
+    # numerical one, and the check it supports is what keeps a bool array from
+    # being read as ones and zeros.
+    allowed = {"__future__", "dataclasses", "numbers", "typing", "numpy"}
+    assert imported <= allowed | {
+        name
+        for name in imported
+        if name.startswith(("dataclasses.", "typing.", "__future__.", "numbers."))
     }
 
 
@@ -188,7 +196,12 @@ def test_the_built_distribution_carries_the_declared_version() -> None:
     metadata = version("curved-surface-geodesic-sensitivity")
     assert metadata == RUNTIME_VERSION, (
         f"the installed distribution reports {metadata}, the source declares "
-        f"{RUNTIME_VERSION}; reinstall or fix [tool.hatch.version]"
+        f"{RUNTIME_VERSION}. An editable install records its metadata at install "
+        "time, and the dynamic version is read from a .py file, so bumping "
+        "RUNTIME_VERSION does not re-trigger the build: reinstall with "
+        "`uv pip install -e . --reinstall-package curved-surface-geodesic-sensitivity`. "
+        "CI installs fresh and cannot hit this; the wheel job is what proves the "
+        "hook itself works."
     )
 
 

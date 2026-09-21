@@ -62,6 +62,7 @@ contract that cannot drift from what it promises.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from numbers import Real
 from typing import Any
 
 import numpy as np
@@ -177,36 +178,115 @@ COVARIANCE_BASES: tuple[str, ...] = (
 )
 
 
-def validated_covariance(matrix: Any, name: str = "covariance", size: int = 2) -> Array:
-    """A covariance, checked for shape, finiteness, symmetry and definiteness.
+# Dimensionless numerical eligibility tolerances, not uncertainty floors. A
+# covariance is admitted or refused by these; nothing here is ever added to a
+# matrix to make it pass.
+COVARIANCE_SYMMETRY_ATOL = 1e-12
+COVARIANCE_PSD_ATOL = 1e-12
 
-    One implementation, because every caller needs the same four checks and
-    each one of them catches a distinct mistake that the others let through. A
-    wrong *shape* is the mistake worth naming: a ``(2,)`` of variances and a
-    ``(3, 3)`` from a pose with an extra component both arrive here looking
-    plausible, and a broadcast against ``Phi`` would turn either into numbers.
+
+def validated_covariance(matrix: Any, name: str = "covariance", size: int | None = 2) -> Array:
+    """A covariance, admitted or refused -- never repaired.
+
+    One implementation, because every caller needs the same checks and two
+    implementations of "is this a covariance" eventually disagree, with the
+    laxer one deciding. It lives here because the covariance is a boundary
+    type; :mod:`~geodesic_testbed.engine.transfer` and everything downstream
+    delegate to it rather than carrying a second copy.
+
+    **Nothing is repaired.** An earlier version of this function symmetrised
+    its input before testing it, which meant ``[[1, 0.2], [0.1, 1]]`` -- a
+    matrix whose two stored triangles disagree, which is a caller bug -- was
+    silently accepted as ``[[1, 0.15], [0.15, 1]]``. A covariance that has to
+    be adjusted to become a covariance is not one, and the adjustment hides
+    exactly the mistake worth catching. Both stored triangles are checked, and
+    the returned array is the caller's values, unaltered.
+
+    The test is done in correlation coordinates. An absolute eigenvalue floor
+    cannot serve a matrix in micrometres and one in metres at once; dividing
+    out the standard deviations first makes the tolerance dimensionless, which
+    is the only form in which one number is right for both. Variances must be
+    nonnegative, a zero variance requires an exactly zero row and column, and
+    a singular positive-semidefinite matrix is valid -- no floor, no jitter.
     """
-    values = np.asarray(matrix, dtype=float)
-    if values.shape != (size, size):
-        raise ValueError(
-            f"{name} must be {size}x{size} in the (transverse, heading) basis, "
-            f"not {values.shape}"
-        )
-    if not np.all(np.isfinite(values)):
+    covariance = finite_numeric_array(covariance_input := matrix, name)
+    del covariance_input
+    if covariance.ndim != 2 or covariance.shape[0] != covariance.shape[1] or not covariance.size:
+        raise ValueError(f"{name} must be a non-empty square matrix")
+    if size is not None and covariance.shape != (size, size):
+        raise ValueError(f"{name} must be {size}x{size}")
+    return _validate_covariance_values(covariance, name)
+
+
+def finite_numeric_array(value, name: str) -> Array:
+    """Copy real numeric data without silently coercing booleans or strings."""
+    try:
+        if not isinstance(value, np.ndarray) or value.dtype.kind not in "fiu":
+            raw = np.asarray(value, dtype=object)
+            if any(isinstance(item, (bool, np.bool_)) or not isinstance(item, Real)
+                   for item in raw.flat):
+                raise ValueError(f"{name} must contain real numbers, not booleans or strings")
+        with np.errstate(over="raise", invalid="raise", under="raise"):
+            result = np.array(value, dtype=float, copy=True)
+    except (TypeError, OverflowError, FloatingPointError) as exc:
+        raise ValueError(f"{name} must contain finite real numbers") from exc
+    if not np.all(np.isfinite(result)):
         raise ValueError(f"{name} must be finite")
-    scale = max(1.0, float(np.max(np.abs(values))))
-    if not np.allclose(values, values.T, rtol=0.0, atol=1e-12 * scale):
-        raise ValueError(f"{name} must be symmetric")
-    symmetric = 0.5 * (values + values.T)
-    eigenvalues = np.linalg.eigvalsh(symmetric)
-    floor = -1e-12 * max(1.0, float(np.max(np.abs(symmetric))))
-    if float(np.min(eigenvalues)) < floor:
-        raise ValueError(
-            f"{name} must be positive semi-definite; its smallest eigenvalue is "
-            f"{float(np.min(eigenvalues)):.3e}"
-        )
-    symmetric.setflags(write=False)
-    return symmetric
+    return result
+
+
+def validated_covariance_stack(covariance, name: str) -> Array:
+    """Validate every matrix in a computed covariance stack without repair.
+
+    Input eligibility is not enough: a congruence can amplify input roundoff
+    or tolerated asymmetry. The returned values must satisfy the same gate
+    in their own output coordinates, including after measurement noise is added.
+    """
+    covariance = finite_numeric_array(covariance, name)
+    if (covariance.ndim < 2 or covariance.shape[-2] != covariance.shape[-1]
+            or not covariance.size):
+        raise ValueError(f"{name} must contain non-empty square covariance matrices")
+    return _validate_covariance_values(covariance, name)
+
+
+def _validate_covariance_values(covariance: Array, name: str) -> Array:
+    """Shared value check for a square matrix or a batch of square matrices."""
+    diagonal = np.diagonal(covariance, axis1=-2, axis2=-1)
+    if np.any(diagonal < 0.0):
+        raise ValueError(f"{name} must be positive semidefinite: negative variance")
+    null = diagonal == 0.0
+    if np.any((covariance != 0.0) & (null[..., :, None] | null[..., None, :])):
+        raise ValueError(f"{name}: zero variance requires an exactly zero row and column")
+    if np.all(null):
+        return covariance
+    # Null axes are already proven to be exactly zero. A unit denominator
+    # leaves them zero during normalization; it does not add variance or jitter.
+    roots = np.sqrt(np.where(null, 1.0, diagonal))
+    # Divide by the larger root first: neither products of variances nor an
+    # intermediate division by a tiny root can overflow for valid correlations.
+    larger = np.maximum(roots[..., :, None], roots[..., None, :])
+    smaller = np.minimum(roots[..., :, None], roots[..., None, :])
+    try:
+        with np.errstate(over="raise", invalid="raise", divide="raise"):
+            correlation = covariance / larger / smaller
+    except FloatingPointError as exc:
+        raise ValueError(f"{name} has nonfinite normalized correlation") from exc
+    if not np.all(np.isfinite(correlation)):
+        raise ValueError(f"{name} has nonfinite normalized correlation")
+    if np.any(np.abs(correlation) > 1.0 + COVARIANCE_PSD_ATOL):
+        raise ValueError(f"{name} must be positive semidefinite in correlation coordinates")
+    if not np.allclose(correlation, np.swapaxes(correlation, -1, -2),
+                       rtol=0.0, atol=COVARIANCE_SYMMETRY_ATOL):
+        raise ValueError(f"{name} must be symmetric in correlation coordinates")
+    try:
+        for triangle in ("L", "U"):
+            eigenvalues = np.linalg.eigvalsh(correlation, UPLO=triangle)
+            if (not np.all(np.isfinite(eigenvalues))
+                    or np.any(eigenvalues < -COVARIANCE_PSD_ATOL)):
+                raise ValueError(f"{name} must be positive semidefinite in correlation coordinates")
+    except np.linalg.LinAlgError as exc:
+        raise ValueError(f"{name} covariance validation did not converge") from exc
+    return covariance
 
 
 @dataclass(frozen=True)
@@ -374,11 +454,15 @@ class UpstreamArtefact:
 
 PRODUCER = "curved-surface-geodesic-sensitivity-runtime"
 
-#: The single source of this runtime's version. ``geodesic_testbed.__version__``
+#: The single source of this runtime's version. 0.3.0 rather than a patch:
+#: ``path-geometry-v1`` is a new inbound schema, the record gained a validity
+#: envelope with its own sub-schema, and the assembled output covariance and
+#: the stacked Gramian are new public capabilities. None of that is a patch to
+#: existing behaviour. ``geodesic_testbed.__version__``
 #: and the distribution metadata both read it, and a test holds the three
 #: together: provenance that names a version the package does not have is worse
 #: than provenance that names none.
-RUNTIME_VERSION = "0.2.1"
+RUNTIME_VERSION = "0.3.0"
 
 
 @dataclass(frozen=True)

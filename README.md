@@ -1,12 +1,16 @@
-# Curved-Surface Geodesic Sensitivity
+# Curved-Surface Geodesic Sensitivity Runtime
+
+Part of **Notation Systems' computational instrumentation and evidence infrastructure** for industrial and cyber-physical systems.
+
+[Stack map](https://github.com/giasonpooni/Computational-Instrumentation-Workbench/blob/main/docs/STACK.md) · [Component role and interfaces](docs/STACK_ROLE.md)
 
 **How a small error in how a path is started grows into a deviation further
 along a curved surface — and exactly how far that prediction can be trusted.**
 
 Path sensitivity for curved-surface manufacturing and robotic inspection, in
 two layers: deterministic tolerance contracts on top, and a numerical engine
-underneath that is verified against everything it is possible to verify it
-against.
+underneath checked against closed-form references, convergence behavior and
+declared numerical invariants.
 
 ![Curvature-aware path sensitivity on parametric surfaces](figures/surfaces-testbed-v1.png)
 
@@ -35,6 +39,43 @@ anywhere along it. It also carries its own invariant: the equation has no
 first-derivative term, so `det Phi = a b' - a' b = 1` exactly, at every arc
 length, on every surface — a quantity the solver never enforces and whose
 drift is therefore a free measure of how well it is integrating.
+
+### Numerical covariance boundary
+
+Starting-pose, observation-model, measurement-record, and temporal-filter
+covariances use one native numerical validator. Variances must be finite and
+nonnegative; an exactly zero variance requires an exactly zero row and column.
+For positive-variance coordinates, symmetry and PSD checks use dimensionless
+correlations with tolerances `1e-12` and `1e-12`, respectively. Each stored
+triangle must pass. No averaging, eigenvalue clipping, jitter, or uncertainty
+floor repairs the supplied matrix. Consequently a tiny invalid covariance is
+not accepted merely because its entries fall below an absolute threshold.
+
+Every returned covariance is checked again in its output coordinates, including
+each sample in propagated stacks and the final observation covariance after
+noise is added. Input eligibility alone is insufficient: a transformation can
+amplify tolerated asymmetry into an invalid output. Such an output is refused,
+not repaired; exactly representable singular cancellations remain valid.
+For computed zero variances, an exact quadratic-form diagnostic over the
+declared floating-point values distinguishes a genuine singular zero from
+nonzero uncertainty erased by cancellation. It only refuses false zeros;
+it never substitutes a computed variance or alters the numerical solver.
+
+Valid singular and mixed-unit covariances remain supported, including
+`[[1e-14, 1e-7], [1e-7, 1]]`. Boolean/string coercion, unrepresentable variances,
+and nonfinite propagation results are refused. Propagation refuses negative
+computed variances, including cancellation beyond representable precision,
+rather than clipping them. Floating-point underflow during covariance
+congruences is also refused: nonzero uncertainty must not silently become an
+exact zero. This is conservative even for negligible intermediate terms.
+Resolvability additionally requires positive noise
+variance in every reported output; singular covariance does not authorize
+division by zero. Eligibility close to the dimensionless threshold remains
+floating-point dependent and does not establish calibration, independence,
+model adequacy, or physical validity.
+
+This tightens numerical acceptance without rewriting retained report schemas,
+source digests, observation modes, or historical operation identities.
 
 ## Verification
 
@@ -108,9 +149,12 @@ Three results worth stating plainly:
   vanishes at `s = pi` and `a` at `s = pi/2`. A heading error and a lateral
   offset are not interchangeable.
 - **A rigid transform of an imported path leaves the transfer map exactly
-  alone** — 0.0, not 1e-16. The adapter reads arclength and curvature and never
-  a position, so an adapter that had started differencing positions to recover
-  a tangent would fail this check rather than pass it slightly worse.
+  alone** — 0.0, not 1e-16. That is a statement about *consumption*: it proves
+  the adapter never reads a position, so an adapter that had started
+  differencing positions to recover a tangent would fail rather than pass
+  slightly worse. It is not on its own a proof of geometric invariance; the
+  invariance that matters is `K`'s, and that is the upstream producer's to
+  establish.
 - **A rolled sheet has the plate's transfer map and not the plate's validity
   envelope.** Identical intrinsic curvature, identical `Phi` to 1e-13, and an
   envelope 15.7% tighter — because the measurement is an ambient chord and a
@@ -478,9 +522,10 @@ and what stays on each side of it,
 [`docs/METHODS.md`](docs/METHODS.md) is the mathematical contract,
 [`docs/EXPERIMENT.md`](docs/EXPERIMENT.md) and [`docs/SURFACES.md`](docs/SURFACES.md)
 the two verification stages in full, [`docs/INSTRUMENT.md`](docs/INSTRUMENT.md)
-the industrial reading and the roadmap, and
-[`docs/INDUSTRIAL-PILOT.md`](docs/INDUSTRIAL-PILOT.md) the physical validation
-path.
+the interpretation and validation limits, and
+[`docs/MEASUREMENT.md`](docs/MEASUREMENT.md) the implemented observation,
+filtering and tracking contracts. [CONTRIBUTING.md](CONTRIBUTING.md) records
+the contributor invariants.
 
 ## Scope
 
@@ -496,15 +541,14 @@ and names stage one as its dependency; the application report's is
   not, and the experiment measures by how much.
 - The envelope is first order. `Phi(s)` maps a starting pose error to a
   downstream one linearly; stage one measures where that stops being true.
-- Meshes are out of scope here — they belong to the Intrinsic Surface
-  Geodesics Testbed, and this runtime consumes a versioned path artefact from
-  it, named in the record's provenance, rather than growing a second mesh
-  solver.
+- Meshes are out of scope here; this runtime provides parametric-surface
+  geometry and contains no triangle-mesh solver. Mesh work belongs to the
+  Intrinsic Surface Geodesics Testbed, and its result crosses into this
+  runtime as a `path-geometry-v1` artefact named in the record's provenance.
 - **No physical measurement exists in this repository.** Nothing here models
   machine servo error, material mechanics, tow compaction, weld-pool behaviour
-  or sensor probability of detection. The bench that would establish agreement
-  between prediction and measurement is described in `docs/INSTRUMENT.md` and
-  `docs/INDUSTRIAL-PILOT.md`, and has not been built.
+  or sensor probability of detection. Numerical verification does not establish
+  agreement with a physical instrument; physical validation is `not_started`.
 
 ## Portfolio context
 

@@ -64,6 +64,7 @@ def _artefact(envelope, **overrides) -> PathGeometryArtefact:
         surface_digest=overrides.pop("surface_digest", "surface:deadbeef"),
         path_digest=overrides.pop("path_digest", "path:cafe1234"),
         units=overrides.pop("units", METRE),
+        curvature_interpolation=overrides.pop("curvature_interpolation", "pchip-monotone"),
         **overrides,
     )
 
@@ -383,6 +384,7 @@ def _flat_artefact(grid: np.ndarray, curvature: np.ndarray) -> PathGeometryArtef
         units=METRE,
         surface_digest="surface:synthetic",
         path_digest="path:synthetic",
+        curvature_interpolation="pchip-monotone",
     )
 
 
@@ -466,6 +468,7 @@ def _fields(**overrides):
         "units": METRE,
         "surface_digest": "surface:x",
         "path_digest": "path:x",
+        "curvature_interpolation": "pchip-monotone",
     }
     base.update(overrides)
     return base
@@ -604,3 +607,52 @@ def test_the_reader_refuses_a_schema_it_does_not_understand() -> None:
     payload["schema"] = "path-geometry-v2"
     with pytest.raises(ValueError, match="path-geometry-v1"):
         PathGeometryArtefact.from_dict(payload)
+
+
+# -- the field that must not have a default --------------------------------
+
+
+def test_an_artefact_without_a_declared_interpolation_is_refused() -> None:
+    """The 580x distinction must not be selectable by omission.
+
+    A required field with a string default is indistinguishable from a
+    producer that chose that string, which is the whole failure. Construction
+    without the field raises.
+    """
+    fields = _fields()
+    del fields["curvature_interpolation"]
+    with pytest.raises(ValueError, match="curvature_interpolation is required"):
+        PathGeometryArtefact(**fields)
+
+
+def test_a_serialised_artefact_that_lost_the_field_does_not_reopen() -> None:
+    """``from_dict`` supplied the default, so the constructor's guard was moot.
+
+    This is the exact reproduction that found it: write an artefact, delete
+    one key, read it back. It came back as a monotone cubic with nothing
+    recording that nobody had asked for one.
+    """
+    payload = PathGeometryArtefact(**_fields()).to_dict()
+    assert payload["curvature_interpolation"] == "pchip-monotone"
+    del payload["curvature_interpolation"]
+    with pytest.raises(ValueError, match="curvature_interpolation is required"):
+        PathGeometryArtefact.from_dict(payload)
+
+
+def test_a_null_interpolation_is_refused_rather_than_treated_as_absent() -> None:
+    payload = PathGeometryArtefact(**_fields()).to_dict()
+    payload["curvature_interpolation"] = None
+    with pytest.raises(ValueError, match="curvature_interpolation must be one of"):
+        PathGeometryArtefact.from_dict(payload)
+
+
+def test_the_producer_side_helper_has_no_default_either() -> None:
+    """Otherwise the silent choice moves one layer up and nothing changes."""
+    import inspect
+
+    signature = inspect.signature(artefact_from_envelope)
+    parameter = signature.parameters["curvature_interpolation"]
+    assert parameter.default is inspect.Parameter.empty, (
+        "artefact_from_envelope must require the policy; a default here would "
+        "reintroduce exactly what the artefact refuses"
+    )

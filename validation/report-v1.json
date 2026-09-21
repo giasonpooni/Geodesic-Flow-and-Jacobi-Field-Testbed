@@ -9715,7 +9715,7 @@
   },
   "content_hash": "3f15231d8e45ad434ca4bc5b24030510f4b469e05715f61f13621237e7fc9963",
   "environment": {
-    "package_version": "0.2.1",
+    "package_version": "0.3.0",
     "python": "3.11.15",
     "numpy": "2.4.6",
     "platform": "Linux-6.18.44-fc-v37-x86_64-with-glibc2.39"

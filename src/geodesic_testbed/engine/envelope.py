@@ -39,6 +39,7 @@ from .record import (
     ConvergenceEstimate,
     GeometryUncertainty,
     PathGeometry,
+    ProbeFit,
     Provenance,
     Resolution,
     StartingCovariance,
@@ -963,8 +964,16 @@ def measure_validity_envelope(
     """The largest perturbation the linear map holds to, measured not asserted.
 
     The reference is the geodesic flow itself, central-differenced. It never
-    touches the Jacobi equation, so it is an independent computation of the
-    same quantity rather than a rearrangement of the one being checked.
+    touches the Jacobi equation, so it is an independent *computational route*
+    to the same quantity rather than a rearrangement of the one being checked.
+    It is not an independent implementation: the probe and the transfer map it
+    is compared against share the surface model, the geodesic right-hand side
+    and the integrator, so any error in those is common mode and cancels out of
+    the comparison rather than showing up in it. ``reference_method`` and
+    ``reference_samples`` are therefore declared -- the bound is only a
+    statement about the linearisation while the integrator's truncation error
+    sits well below it, and with a second-order method at these steps it does
+    not.
 
     Both columns are exercised, because they are different questions: a fan of
     headings probes ``b`` and a set of laterally displaced starts probes ``a``,
@@ -1024,11 +1033,8 @@ def measure_validity_envelope(
         "lateral": finite_difference_lateral,
     }
 
-    bounds: dict[str, float] = {}
-    limited: dict[str, bool] = {}
-    pointwise = 0.0
-    route = 0.0
-    for direction in directions:
+    def relative_error(direction: str, magnitudes):
+        """Worst and end-of-route relative departure, per magnitude."""
         grid, measured = measure[direction](
             surface,
             u0=u0,
@@ -1036,7 +1042,7 @@ def measure_validity_envelope(
             heading=heading,
             # The declared magnitudes are separations; a central difference
             # straddles the nominal, so each side is half of one.
-            epsilon=0.5 * np.asarray(probes),
+            epsilon=0.5 * np.asarray(magnitudes, dtype=float),
             length=length,
             n_steps=n_steps,
             method=method,
@@ -1044,19 +1050,39 @@ def measure_validity_envelope(
         reference = predicted[direction][: grid.size]
         scale = np.maximum(np.abs(reference), np.max(np.abs(reference)) * 1e-12)
         relative = np.abs(measured[: grid.size] - reference[:, None]) / scale[:, None]
-        worst = np.max(relative, axis=0)
-        at_end = relative[-1]
+        return np.max(relative, axis=0), relative[-1]
 
-        fitted = _fitted_admissible(probes, worst, tolerance)
-        bounds[direction] = min(fitted, max(probes))
-        limited[direction] = fitted > max(probes)
+    fits: list[ProbeFit] = []
+    pointwise = 0.0
+    route = 0.0
+    for direction in directions:
+        worst, at_end = relative_error(direction, probes)
+        fit = _fit_quadratic_regime(probes, worst, tolerance, direction)
+
+        # Held out: re-probe at fractions of the bound the fit just chose.
+        # None of these took part in it, and the one at 1.2 is the one that can
+        # say the bound is wrong.
+        fractions = np.asarray(HELD_OUT_FRACTIONS, dtype=float) * float(fit.bound)
+        held_worst, _ = relative_error(direction, fractions)
+        fit = replace(
+            fit,
+            held_out=tuple(
+                (float(f), float(e))
+                for f, e in zip(HELD_OUT_FRACTIONS, held_worst, strict=True)
+            ),
+        )
+        fits.append(fit)
         pointwise = max(pointwise, float(np.max(worst)))
         route = max(route, float(np.max(at_end)))
+
+    bounds = {fit.direction: fit.bound for fit in fits}
+    limited = tuple(fit.direction for fit in fits if fit.probe_limited)
 
     return ValidityEnvelope(
         basis=(
             "measured: the linear map against the geodesic flow, central-differenced, "
-            f"with the eps^2 coefficient fitted over {len(probes)} probes"
+            f"with the eps^2 coefficient fitted over {len(probes)} probes and re-probed "
+            f"at {', '.join(f'{f:g}x' for f in HELD_OUT_FRACTIONS)} the fitted bound"
         ),
         observation_mode=observation_mode,
         relative_tolerance=tolerance,
@@ -1067,55 +1093,104 @@ def measure_validity_envelope(
         probe_magnitudes=probes,
         pointwise_error=pointwise,
         route_error=route,
-        probe_limited_directions=tuple(
-            direction for direction, clipped in limited.items() if clipped
-        ),
+        probe_limited_directions=limited,
+        fits=tuple(fits),
         reference="geodesic-flow-central-difference",
+        reference_method=method,
+        reference_samples=int(n_steps),
         reference_digest=source_digest,
         convergence=estimate_convergence(envelope),
         note=(
             f"{surface.name}; the bound is where the fitted quadratic term reaches the "
             "declared tolerance, not the largest probe that happened to pass"
             + (
-                ". It is clipped to the end of the ladder here: the linearisation held "
-                "to the tolerance across every probe, so what was established is that "
-                "it holds that far, not how much further"
-                if any(limited.values())
+                ". It is clipped to the end of the ladder for "
+                f"{', '.join(limited)}: the linearisation held to the tolerance across "
+                "every probe there, so what was established is that it holds that far, "
+                "not how much further"
+                if limited
                 else ""
             )
         ),
     )
 
 
-def _fitted_admissible(probes: tuple[float, ...], errors, tolerance: float) -> float:
-    """``sqrt(tolerance / C)`` with ``C`` fitted on the probes still in the ``eps^2`` regime.
+#: Fractions of the fitted bound the linearisation is re-probed at, after the
+#: fit. None of them took part in it. At 1.2 the relative error must exceed the
+#: declared tolerance: a bound the linearisation comfortably survives past is
+#: not where it fails, it is wherever the ladder happened to stop.
+HELD_OUT_FRACTIONS: tuple[float, ...] = (0.8, 1.0, 1.2)
 
-    Probes whose error has already left the quadratic law -- either into the
-    higher-order terms at the top of the ladder or into the differencing floor
-    at the bottom -- would bias ``C``, so the fit uses the probes whose local
-    slope in log-log is within a quarter of two. If too few survive, the
-    smallest probe carries the fit on its own, which is the conservative
-    reading: it gives the largest ``C`` the data supports.
+
+def _fit_quadratic_regime(
+    probes: tuple[float, ...], errors, tolerance: float, direction: str
+) -> ProbeFit:
+    """``sqrt(tolerance / C)`` with ``C`` fitted on the probes still going as ``eps^2``.
+
+    Probes whose error has left the quadratic law -- into the higher-order
+    terms at the top of the ladder, or into the differencing floor at the
+    bottom -- would bias ``C``, so the fit keeps the ones whose local log-log
+    slope is within half of two. Which ones those were is returned rather than
+    discarded: an adaptive selection nobody can inspect is not a measurement,
+    it is a number with a provenance of "trust me".
     """
     magnitudes = np.asarray(probes, dtype=float)
     values = np.asarray(errors, dtype=float)
-    usable = values > 0.0
-    if not np.any(usable):
-        return float(magnitudes[-1])
-    logs = np.log(values[usable])
-    steps = np.log(magnitudes[usable])
-    slopes = np.gradient(logs, steps)
-    quadratic = usable.copy()
-    quadratic[usable] = np.abs(slopes - 2.0) < 0.5
-    if np.count_nonzero(quadratic) < 2:
-        index = int(np.argmax(usable))
-        coefficient = values[index] / magnitudes[index] ** 2
-    else:
-        coefficient = float(
-            np.exp(
-                np.mean(np.log(values[quadratic]) - 2.0 * np.log(magnitudes[quadratic]))
-            )
+    rejected: list[tuple[float, str]] = []
+
+    positive = values > 0.0
+    for magnitude in magnitudes[~positive]:
+        rejected.append((float(magnitude), "relative error underflowed to zero"))
+    if not np.any(positive):
+        return ProbeFit(
+            direction=direction,
+            coefficient=0.0,
+            fitted_probes=(),
+            observed_slopes=(),
+            rejected_probes=tuple(rejected),
+            bound=float(magnitudes[-1]),
+            probe_limited=True,
         )
+
+    logs = np.log(values[positive])
+    steps = np.log(magnitudes[positive])
+    slopes = np.gradient(logs, steps) if steps.size > 1 else np.full(steps.size, 2.0)
+    quadratic = np.abs(slopes - 2.0) < 0.5
+    for magnitude, slope in zip(magnitudes[positive][~quadratic], slopes[~quadratic],
+                                strict=False):
+        rejected.append(
+            (float(magnitude), f"local log-log slope {float(slope):.3f} is not 2")
+        )
+
+    if int(np.count_nonzero(quadratic)) < 2:
+        # Too little of the ladder is quadratic to fit on. The smallest probe
+        # carries it alone, which is the conservative reading: it gives the
+        # largest C the data supports, and therefore the smallest bound.
+        index = int(np.argmax(positive))
+        coefficient = float(values[index] / magnitudes[index] ** 2)
+        used = (float(magnitudes[index]),)
+        kept_slopes: tuple[float, ...] = ()
+    else:
+        used = tuple(float(v) for v in magnitudes[positive][quadratic])
+        kept_slopes = tuple(float(v) for v in slopes[quadratic])
+        coefficient = float(
+            np.exp(np.mean(np.log(values[positive][quadratic]) - 2.0 * np.log(used)))
+        )
+
+    ceiling = float(magnitudes[-1])
     if coefficient <= 0.0:  # pragma: no cover - guard
-        return float(magnitudes[-1])
-    return float(np.sqrt(float(tolerance) / coefficient))
+        return ProbeFit(
+            direction=direction, coefficient=0.0, fitted_probes=used,
+            observed_slopes=kept_slopes, rejected_probes=tuple(rejected),
+            bound=ceiling, probe_limited=True,
+        )
+    fitted = float(np.sqrt(float(tolerance) / coefficient))
+    return ProbeFit(
+        direction=direction,
+        coefficient=coefficient,
+        fitted_probes=used,
+        observed_slopes=kept_slopes,
+        rejected_probes=tuple(rejected),
+        bound=min(fitted, ceiling),
+        probe_limited=fitted > ceiling,
+    )

@@ -95,6 +95,7 @@ __all__ = [
     "ConvergenceEstimate",
     "PERTURBATION_DIRECTIONS",
     "VALIDITY_REFERENCES",
+    "ProbeFit",
     "ValidityEnvelope",
     "GeometryUncertainty",
     "PathGeometry",
@@ -146,6 +147,81 @@ VALIDITY_REFERENCES: tuple[str, ...] = (
 
 #: The two columns of ``Phi``, which is what a perturbation direction is.
 PERTURBATION_DIRECTIONS: tuple[str, ...] = ("lateral", "heading")
+
+
+@dataclass(frozen=True)
+class ProbeFit:
+    """How one column's bound was arrived at, in enough detail to re-derive it.
+
+    The bound is the output of an adaptive fit: probes whose local log-log
+    slope has left the quadratic regime are dropped, and ``C`` is fitted on
+    what remains. Which probes those were is a decision the fit made, and a
+    decision nobody can see is not auditable -- two ladders could give the same
+    bound from entirely different evidence. So the window, the slopes, the
+    coefficient and every rejected probe with its reason are carried.
+
+    ``held_out`` is the part that can falsify the bound rather than describe
+    it. The linearisation is re-probed at fractions of the fitted bound that
+    took no part in the fit; at ``1.2`` the relative error must *exceed* the
+    declared tolerance, or the bound is not where the linearisation fails.
+    """
+
+    direction: str
+    coefficient: float
+    fitted_probes: tuple[float, ...]
+    observed_slopes: tuple[float, ...]
+    rejected_probes: tuple[tuple[float, str], ...] = ()
+    bound: float | None = None
+    probe_limited: bool = False
+    held_out: tuple[tuple[float, float], ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.direction not in PERTURBATION_DIRECTIONS:
+            raise ValueError(f"direction must be one of {PERTURBATION_DIRECTIONS}")
+        object.__setattr__(self, "fitted_probes", tuple(float(v) for v in self.fitted_probes))
+        object.__setattr__(self, "observed_slopes", tuple(float(v) for v in self.observed_slopes))
+        object.__setattr__(
+            self,
+            "rejected_probes",
+            tuple((float(value), str(reason)) for value, reason in self.rejected_probes),
+        )
+        object.__setattr__(
+            self, "held_out", tuple((float(a), float(b)) for a, b in self.held_out)
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "direction": self.direction,
+            "coefficient": self.coefficient,
+            "bound": self.bound,
+            "probe_limited": self.probe_limited,
+            "fitted_probes": list(self.fitted_probes),
+            "observed_slopes": list(self.observed_slopes),
+            "rejected_probes": [
+                {"magnitude": value, "reason": reason} for value, reason in self.rejected_probes
+            ],
+            "held_out": [
+                {"fraction": fraction, "relative_error": error}
+                for fraction, error in self.held_out
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> ProbeFit:
+        return cls(
+            direction=str(payload["direction"]),
+            coefficient=float(payload["coefficient"]),
+            fitted_probes=tuple(payload.get("fitted_probes", ())),
+            observed_slopes=tuple(payload.get("observed_slopes", ())),
+            rejected_probes=tuple(
+                (item["magnitude"], item["reason"]) for item in payload.get("rejected_probes", ())
+            ),
+            bound=payload.get("bound"),
+            probe_limited=bool(payload.get("probe_limited", False)),
+            held_out=tuple(
+                (item["fraction"], item["relative_error"]) for item in payload.get("held_out", ())
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -207,7 +283,20 @@ class ValidityEnvelope:
     #: perturbation tested, and a boolean over the whole envelope would have
     #: to say that about both.
     probe_limited_directions: tuple[str, ...] = ()
+    #: One per exercised direction: the fit that produced that column's bound,
+    #: the probes it used, the ones it rejected and why, and the held-out
+    #: re-probes that can falsify it.
+    fits: tuple[ProbeFit, ...] = ()
     reference: str = "none"
+    #: The integrator and step count the nonlinear reference was flowed with.
+    #: Declared because the bound depends on them: the probe and the transfer
+    #: map it is compared against share an integrator, so its truncation error
+    #: is common mode, and it has to sit well below the linearisation error
+    #: being measured. With a second-order method at the same steps it does
+    #: not, and the fitted bound stops converging -- it moves by ~2% and
+    #: non-monotonically in the step count, which is the tell.
+    reference_method: str = ""
+    reference_samples: int | None = None
     reference_digest: str = ""
     convergence: ConvergenceEstimate = field(
         default_factory=lambda: ConvergenceEstimate.not_established(
@@ -257,6 +346,12 @@ class ValidityEnvelope:
         object.__setattr__(
             self, "probe_limited_directions", tuple(self.probe_limited_directions)
         )
+        object.__setattr__(self, "fits", tuple(self.fits))
+        for fit in self.fits:
+            if fit.direction not in self.directions:
+                raise ValueError(
+                    f"a fit is carried for {fit.direction!r}, which was never exercised"
+                )
         object.__setattr__(
             self, "probe_magnitudes", tuple(float(value) for value in self.probe_magnitudes)
         )
@@ -313,7 +408,10 @@ class ValidityEnvelope:
             "route_error": self.route_error,
             "probe_limited": self.probe_limited,
             "probe_limited_directions": list(self.probe_limited_directions),
+            "fits": [fit.to_dict() for fit in self.fits],
             "reference": self.reference,
+            "reference_method": self.reference_method,
+            "reference_samples": self.reference_samples,
             "reference_digest": self.reference_digest,
             "convergence": self.convergence.to_dict(),
             "note": self.note,
@@ -335,7 +433,10 @@ class ValidityEnvelope:
             pointwise_error=payload.get("pointwise_error"),
             route_error=payload.get("route_error"),
             probe_limited_directions=tuple(payload.get("probe_limited_directions", ())),
+            fits=tuple(ProbeFit.from_dict(item) for item in payload.get("fits", ())),
             reference=str(payload.get("reference", "none")),
+            reference_method=str(payload.get("reference_method", "")),
+            reference_samples=payload.get("reference_samples"),
             reference_digest=str(payload.get("reference_digest", "")),
             convergence=ConvergenceEstimate.from_dict(payload.get("convergence")),
             note=str(payload.get("note", "")),

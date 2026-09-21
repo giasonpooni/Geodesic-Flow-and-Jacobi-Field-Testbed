@@ -1,8 +1,5 @@
-# Development workflow
+# Contributing
 
-- Maintain Curved-Surface Geodesic Sensitivity as one project. `main` carries
-  the application contracts; implementation work lands on a branch and is
-  reconciled with `main` before it is tagged.
 - `geodesic_testbed` is the public API: tolerances, manufacturing and
   inspection assessments, reports. `geodesic_testbed.engine` is the verified
   numerical core underneath it. Application code imports the former; only the
@@ -258,18 +255,82 @@
   prediction with the original `R`. Every `MeasurementRecord` carries the
   filter's identity, version, parameters, causality, group delay, sampling
   rates, the dataset it was tuned on, the rejected-sample mask and the
-  outlier rule; see `docs/INDUSTRIAL-PILOT.md` for the prohibitions.
+  outlier rule; see [the measurement contract](docs/MEASUREMENT.md) for the prohibitions.
 - Repository boundaries. Mesh work -- triangulated surfaces, discrete
   curvature estimators, mesh path convergence -- belongs in the Intrinsic
-  Surface Geodesics Testbed, not here. This runtime should eventually consume
-  a versioned path artefact from it (sampled position, tangent, curvature,
-  frame, units, provenance, uncertainty) rather than growing a mesh solver.
-  Covariance representations and SPD geometry belong in the Covariance
-  Geometry Testbed; downstream decisions belong in the Construction State
-  Estimator.
+  Surface Geodesics Testbed, not here. A geometric input must retain sampled
+  position, tangent, curvature, frame, units, provenance and uncertainty.
+  Covariance-manifold geometry and downstream decision authority are outside
+  this runtime.
 - Physical validation is `not_started` and stays so until held-out measured
   data agrees. The Wronskian validates internal propagation consistency -- not
   the surface model, not the observation model, not a physical prediction.
 - No CUDA stack, no Rust gate, no compiled backend. Fixed-step methods of
   known order are what make the convergence and invariant measurements
   legible.
+
+Preserve concurrent work and existing validated behavior. Do not force-push
+shared history.
+
+## The contracts added in 0.3.0
+
+- **A covariance is admitted or refused, never repaired.** There is one
+  validator, `contract.validated_covariance`, and `transfer`,
+  `observation_model`, `measurement` and `output_covariance` all delegate to
+  it. It tests in correlation coordinates, checks **both** stored triangles,
+  and returns the caller's values unaltered. Symmetrising an input before
+  testing it is the specific thing it must not do: `[[1, .2], [.1, 1]]` has two
+  triangles that disagree -- a caller bug, and the only evidence of it -- and
+  averaging them produces a plausible matrix that passes. A congruence is
+  validated in its *output* coordinates too, because `A C0 A^T` can amplify a
+  tolerated asymmetry in `C0`. Singular is valid; no floor and no jitter.
+- **`path-geometry-v1` requires its curvature interpolation.** The field has no
+  default in the dataclass, none in `from_dict`, and none in
+  `artefact_from_envelope` -- a default there would only move the silent choice
+  one layer up. On the saddle the monotone cubic and the piecewise-linear
+  interpolant differ by a factor of 580 at the coarsest declared sampling, so
+  an artefact that does not say which one it means has not said enough. The
+  normal curvatures arrive three at a time with the mean curvature, and Euler's
+  theorem is checked on arrival.
+- **A validity envelope carries the fit that produced it.** The bound comes
+  from an adaptive window over the probe ladder, so the coefficient, the probes
+  kept, their observed slopes and every rejected probe with its reason are
+  recorded: two ladders can give the same bound from different evidence, and an
+  adaptive selection nobody can inspect is a number with a provenance of "trust
+  me". The bound is then re-probed at 0.8, 1.0 and 1.2 times itself -- none of
+  which took part in the fit -- and the 1.2 point must **exceed** the
+  tolerance, or the bound is wherever the ladder stopped rather than where the
+  linearisation fails.
+- **The validity probe is an independent computational route, not an
+  independent implementation.** It never touches the Jacobi equation, but it
+  shares the surface model, the geodesic right-hand side and the integrator, so
+  their error is common mode. `reference_method` and `reference_samples` are
+  declared for that reason: with RK4 the bound is stable to a part in ten
+  thousand under step refinement, and with a second-order method at the same
+  steps it moves ~2% and does so non-monotonically, which is a noisy fit rather
+  than a trend.
+- **`Sigma_num` is a bound or a distribution, and it says which.** A Richardson
+  estimate of a truncation error is deterministic; calling it a variance
+  implies a sampling story that does not exist. It rides in the same matrix
+  arithmetic because that is the only way to add it, and `numerical_basis`
+  records which it is -- a chi-square against a total containing a
+  deterministic bound is conservative by an unknown amount, and `nis()` reports
+  `calibrated: false` rather than letting a reader assume otherwise.
+- **The two Gramian forms are different objects.** The integral form treats `R`
+  as a noise *density* and needs independent samples; the stacked form treats
+  it as the covariance of the measurements taken and is the only one that
+  admits a correlated `R`. Each reports its `noise_convention`, its scaling and
+  basis, the eigenvalues, the numerical rank and the least-observable
+  direction -- a condition number alone cannot say how many directions the path
+  constrains. A window on the stacked form inverts the submatrix of `R`, never
+  a submatrix of `R^-1`.
+- **CI runs each piece of work once.** The contract tests run on 3.11, 3.12 and
+  3.13 because an interpreter can change their outcome; the `numerical` suite,
+  the artefact regeneration, the wheel smoke test and the determinism cycles
+  each run once, because an interpreter cannot. Mark a test `numerical` when it
+  runs an experiment stage or a perturbation sweep. The marker is for placement,
+  not for skipping.
+- **The wheel is what gets tested, not the editable install.** The version is
+  dynamic, so `pip install -e` and the built wheel exercise different metadata
+  paths. CI builds the wheel, installs it into an empty environment and asks it
+  what version it is.

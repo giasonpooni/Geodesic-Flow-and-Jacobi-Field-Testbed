@@ -46,6 +46,7 @@ def produce(destination: Path) -> Path:
         surface_digest="surface:hyperbolic-paraboloid(scale=0.6)",
         path_digest="path:seed-route-600-steps",
         units=Units(length="metre", angle="radian"),
+        curvature_interpolation="pchip-monotone",
     )
     return write_artefact(artefact, destination / "path-geometry-v1.json")
 

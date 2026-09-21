@@ -50,6 +50,14 @@ pattern = 'RUNTIME_VERSION = "(?P<version>[^"]+)"'
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+# ``numerical`` marks the tests that run the science rather than the
+# contracts: the experiment stages, the committed-artefact comparison and the
+# validity probes. They are the same tests either way -- the marker exists so
+# CI can run them once on one interpreter instead of four times, not so that
+# anyone can skip them.
+markers = [
+  "numerical: runs a full experiment stage or a perturbation sweep (minutes, not seconds)",
+]
 addopts = "-q"
 
 [tool.ruff]

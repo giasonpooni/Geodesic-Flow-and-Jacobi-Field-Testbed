@@ -145,12 +145,32 @@ class Observability:
         """
         return self.total / self.path_length
 
+    @property
+    def numerical_rank(self) -> int:
+        """How many starting-pose directions the path says anything about.
+
+        Reported alongside the eigenvalues because it is the question a
+        condition number cannot answer: a rank-deficient Gramian has an
+        infinite condition number and a finite one can still be numerically
+        rank deficient at the working precision.
+        """
+        return int(np.linalg.matrix_rank(self.total))
+
     def to_dict(self) -> dict[str, Any]:
         values = self.eigenvalues
         return {
+            "form": "integral",
+            # The integral form treats R as a noise *density*: the ds in the
+            # quadrature carries units, so the number is per unit arc length
+            # and needs the samples independent. The stacked form treats R as
+            # the covariance of the measurements taken. They differ by the
+            # sample spacing and are not interchangeable.
+            "noise_convention": "continuous-density",
             "scale_basis": self.scale_basis,
+            "scale": self.scale.tolist(),
             "path_length": float(self.path_length),
             "eigenvalues": values.tolist(),
+            "numerical_rank": self.numerical_rank,
             "worst_observed": float(values[0]),
             "best_observed": float(values[-1]),
             "anisotropy": float(values[-1] / values[0]) if values[0] > 0.0 else None,
@@ -677,14 +697,25 @@ class StackedObservability:
         smallest = float(values[0])
         return float("inf") if smallest <= 0.0 else float(values[-1]) / smallest
 
+    @property
+    def numerical_rank(self) -> int:
+        """How many starting-pose directions these measurements constrain."""
+        return int(np.linalg.matrix_rank(self.total))
+
     def to_dict(self) -> dict[str, Any]:
         values = self.eigenvalues
         return {
             "form": "stacked",
+            # Per-sample, not a density: R here is the covariance of the
+            # measurements actually taken, so no ds appears and the samples
+            # need not be independent.
+            "noise_convention": "per-sample-covariance",
             "scale_basis": self.scale_basis,
+            "scale": self.scale.tolist(),
             "noise_structure": self.noise_structure,
             "samples": int(self.samples),
             "eigenvalues": values.tolist(),
+            "numerical_rank": self.numerical_rank,
             "worst_observed": float(values[0]),
             "best_observed": float(values[-1]),
             "condition_number": self.condition_number,

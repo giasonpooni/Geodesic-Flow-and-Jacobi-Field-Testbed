@@ -189,10 +189,47 @@ def test_the_numerical_term_is_kept_apart_from_the_sensor_noise() -> None:
     record = _record()
     model = _model()
     floor = np.full(record.arclength.size, (1e-9) ** 2)
-    total = assemble(record, model, noise=_noise(model), numerical=floor)
+    total = assemble(
+        record, model, noise=_noise(model),
+        numerical=floor, numerical_basis="deterministic-bound",
+    )
     assert "numerical" in total.blocks
     assert np.allclose(np.diag(total.blocks["numerical"]), floor)
     assert total.shares()["numerical"] > 0.0
+
+
+def test_a_numerical_term_must_say_which_kind_of_quantity_it_is() -> None:
+    """The arithmetic is identical; the meaning is not.
+
+    A Richardson estimate of a truncation error is deterministic -- the error
+    is whatever it is, and there is no sampling story behind it. Adding it to
+    a covariance is the only way to combine it with the other terms, and that
+    is exactly why it has to be labelled: only a probabilistic term makes the
+    resulting chi-square a calibrated tail.
+    """
+    record = _record(n_steps=20)
+    model = _model()
+    floor = np.full(record.arclength.size, (1e-9) ** 2)
+    with pytest.raises(ValueError, match="deterministic bound or a probabilistic"):
+        assemble(record, model, noise=_noise(model), numerical=floor)
+
+    bounded = assemble(
+        record, model, noise=_noise(model),
+        numerical=floor, numerical_basis="deterministic-bound",
+    )
+    statistic = bounded.nis(np.zeros(bounded.degrees_of_freedom))
+    assert statistic["calibrated"] is False
+    assert "conservative by an unknown amount" in statistic["note"]
+
+    modelled = assemble(
+        record, model, noise=_noise(model),
+        numerical=floor, numerical_basis="probabilistic",
+    )
+    assert modelled.nis(np.zeros(modelled.degrees_of_freedom))["calibrated"] is True
+
+    # With no numerical block at all there is nothing to qualify.
+    plain = assemble(record, model, noise=_noise(model))
+    assert plain.nis(np.zeros(plain.degrees_of_freedom))["calibrated"] is True
 
 
 # -- the noise model -------------------------------------------------------
@@ -459,3 +496,90 @@ def test_the_series_agrees_with_the_closed_form_wherever_one_exists(dof: int) ->
         assert chi_square_cdf(x, dof) == pytest.approx(
             _closed_form_cdf_for_even_dof(x, dof), abs=1e-12
         )
+
+
+# -- fail-closed, in every entry point -------------------------------------
+
+#: The two matrices a review found accepted. Neither is a covariance; the
+#: first has two stored triangles that disagree, and the second a negative
+#: variance small enough to sit inside an eigenvalue floor scaled to the
+#: largest entry. Both used to be repaired into something plausible.
+NOT_COVARIANCES = (
+    ("asymmetric", np.array([[1.0, 0.2], [0.1, 1.0]]), "symmetric"),
+    ("negative variance", np.diag([1.0, -1e-12]), "negative variance"),
+    ("nonfinite", np.array([[1.0, np.nan], [np.nan, 1.0]]), "finite"),
+    ("indefinite", np.array([[1.0, 2.0], [2.0, 1.0]]), "positive semidefinite"),
+)
+
+
+@pytest.mark.parametrize(("label", "matrix", "message"), NOT_COVARIANCES)
+def test_a_noise_model_refuses_what_is_not_a_covariance(
+    label: str, matrix: np.ndarray, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        NoiseModel.stationary(matrix, ("a", "b"), basis="a bench characterisation")
+
+
+@pytest.mark.parametrize(("label", "matrix", "message"), NOT_COVARIANCES)
+def test_a_shared_parameter_block_refuses_what_is_not_a_covariance(
+    label: str, matrix: np.ndarray, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        SharedParameters(
+            names=("one", "two"),
+            kinds=("other", "other"),
+            covariance=matrix,
+            jacobian=np.ones((4, 1, 2)),
+            basis="a certificate",
+        )
+
+
+@pytest.mark.parametrize(("label", "matrix", "message"), NOT_COVARIANCES)
+def test_the_numerical_block_refuses_what_is_not_a_covariance(
+    label: str, matrix: np.ndarray, message: str
+) -> None:
+    record = _record(n_steps=1)
+    model = ObservationModel.full_pose(2e-4, 1e-3, mode="ambient-euclidean-chord")
+    noise = NoiseModel.from_observation_model(model, basis="bench characterisation")
+    with pytest.raises(ValueError, match=message):
+        assemble(record, model, noise=noise, numerical=matrix)
+
+
+def test_an_admitted_covariance_is_returned_unaltered() -> None:
+    """Repair is erasure. The values that went in are the values that come out."""
+    supplied = np.array([[4.0, 1.0], [1.0, 9.0]])
+    model = NoiseModel.stationary(supplied, ("a", "b"), basis="bench characterisation")
+    assert np.array_equal(model.blocks, supplied)
+
+
+def test_a_singular_but_valid_covariance_is_admitted_without_a_floor() -> None:
+    """A budget of purely systematic terms is singular, and that is correct.
+
+    No jitter is added to make it invertible; whitening against it fails later
+    with a message that says what is missing, which is the honest order.
+    """
+    rank_one = np.array([[1.0, 1.0], [1.0, 1.0]])
+    model = NoiseModel.stationary(rank_one, ("a", "b"), basis="one shared unknown")
+    assert np.array_equal(model.blocks, rank_one)
+    assert np.linalg.matrix_rank(model.blocks) == 1
+
+
+def test_the_assembled_total_is_validated_in_its_own_coordinates() -> None:
+    """Admitting every operand is not enough; a congruence can amplify it.
+
+    Here the total is built from blocks that are each valid, and the sum is
+    checked again rather than assumed. The test is that the gate runs: a
+    hand-built total with a negative diagonal is refused on read.
+    """
+    record = _record(n_steps=20)
+    model = _model()
+    honest = assemble(record, model, noise=_noise(model))
+    assert honest.total.shape == (record.arclength.size,) * 2
+
+    broken = OutputCovariance(
+        arclength=record.arclength,
+        outputs=model.outputs,
+        blocks={"observation-noise": -np.eye(record.arclength.size)},
+    )
+    with pytest.raises(ValueError, match="negative variance"):
+        _ = broken.total

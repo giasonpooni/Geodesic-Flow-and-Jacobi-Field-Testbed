@@ -406,3 +406,53 @@ def test_an_assembled_covariance_takes_precedence_over_the_trial_s_own() -> None
     assert verdict["source"] == "assembled"
     assert set(verdict["shares"]) == {"observation-noise", "shared-parameters"}
     assert sum(verdict["shares"].values()) == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("bad", [
+    [[-1e-30]], [[1e-30, 2e-30], [2e-30, 1e-30]],
+    [[0, 1e-300], [1e-300, 1]], [[True]], [[10**1000]], [],
+])
+def test_measurement_covariance_does_not_have_an_absolute_acceptance_floor(bad):
+    with pytest.raises(ValueError):
+        _record(measurement_covariance=bad)
+
+
+def test_measurement_covariance_retains_singular_mixed_unit_entries():
+    """Extreme scales survive the correlation normalisation without overflow.
+
+    Sized to the trial's three separations rather than to 2x2: the covariance
+    is *of* the observation vector, so its shape is bound to it, and a 2x2 here
+    would be a covariance of some other trial. The entries are what this test
+    is about and they are unchanged.
+    """
+    matrix = [
+        [1e-300, 1.0, 0.0],
+        [1.0, 1e300, 0.0],
+        [0.0, 0.0, 1.0],
+    ]
+    assert _record(measurement_covariance=matrix).measurement_covariance == matrix
+
+
+def test_comparison_rechecks_mutated_filtered_covariance():
+    artifact = apply_filter(
+        SMOOTHER, [0.0, 1.7, 3.4], identifier="rts-smoother", version="1.2.0",
+        causal=False, noise_covariance=0.04,
+    )
+    artifact.noise_covariance.setflags(write=True)
+    artifact.noise_covariance[0, 0] = -1e-30
+    with pytest.raises(ValueError, match="negative variance"):
+        compare(_record(), artifact)
+
+
+def test_measurement_covariance_is_rechecked_before_export_and_comparison():
+    record = _record(measurement_covariance=[[1.0, 0.0, 0.0],
+                                             [0.0, 1.0, 0.0],
+                                             [0.0, 0.0, 1.0]])
+    record.measurement_covariance[0][0] = -1e-30
+    with pytest.raises(ValueError, match="negative variance"):
+        record.to_dict()
+    with pytest.raises(ValueError, match="negative variance"):
+        record.digest()
+    with pytest.raises(ValueError, match="negative variance"):
+        compare(record, _filtered([0.0, 1.7, 3.4]))
+

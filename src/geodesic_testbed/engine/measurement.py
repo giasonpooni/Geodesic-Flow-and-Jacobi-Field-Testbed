@@ -38,7 +38,7 @@ from typing import Any
 
 import numpy as np
 
-from .contract import CalibrationBinding
+from .contract import CalibrationBinding, validated_covariance
 from .observation import mode as observation_mode
 from .observation_model import FilteredPrediction
 from .output_covariance import OutputCovariance
@@ -226,32 +226,28 @@ class MeasurementRecord:
         if not {"length", "angle"} <= set(self.units):
             raise ValueError("units must declare both 'length' and 'angle'")
         if self.measurement_covariance is not None:
-            matrix = np.asarray(self.measurement_covariance, dtype=float)
-            if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
-                raise ValueError("measurement_covariance must be square")
-            if not np.all(np.isfinite(matrix)):
-                raise ValueError("measurement_covariance must be finite")
-            if not np.allclose(matrix, matrix.T, atol=0.0, rtol=1e-12):
-                raise ValueError("measurement_covariance must be symmetric")
-            if np.linalg.eigvalsh(0.5 * (matrix + matrix.T))[0] < -1e-12:
-                raise ValueError("measurement_covariance must be positive semidefinite")
-            # Square, symmetric and PSD is not enough: it has to be square *on
-            # the observation vector it belongs to*. A covariance of the wrong
-            # size is a covariance of some other trial, and every check above
-            # passes for it. This trial reports one scalar per arc length, so
-            # the matrix is (n, n) over the measured separations.
+# Admitted or refused, never repaired -- the shared validator in
+            # contract.py, with size=None because this covariance is over the
+            # trial's whole observation vector rather than a 2x2 pose.
+            matrix = validated_covariance(
+                self.measurement_covariance, "measurement_covariance", size=None
+            )
+            # Being a covariance is not enough: it has to be a covariance *of
+            # this trial*. A 1x1 on a three-sample run passes every value check
+            # above and is a covariance of something else, so the shape is
+            # bound to the observation vector it claims to describe.
             expected = len(self.signed_transverse_separation)
-            if expected and matrix.shape[0] != expected:
+            if not expected:
+                raise ValueError(
+                    "a measurement covariance was declared but the trial carries no "
+                    "measured separations for it to be the covariance of"
+                )
+            if matrix.shape[0] != expected:
                 raise ValueError(
                     f"measurement_covariance is {matrix.shape[0]}x{matrix.shape[0]} and "
                     f"this trial measured {expected} separations; a covariance that is "
                     "not on the observation vector pairs uncertainty with the wrong "
                     "arc lengths"
-                )
-            if not expected:
-                raise ValueError(
-                    "a measurement covariance was declared but the trial carries no "
-                    "measured separations for it to be the covariance of"
                 )
         for name in (
             "geometry_model_digest",
@@ -277,6 +273,8 @@ class MeasurementRecord:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        if self.measurement_covariance is not None:
+            validated_covariance(self.measurement_covariance, "measurement_covariance", size=None)
         payload = asdict(self)
         payload["schema"] = MEASUREMENT_SCHEMA
         payload["perturbation"] = self.perturbation.to_dict()
@@ -363,6 +361,8 @@ def compare(
     result says so rather than leaving the reader to assume a tie that was
     never established.
     """
+    if record.measurement_covariance is not None:
+        validated_covariance(record.measurement_covariance, "measurement_covariance", size=None)
     expected = mode or record.observation_mode
     if expected != record.observation_mode:
         raise ValueError(
@@ -486,6 +486,9 @@ def compare(
         },
     }
     if filtered and predicted_separation.noise_covariance is not None:
+        validated_covariance(
+            predicted_separation.noise_covariance, "filtered R", predicted.size
+        )
         result["filtered_noise_covariance_shape"] = list(
             np.shape(predicted_separation.noise_covariance)
         )

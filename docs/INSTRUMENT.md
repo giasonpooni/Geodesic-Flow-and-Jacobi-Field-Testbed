@@ -1,4 +1,4 @@
-# From a verified solver to an instrument
+# Interpretation and validation limits
 
 **Positioning.** Curvature-aware path sensitivity: given a surface, a nominal
 path along it, and a tolerance on how the path is started, how large is the
@@ -56,7 +56,7 @@ last two modes are declared and left unimplemented rather than quietly
 conflated with the second, and every experimental record should carry its mode,
 calibration, frames, units and uncertainty alongside the number.
 
-## A finding that changes how a bench must be built
+## Observation-model distinction
 
 Stage two measures the Jacobi field two independent ways: by integrating
 `j'' + K j = 0`, and by central-differencing the geodesic flow itself. They
@@ -111,7 +111,7 @@ planner would act on.
 
 ---
 
-## Predictions a bench could falsify
+## Closed-form numerical reference
 
 These are computed in advance, from the closed form, and cross-checked against
 an independent RK4 flow to better than `1e-10` relative. Path length `s = 2`
@@ -128,89 +128,8 @@ The right-hand column is the honest part: even at 2°, the first-order
 prediction on the saddle is wrong by only 27 µm out of 38 mm. A bench whose
 measurement uncertainty is worse than about 25 µm cannot detect the breakdown
 of the first-order model at these angles at all — it would have to run larger
-angles, longer paths, or better metrology. Knowing that *before* building the
-bench is worth more than the bench.
+angles, longer paths, or lower measurement uncertainty. These are numerical
+reference values, not results from a physical trial.
 
----
-
-## The bench that would establish proof of function
-
-Three interchangeable coupons, one per curvature sign, on a positioning stage
-with a contact marker or probe, measured by photogrammetry or a line-laser
-scanner, with a repeatable datum and adjustable initial position and angle.
-Run nominal paths, then perturb the initial direction by 0.25°, 0.5°, 1°, 2°,
-and compare the measured transverse separation with `ε j(s)`.
-
-Expected qualitative result, which the reader can check against the figure:
-linear spreading on the flat plate, refocusing on the spherical cap, rapid
-growth on the saddle, and a first-order prediction that departs from the
-measurement as the angle grows.
-
-**One caveat that must not be glossed over.** A flat plate has `K = 0` exactly
-and a spherical cap has constant `K > 0` exactly, but a hyperbolic-paraboloid
-saddle does **not** have constant curvature — `K` varies across it, from -0.78
-at its centre to -0.03 two units out. Comparing a variable-`K` coupon against a
-constant-`K` prediction and calling the mismatch an experimental error would be
-the easiest way to get a wrong answer here. Stage two removes the excuse: the
-saddle's own prediction is computed from its own curvature, and a genuinely
-constant-`K < 0` coupon (a pseudosphere patch, with a singular edge to design
-around) is available for a cleaner comparison.
-
-What a run should report: prediction-versus-measurement RMSE, repeatability
-across runs, maximum gap or overlap, sensitivity to initial position as well as
-direction, the measured first-order validity range, an uncertainty budget,
-the contribution of backlash and fixture error, and full calibration and data
-provenance. Calibration runs and validation runs must be separate data: if the
-same measurements tune and demonstrate the model, the evidence is worth much
-less.
-
----
-
-## Roadmap
-
-1. **Complete the constant-curvature numerical experiment.** — **done**; stage one.
-2. **Verify Jacobi solutions against finite differences between nearby geodesics.** —
-   **done**; `results.first_order_validity`, including the `ε²` coefficient and both
-   failure modes, and again on every parametric surface in stage two.
-3. **Arbitrary parametric surfaces**, where `K` varies along the path and there
-   is no closed form to check against. — **done**; stage two, verified by
-   anchoring to the constant-curvature answers, by two independent routes to
-   the same field, by self-convergence, and by unit-speed drift.
-   Triangulated meshes are **not** done: a mesh needs a discrete curvature
-   estimator with its own error analysis.
-4. **A sensitivity envelope around every nominal path.** — **done**;
-   `results.envelopes` gives curvature, both transfer columns, amplification,
-   cumulative heading budget and focus flags at every arc length. The full
-   `Phi(s)` also propagates a starting-pose covariance as `Phi C Phi^T`, so the
-   envelope can be a distribution rather than a box.
-5. **The three-coupon bench.** — not started.
-6. **Controlled fixture, angle and backlash errors.** — not started.
-7. **A robust path selector** that prefers a starting path with lower
-   sensitivity. — **partly done, and instructive about why it is only partly**:
-   `scan_headings` ranks candidate starting headings by
-   `minimum-forward-angular-error-amplification`, separating best from worst by
-   a factor of 21 on a torus. But the best-scoring headings all pass through a
-   focus, where the endpoint map is ill conditioned — low forward separation
-   bought with bad conditioning. The ranking scalar therefore decides nothing.
-   The recommendation comes from `engine/routing.py` under declared limits
-   (cross-track error, heading error, coverage margin) plus the sensor's own
-   acquisition schedule on the dimensionless `rho = |b| sigma_alpha /
-   sigma_measurement`, which moves the answer from 97° to 120° and removes
-   seven of fifteen feasible routes. What a production score still needs:
-   boundary clearance and curvature exposure (declared in `RouteConstraints`,
-   left unbounded here), accumulated observability rather than a per-sample
-   threshold, and a route generator that is not a heading fan from one point.
-8. **Configuration space**, where the manifold is the robot's, not the
-   workpiece's. — not started.
-
-Steps 1-4 and a first cut of 7 are the content of this repository. Steps 5, 6
-and 8 are not started, and the README does not claim otherwise.
-
-## Where it would apply
-
-Automated fibre and tape placement, filament winding, coating and welding on
-curved surfaces; robotic inspection path planning under starting-pose and
-calibration error; and, further out, trajectory robustness and pose-estimation
-uncertainty on `SO(3)` and `SE(3)`, where the manifold is the robot's
-configuration space rather than the part. Those are destinations, not claims:
-the only thing verified here is the mathematics of the constant-curvature case.
+The supported measurement and filtering records are documented in
+[MEASUREMENT.md](MEASUREMENT.md). Physical validation remains `not_started`.

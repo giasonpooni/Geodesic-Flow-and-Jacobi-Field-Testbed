@@ -95,6 +95,12 @@ CURVATURE_INTERPOLATIONS: tuple[str, ...] = (
     "piecewise-constant",
 )
 
+#: The sentinel a missing ``curvature_interpolation`` carries. A dataclass
+#: field must have *some* default to sit after one that does, and a string
+#: default would be indistinguishable from a producer that chose it -- which is
+#: the whole failure this guards. Identity against this object is not.
+MISSING_INTERPOLATION: str = "<<curvature_interpolation not declared>>"
+
 #: Whether the upstream run that produced this artefact succeeded.
 #: ``degraded`` is carried through into provenance; ``failed`` is refused.
 UPSTREAM_STATUS: tuple[str, ...] = ("ok", "degraded", "failed")
@@ -211,7 +217,12 @@ class PathGeometryArtefact:
     path_type: str = "geodesic"
     path_type_basis: str = "declared by the producer"
     sampling: SamplingPolicy = field(default_factory=SamplingPolicy)
-    curvature_interpolation: str = "pchip-monotone"
+    #: Required. There is no default, and ``from_dict`` will not supply one:
+    #: the field changes the answer by a factor of 580 at a sampling a producer
+    #: might reasonably choose, so a missing one is a refusal rather than a
+    #: silently selected monotone cubic. ``MISSING_INTERPOLATION`` is the value
+    #: an artefact constructed without it carries into the check below.
+    curvature_interpolation: str = MISSING_INTERPOLATION
     uncertainty: GeometryUncertainty = field(default_factory=GeometryUncertainty.not_declared)
     validity: ChartValidity | None = None
     upstream_status: str = "ok"
@@ -307,9 +318,19 @@ class PathGeometryArtefact:
             )
         if not self.units.angle:
             raise ValueError("an inbound artefact must declare its angle unit")
+        if self.curvature_interpolation is MISSING_INTERPOLATION:
+            raise ValueError(
+                "curvature_interpolation is required. The curvature between the "
+                "producer's samples is not known, and which curve fills it in changes "
+                f"the transfer map: on the saddle {CURVATURE_INTERPOLATIONS[0]!r} and "
+                f"{CURVATURE_INTERPOLATIONS[1]!r} differ by a factor of 580 at the "
+                "coarsest sampling in the declared ladder. Defaulting it would make "
+                "that a choice nobody recorded."
+            )
         if self.curvature_interpolation not in CURVATURE_INTERPOLATIONS:
             raise ValueError(
-                f"curvature_interpolation must be one of {CURVATURE_INTERPOLATIONS}"
+                f"curvature_interpolation must be one of {CURVATURE_INTERPOLATIONS}, "
+                f"not {self.curvature_interpolation!r}"
             )
         if self.upstream_status not in UPSTREAM_STATUS:
             raise ValueError(f"upstream_status must be one of {UPSTREAM_STATUS}")
@@ -496,7 +517,14 @@ class PathGeometryArtefact:
             path_type=str(payload.get("path_type", "geodesic")),
             path_type_basis=str(payload.get("path_type_basis", "declared by the producer")),
             sampling=SamplingPolicy.from_dict(payload.get("sampling")),
-            curvature_interpolation=str(payload.get("curvature_interpolation", "pchip-monotone")),
+            # No default here either. A serialised artefact that lost the field
+            # must fail to reopen; supplying one would reintroduce exactly the
+            # silent selection the constructor refuses.
+            curvature_interpolation=(
+                str(payload["curvature_interpolation"])
+                if "curvature_interpolation" in payload
+                else MISSING_INTERPOLATION
+            ),
             uncertainty=GeometryUncertainty.from_dict(payload.get("uncertainty")),
             validity=ChartValidity.from_dict(payload.get("validity")),
             upstream_status=str(payload.get("upstream_status", "ok")),
