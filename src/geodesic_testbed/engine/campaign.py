@@ -11,7 +11,7 @@ The stages are ordered by what each one can falsify on its own.
 1. **Flat plate against rolled cylinder.** A control before an experiment, and
    a *differential* one: the two coupons have the same intrinsic geometry, so
    they must have the same transfer map. Two things about it are easy to state
-   too strongly, and :func:`intrinsic_flatness_control` states them carefully.
+   too strongly, and :func:`evaluate_differential_case` states them carefully, per pair.
 
    The prediction is **not** that the two measured separations are identical.
    They are identical in ``Phi``; at finite perturbation the cylinder has a
@@ -27,6 +27,12 @@ The stages are ordered by what each one can falsify on its own.
    where the two coupons felt it identically; a fixture datum re-established
    when the second coupon was mounted did not. What cancels is measured and
    reported, not assumed.
+
+   Each pair carries its own :class:`DifferentialCase`: its own predicted
+   difference, its own covariance and its own Jacobians. A campaign runs
+   several perturbations, replicates and scales, and one array applied to all
+   of them would be broadcast across unlike conditions -- agreeing with one
+   pair and meaning nothing for the rest.
 
    It is still the stage to run first, and it is still the only one whose
    prediction needs no curvature at all.
@@ -77,6 +83,7 @@ from typing import Any
 import numpy as np
 
 from .measurement import ROLES, MeasurementRecord
+from .uncertainty import CONTRIBUTIONS as UNCERTAINTY_SOURCES
 
 Array = np.ndarray
 
@@ -498,15 +505,27 @@ DIFFERENCEABLE_FIELDS: tuple[str, ...] = (
     "filter_operator_digest",
     "filter_causal",
     "calibration_id",
+    # The id names an instrument state; the digest is the transform that
+    # actually ran. Matching the first while permitting different seconds
+    # defeats the separation the two fields exist to provide.
+    "calibration_transform_digest",
     "reconstruction_version",
+    # Two arrays on the same grid are not the same observation if different
+    # samples were dropped from them, or dropped under different rules.
+    "rejected_sample_mask",
+    "outlier_rule",
 )
 
-#: How close two achieved perturbations must be, relative to their combined
-#: declared uncertainty, before the pair is treated as one condition. Two runs
-#: can share a command and receive measurably different starting poses, and the
-#: gap between commanded and achieved is a starting-pose error of exactly the
-#: kind under test.
-ACHIEVED_MATCH_SIGMAS = 1.0
+#: Default only. How close two achieved perturbations must be, relative to
+#: their combined declared uncertainty, before the pair is treated as one
+#: condition. Two runs can share a command and receive measurably different
+#: starting poses, and that gap is a starting-pose error of exactly the kind
+#: under test -- but *how close is close enough* is a policy an instrument
+#: protocol declares, not a mathematical invariant, so every
+#: :class:`DifferentialCase` carries its own and this is what it falls back to.
+DEFAULT_ACHIEVED_MATCH_SIGMAS = 1.0
+
+
 
 
 @dataclass(frozen=True)
@@ -526,8 +545,8 @@ class SharedDifferential:
     common because it has the same *name* is how a differential control comes
     to look more powerful than it is.
 
-    The cancellation is therefore *measured* here and reported as
-    ``cancelled_fraction``, rather than asserted in a docstring.
+    The effect is therefore *measured* here, as
+    :meth:`differential_to_separate_variance_ratio`, rather than asserted.
     """
 
     names: tuple[str, ...]
@@ -545,6 +564,9 @@ class SharedDifferential:
             raise ValueError("a shared-parameter block must name its parameters")
         if len(self.kinds) != len(self.names):
             raise ValueError("every shared parameter needs a kind")
+        for kind in self.kinds:
+            if kind not in UNCERTAINTY_SOURCES:
+                raise ValueError(f"shared parameter kinds must be in {UNCERTAINTY_SOURCES}")
         if not self.basis:
             raise ValueError(
                 "a shared-parameter block must say how C_theta was arrived at; "
@@ -579,12 +601,20 @@ class SharedDifferential:
         gap = self.cylinder_jacobian - self.plate_jacobian
         return gap @ self.covariance @ gap.T
 
-    def uncancelled_fraction(self) -> float:
-        """How much of the shared variance the difference failed to remove.
+    def differential_to_separate_variance_ratio(self) -> float:
+        """What the subtraction did to the shared variance. **Not a fraction.**
 
-        Zero when the two coupons felt the parameter identically, one when the
-        subtraction achieved nothing. It is the number that says whether this
-        control is differential in fact rather than in intent.
+        .. code-block:: text
+
+            tr[(J_c - J_p) C (J_c - J_p)^T] / (tr[J_p C J_p^T] + tr[J_c C J_c^T])
+
+        Zero when the two coupons felt the parameter identically -- the case a
+        differential control is designed for. One when only one of them felt it
+        at all, so there was nothing to cancel. **Two** when they felt it
+        oppositely, ``J_c = -J_p``: differencing then *amplifies* the shared
+        uncertainty rather than removing it, which is the outcome a name like
+        "uncancelled fraction" would have quietly excluded. It is not clipped,
+        because a value above one is the finding.
         """
         survives = float(np.trace(self.difference_block()))
         separately = float(
@@ -601,7 +631,203 @@ class SharedDifferential:
             "kinds": list(self.kinds),
             "basis": self.basis,
             "samples": self.samples,
-            "uncancelled_fraction": self.uncancelled_fraction(),
+            "differential_to_separate_variance_ratio": (
+                self.differential_to_separate_variance_ratio()
+            ),
+            "note": self.note,
+        }
+
+
+@dataclass(frozen=True)
+class DifferentialCovariance:
+    """``Sigma_D`` for one pair, with enough provenance to rule out double counting.
+
+    ``Sigma_D = Sigma_p + Sigma_c - Sigma_pc - Sigma_cp``. Supplying the result
+    is not enough on its own: when the independent parts come from the two
+    trials' own ``measurement_covariance`` and the cross terms from a shared
+    block, nothing in the records says whether those covariances already
+    contain the sources the shared block also carries. A calibration
+    uncertainty inside both is counted twice, which is not conservative -- it
+    is wrong in the direction that looks like caution.
+
+    So each component declares what it accounts for, and construction refuses
+    an overlap. ``grid_digest`` pins the arclength grid the matrix belongs to;
+    a covariance on a different grid pairs uncertainty with the wrong arc
+    lengths and every value check passes for it.
+    """
+
+    matrix: Array
+    basis: str
+    independent_sources: tuple[str, ...] = ()
+    shared_sources: tuple[str, ...] = ()
+    calibration_ids: tuple[str, ...] = ()
+    grid_digest: str = ""
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        from .contract import validated_covariance
+
+        if not self.basis:
+            raise ValueError(
+                "a differential covariance must say how it was arrived at; it is "
+                "what every residual in the comparison is divided by"
+            )
+        for field_name in ("independent_sources", "shared_sources"):
+            for source in getattr(self, field_name):
+                if source not in UNCERTAINTY_SOURCES:
+                    raise ValueError(f"{field_name} entries must be in {UNCERTAINTY_SOURCES}")
+        overlap = sorted(set(self.independent_sources) & set(self.shared_sources))
+        if overlap:
+            raise ValueError(
+                f"{overlap} is declared in both the independent components and the "
+                "shared block, so it is counted twice. Counting an uncertainty "
+                "twice is not conservative, it is wrong in the direction that "
+                "looks like caution."
+            )
+        object.__setattr__(
+            self, "matrix", validated_covariance(self.matrix, "Sigma_D", size=None)
+        )
+        for name in ("independent_sources", "shared_sources", "calibration_ids"):
+            object.__setattr__(self, name, tuple(getattr(self, name)))
+
+    @property
+    def accounts_for(self) -> tuple[str, ...]:
+        """Every source this matrix contains, from either side."""
+        return tuple(sorted(set(self.independent_sources) | set(self.shared_sources)))
+
+    @property
+    def samples(self) -> int:
+        return int(self.matrix.shape[0])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "basis": self.basis,
+            "samples": self.samples,
+            "independent_sources": list(self.independent_sources),
+            "shared_sources": list(self.shared_sources),
+            "accounts_for": list(self.accounts_for),
+            "calibration_ids": list(self.calibration_ids),
+            "grid_digest": self.grid_digest,
+            "note": self.note,
+        }
+
+
+@dataclass(frozen=True)
+class DifferentialCase:
+    """One plate-cylinder pair, with the prediction and covariance that are *its*.
+
+    A campaign runs several perturbations, replicates and scales. Each pair has
+    a different predicted difference, a different covariance and different
+    parameter Jacobians, and a single array applied to all of them would be
+    silently broadcast across unlike conditions -- agreeing with one and
+    meaning nothing for the rest.
+
+    ``difference_covariance`` is ``Sigma_D``, the ``(n, n)`` covariance of the
+    difference itself, and is named for what it is. A *joint* covariance would
+    be the ``(2n, 2n)`` block matrix over the two trials stacked, from which
+    ``Sigma_D = D Sigma_joint D^T`` with ``D = [-I  I]``;
+    :meth:`from_joint` builds a case that way for a caller who has one.
+    """
+
+    plate_run_id: str
+    cylinder_run_id: str
+    predicted_difference: Array
+    prediction_digest: str
+    difference_covariance: DifferentialCovariance | None = None
+    shared_parameters: SharedDifferential | None = None
+    coverage: float = 0.95
+    achieved_match_sigmas: float = DEFAULT_ACHIEVED_MATCH_SIGMAS
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.plate_run_id or not self.cylinder_run_id:
+            raise ValueError("a case must name both runs it applies to")
+        if not self.prediction_digest:
+            raise ValueError(
+                "a case must name the prediction it was computed from; a predicted "
+                "difference with no provenance cannot be replayed or argued with"
+            )
+        predicted = np.asarray(self.predicted_difference, dtype=float)
+        if predicted.ndim != 1 or not predicted.size:
+            raise ValueError("the predicted difference must be one value per sample")
+        if not np.all(np.isfinite(predicted)):
+            raise ValueError("the predicted difference must be finite")
+        predicted.setflags(write=False)
+        object.__setattr__(self, "predicted_difference", predicted)
+        if not 0.0 < float(self.coverage) < 1.0:
+            raise ValueError("coverage must lie strictly between 0 and 1")
+        if float(self.achieved_match_sigmas) <= 0.0:
+            raise ValueError(
+                "achieved_match_sigmas is how close two starting poses must be to "
+                "count as one condition; zero or negative admits nothing"
+            )
+        for other, name in (
+            (self.difference_covariance, "difference_covariance"),
+            (self.shared_parameters, "shared_parameters"),
+        ):
+            if other is not None and other.samples != predicted.size:
+                raise ValueError(
+                    f"{name} is on {other.samples} samples and the predicted "
+                    f"difference has {predicted.size}"
+                )
+
+    @classmethod
+    def from_joint(
+        cls,
+        *,
+        joint_covariance,
+        basis: str,
+        **fields: Any,
+    ) -> DifferentialCase:
+        """Build a case from a true ``(2n, 2n)`` joint covariance.
+
+        ``Sigma_D = D Sigma_joint D^T`` with ``D = [-I  I]``, which is where
+        the cross-covariance blocks actually enter. A caller who has the joint
+        matrix should pass it here rather than forming the difference by hand.
+        """
+        from .contract import validated_covariance
+
+        joint = validated_covariance(joint_covariance, "Sigma_joint", size=None)
+        if joint.shape[0] % 2:
+            raise ValueError(
+                f"a joint covariance is (2n, 2n) over the two trials stacked; "
+                f"{joint.shape[0]} is odd"
+            )
+        samples = joint.shape[0] // 2
+        selector = np.hstack([-np.eye(samples), np.eye(samples)])
+        difference = selector @ joint @ selector.T
+        covariance = DifferentialCovariance(
+            matrix=difference,
+            basis=basis,
+            note="formed as D Sigma_joint D^T with D = [-I  I]",
+            **{
+                key: fields.pop(key)
+                for key in (
+                    "independent_sources",
+                    "shared_sources",
+                    "calibration_ids",
+                    "grid_digest",
+                )
+                if key in fields
+            },
+        )
+        return cls(difference_covariance=covariance, **fields)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "plate_run_id": self.plate_run_id,
+            "cylinder_run_id": self.cylinder_run_id,
+            "samples": int(self.predicted_difference.size),
+            "prediction_digest": self.prediction_digest,
+            "coverage": float(self.coverage),
+            "achieved_match_sigmas": float(self.achieved_match_sigmas),
+            "difference_covariance": (
+                None if self.difference_covariance is None
+                else self.difference_covariance.to_dict()
+            ),
+            "shared_parameters": (
+                None if self.shared_parameters is None else self.shared_parameters.to_dict()
+            ),
             "note": self.note,
         }
 
@@ -630,199 +856,199 @@ def _achieved_sigma(record: MeasurementRecord) -> tuple[float, float]:
     )
 
 
-def intrinsic_flatness_control(
-    plate: list[MeasurementRecord],
-    cylinder: list[MeasurementRecord],
-    *,
-    predicted_difference=None,
-    joint_covariance=None,
-    shared: SharedDifferential | None = None,
-    coverage: float = 0.95,
+def _pairing_refusal(
+    plate: MeasurementRecord, cylinder: MeasurementRecord, match_sigmas: float
+) -> str | None:
+    """Why these two trials cannot be differenced, or ``None`` if they can."""
+    clashes = _differenceable(plate, cylinder)
+    if clashes:
+        return f"these differ and must not: {clashes}"
+    if list(plate.arclength) != list(cylinder.arclength):
+        return "different arclength grids, so the samples are not paired"
+    plate_achieved, cylinder_achieved = _achieved(plate), _achieved(cylinder)
+    if plate_achieved is None or cylinder_achieved is None:
+        return (
+            "achieved perturbations are not reported; the control pairs on what "
+            "the rig did, not on what it was told"
+        )
+    sigmas = [
+        float(np.hypot(a, b))
+        for a, b in zip(_achieved_sigma(plate), _achieved_sigma(cylinder), strict=True)
+    ]
+    if any(sigma <= 0.0 for sigma in sigmas):
+        return (
+            "an achieved perturbation was reported with no uncertainty, so there "
+            "is no scale on which to call two of them the same"
+        )
+    gaps = [abs(a - b) for a, b in zip(plate_achieved, cylinder_achieved, strict=True)]
+    if any(gap > match_sigmas * sigma for gap, sigma in zip(gaps, sigmas, strict=True)):
+        return (
+            f"achieved perturbations differ by {gaps} against a combined uncertainty "
+            f"of {sigmas} at {match_sigmas} sigma; propagate the difference through "
+            "the transfer map or do not pair them"
+        )
+    return None
+
+
+def _case_covariance(
+    case: DifferentialCase, plate: MeasurementRecord, cylinder: MeasurementRecord
+):
+    """``Sigma_D`` for this pair, or ``None`` when nothing established one.
+
+    A declared :class:`DifferentialCovariance` is the whole answer. Otherwise
+    the independent parts come from the two trials' own covariances and the
+    cross terms from the shared block, which collapses the four-term sum to
+    ``Sigma_ind,p + Sigma_ind,c + (J_c - J_p) C (J_c - J_p)^T``.
+
+    ``None`` is the honest answer when neither was supplied. Combining two
+    scalar uncertainties in quadrature would assume independence, which is
+    precisely the opposite of the cancellation a differential control claims.
+    """
+    from .contract import validated_covariance
+
+    if case.difference_covariance is not None:
+        return case.difference_covariance
+    shared = case.shared_parameters
+    if shared is None:
+        return None
+    if plate.measurement_covariance is None or cylinder.measurement_covariance is None:
+        return None
+    independent = validated_covariance(
+        plate.measurement_covariance, "Sigma_ind,plate", size=None
+    ) + validated_covariance(
+        cylinder.measurement_covariance, "Sigma_ind,cylinder", size=None
+    )
+    return DifferentialCovariance(
+        matrix=independent + shared.difference_block(),
+        basis=(
+            "the two trials' declared measurement covariances as the independent "
+            f"parts, and {shared.basis} for the shared block"
+        ),
+        shared_sources=shared.kinds,
+        calibration_ids=(plate.calibration_id,),
+        note="Sigma_ind,p + Sigma_ind,c + (J_c - J_p) C (J_c - J_p)^T",
+    )
+
+
+def evaluate_differential_case(
+    case: DifferentialCase,
+    plate: MeasurementRecord,
+    cylinder: MeasurementRecord,
 ) -> dict[str, Any]:
-    """Stage one's test, stated as two hypotheses rather than one.
+    """One pair, against the prediction and covariance declared for *it*.
 
-    Bending a sheet onto a drum does not change its intrinsic geometry, so the
-    plate and the rolled cylinder have the same transfer map -- this runtime
-    computes them to agree to 1e-13. That is the **intrinsic null**, and it is
-    a statement about ``Phi``.
-
-    It is *not* a statement about what an instrument reports. The two coupons
-    differ in transverse normal curvature, so their ambient-chord predictions
-    differ at second order in the perturbation -- the same branch that measured
-    the transfer maps agreeing to 1e-13 measured the cylinder's validity
-    envelope as 15.7% tighter than the plate's, for exactly that reason. At
-    finite perturbation ``y_c != y_p`` even though the intrinsic sensitivities
-    agree. So the **observation-space null** is
+    Returns the residual statistics when a covariance was established and says
+    why not when one was not. The observation-space null is
 
     .. code-block:: text
 
         r_D = (y_c - y_p) - (yhat_c - yhat_p)
 
-    and testing ``y_c - y_p`` against zero instead would reject a correct
-    runtime on a coupon pair it predicts perfectly. ``predicted_difference`` is
-    ``yhat_c - yhat_p`` and is required to test it; without one, this function
-    reports the raw difference as a description and says in
-    ``observation_null`` that no test was performed.
-
-    **Cancellation is measured, not assumed.** The differential covariance is
-
-    .. code-block:: text
-
-        Sigma_D = Sigma_p + Sigma_c - Sigma_pc - Sigma_cp
-
-    and the cross terms exist only if something says what the two coupons
-    share. Combining two scalar uncertainties in quadrature -- which is what
-    this function used to do -- assumes independence, which is the opposite of
-    the cancellation the docstring was claiming. Supply either a
-    ``joint_covariance`` for the difference directly, or a
-    :class:`SharedDifferential` from which ``(J_c - J_p) C (J_c - J_p)^T`` is
-    built. With neither, the result says
-    ``differential_covariance_not_established`` and no chi-square is computed.
-
-    Trials are paired on **achieved** perturbations, not commanded ones, and
-    only when the achieved values agree to within their own declared
-    uncertainty. Two runs can share a command and receive measurably different
-    starting poses, and that gap is a starting-pose error of precisely the kind
-    under test.
+    and never ``y_c - y_p`` against zero: the cylinder has a transverse normal
+    curvature the plate does not, so the two ambient-chord predictions differ
+    at second order in the perturbation even though the transfer maps agree.
     """
     from .output_covariance import OutputCovariance
 
-    if not plate or not cylinder:
+    if plate.run_id != case.plate_run_id or cylinder.run_id != case.cylinder_run_id:
         raise ValueError(
-            "the flatness control is a comparison between two coupons and needs "
-            "trials from both; either one alone is a different experiment"
+            f"this case is for {case.plate_run_id!r} against {case.cylinder_run_id!r}, "
+            f"not {plate.run_id!r} against {cylinder.run_id!r}"
+        )
+    refusal = _pairing_refusal(plate, cylinder, float(case.achieved_match_sigmas))
+    if refusal is not None:
+        raise ValueError(
+            f"{case.plate_run_id!r} and {case.cylinder_run_id!r} cannot be "
+            f"differenced: {refusal}"
         )
 
-    matched: list[tuple[MeasurementRecord, MeasurementRecord]] = []
-    refused: list[dict[str, Any]] = []
-    for left in plate:
-        for right in cylinder:
-            clashes = _differenceable(left, right)
-            if clashes:
-                refused.append(
-                    {
-                        "plate_run": left.run_id,
-                        "cylinder_run": right.run_id,
-                        "reason": f"these differ and must not: {clashes}",
-                    }
-                )
-                continue
-            if list(left.arclength) != list(right.arclength):
-                refused.append(
-                    {
-                        "plate_run": left.run_id,
-                        "cylinder_run": right.run_id,
-                        "reason": "different arclength grids, so the samples are not paired",
-                    }
-                )
-                continue
-            left_achieved, right_achieved = _achieved(left), _achieved(right)
-            if left_achieved is None or right_achieved is None:
-                refused.append(
-                    {
-                        "plate_run": left.run_id,
-                        "cylinder_run": right.run_id,
-                        "reason": (
-                            "achieved perturbations are not reported; the control "
-                            "pairs on what the rig did, not on what it was told"
-                        ),
-                    }
-                )
-                continue
-            sigmas = [
-                np.hypot(a, b)
-                for a, b in zip(_achieved_sigma(left), _achieved_sigma(right), strict=True)
-            ]
-            gaps = [abs(a - b) for a, b in zip(left_achieved, right_achieved, strict=True)]
-            if any(sigma <= 0.0 for sigma in sigmas):
-                refused.append(
-                    {
-                        "plate_run": left.run_id,
-                        "cylinder_run": right.run_id,
-                        "reason": (
-                            "an achieved perturbation was reported with no uncertainty, "
-                            "so there is no scale on which to call two of them the same"
-                        ),
-                    }
-                )
-                continue
-            if any(
-                gap > ACHIEVED_MATCH_SIGMAS * sigma
-                for gap, sigma in zip(gaps, sigmas, strict=True)
-            ):
-                refused.append(
-                    {
-                        "plate_run": left.run_id,
-                        "cylinder_run": right.run_id,
-                        "reason": (
-                            f"achieved perturbations differ by {gaps} against a combined "
-                            f"uncertainty of {sigmas}; propagate the difference through "
-                            "the transfer map or do not pair them"
-                        ),
-                    }
-                )
-                continue
-            matched.append((left, right))
-
-    if not matched:
-        raise ValueError(
-            "no plate trial is differenceable against a cylinder trial at a matched "
-            f"achieved perturbation. {len(refused)} pair(s) were refused: "
-            f"{refused[:3]}"
-        )
-
-    predicted = (
-        None if predicted_difference is None
-        else np.asarray(predicted_difference, dtype=float)
+    observed = np.asarray(cylinder.signed_transverse_separation, dtype=float) - np.asarray(
+        plate.signed_transverse_separation, dtype=float
     )
+    if observed.shape != case.predicted_difference.shape:
+        raise ValueError(
+            f"the case predicts {case.predicted_difference.size} samples and the "
+            f"trials carry {observed.size}"
+        )
+    residual = observed - case.predicted_difference
+
+    row: dict[str, Any] = {
+        "plate_run": plate.run_id,
+        "cylinder_run": cylinder.run_id,
+        "plate_achieved": _achieved(plate),
+        "cylinder_achieved": _achieved(cylinder),
+        "samples": int(observed.size),
+        "prediction_digest": case.prediction_digest,
+        "max_abs_observed_difference": float(np.max(np.abs(observed))),
+        "max_abs_residual": float(np.max(np.abs(residual))),
+    }
+
+    covariance = _case_covariance(case, plate, cylinder)
+    if covariance is None:
+        row["differential_covariance"] = "not-established"
+        row["covariance"] = None
+        row["statistic"] = None
+        return row
+    if covariance.samples != observed.size:
+        raise ValueError(
+            f"Sigma_D is on {covariance.samples} samples and the difference has "
+            f"{observed.size}"
+        )
+    total = OutputCovariance(
+        arclength=np.asarray(plate.arclength, dtype=float),
+        outputs=("signed-transverse-separation",),
+        blocks={"observation-noise": covariance.matrix},
+        note="Sigma_p + Sigma_c - Sigma_pc - Sigma_cp",
+    )
+    row["differential_covariance"] = "established"
+    row["covariance"] = covariance.to_dict()
+    row["statistic"] = total.accepts(residual, coverage=float(case.coverage))
+    return row
+
+
+def campaign_flatness_control(
+    cases: list[DifferentialCase], records: list[MeasurementRecord]
+) -> dict[str, Any]:
+    """Every declared pair, each against its own prediction and covariance.
+
+    The campaign-wide boolean is reported **only** when every matched pair was
+    actually tested. One tested pair among eight would otherwise let
+    ``all_consistent`` read ``True`` while seven were never examined, which is
+    the shape of a result that is worse than no result.
+    """
+    by_run = {record.run_id: record for record in records}
+    if not cases:
+        raise ValueError(
+            "a differential control needs at least one declared pair; a campaign "
+            "with no cases has nothing to test"
+        )
 
     rows: list[dict[str, Any]] = []
-    for left, right in matched:
-        observed = np.asarray(right.signed_transverse_separation, dtype=float) - np.asarray(
-            left.signed_transverse_separation, dtype=float
+    for case in cases:
+        missing = [
+            run_id
+            for run_id in (case.plate_run_id, case.cylinder_run_id)
+            if run_id not in by_run
+        ]
+        if missing:
+            raise ValueError(
+                f"a case names {missing}, which is not among the supplied trials"
+            )
+        rows.append(
+            evaluate_differential_case(
+                case, by_run[case.plate_run_id], by_run[case.cylinder_run_id]
+            )
         )
-        row: dict[str, Any] = {
-            "plate_run": left.run_id,
-            "cylinder_run": right.run_id,
-            "achieved_lateral": _achieved(left),
-            "achieved_heading": _achieved(right),
-            "samples": int(observed.size),
-            "max_abs_observed_difference": float(np.max(np.abs(observed))),
-        }
-        if predicted is None:
-            row["observation_null"] = "not-tested: no predicted difference was declared"
-            row["residual"] = None
-        else:
-            if predicted.shape != observed.shape:
-                raise ValueError(
-                    f"the predicted difference is {predicted.shape} and the observed "
-                    f"one is {observed.shape}; they are not the same comparison"
-                )
-            residual = observed - predicted
-            row["max_abs_residual"] = float(np.max(np.abs(residual)))
-            row["residual"] = residual
 
-        total = _differential_covariance(left, right, joint_covariance, shared)
-        if total is None:
-            row["differential_covariance"] = "not-established"
-            row["statistic"] = None
-        else:
-            row["differential_covariance"] = "established"
-            if row.get("residual") is not None:
-                covariance = OutputCovariance(
-                    arclength=np.asarray(left.arclength, dtype=float),
-                    outputs=("signed-transverse-separation",),
-                    blocks={"observation-noise": total},
-                    note="Sigma_p + Sigma_c - Sigma_pc - Sigma_cp",
-                )
-                row["statistic"] = covariance.accepts(row["residual"], coverage=coverage)
-            else:
-                row["statistic"] = None
-        row.pop("residual", None)
-        rows.append(row)
+    tested = [row for row in rows if row["statistic"] is not None]
+    untested = [row for row in rows if row["statistic"] is None]
+    if not untested:
+        status = "complete"
+    elif tested:
+        status = "partial"
+    else:
+        status = "differential_covariance_not_established"
 
-    established = [row for row in rows if row["differential_covariance"] == "established"]
-    tested = [row for row in established if row["statistic"] is not None]
     return {
         "status": CAMPAIGN_STATUS,
         "intrinsic_null": (
@@ -832,81 +1058,33 @@ def intrinsic_flatness_control(
         ),
         "observation_null": (
             "r_D = (y_c - y_p) - (yhat_c - yhat_p). The raw difference is NOT "
-            "expected to vanish: the cylinder has a transverse normal curvature the "
-            "plate does not, so the two ambient-chord predictions differ at second "
-            "order in the perturbation"
-            if predicted is not None
-            else "not tested: no predicted difference was declared, so the observed "
-            "difference below is a description and not evidence"
+            "expected to vanish: the cylinder has a transverse normal curvature "
+            "the plate does not, so the two ambient-chord predictions differ at "
+            "second order in the perturbation"
         ),
         "matched_pairs": len(rows),
-        "refused_pairs": refused,
-        "differential_covariance": (
-            "established" if established else "differential_covariance_not_established"
+        "tested_pairs": len(tested),
+        "untested_pairs": len(untested),
+        "covariance_status": status,
+        # Only a boolean when there is nothing left out of it.
+        "all_tested_consistent": (
+            all(row["statistic"]["accepted"] for row in tested)
+            if tested and not untested
+            else None
         ),
-        "shared": None if shared is None else shared.to_dict(),
         "worst_reduced_chi_square": (
             max(row["statistic"]["reduced"] for row in tested) if tested else None
-        ),
-        "all_consistent": (
-            all(row["statistic"]["accepted"] for row in tested) if tested else None
         ),
         "note": (
             "cancellation is measured rather than assumed: a shared parameter only "
             "cancels where the two coupons felt it identically, and "
-            "shared.uncancelled_fraction reports how much survived the subtraction. "
-            "What counts as agreement is the instrument protocol's to declare, and "
-            f"the campaign status is {CAMPAIGN_STATUS!r}"
+            "differential_to_separate_variance_ratio reports what the subtraction "
+            "did to it -- two when they felt it oppositely, which amplifies. What "
+            "counts as agreement is the instrument protocol's to declare, and the "
+            f"campaign status is {CAMPAIGN_STATUS!r}"
         ),
         "pairs": rows,
     }
-
-
-def _differential_covariance(
-    plate: MeasurementRecord,
-    cylinder: MeasurementRecord,
-    joint_covariance,
-    shared: SharedDifferential | None,
-):
-    """``Sigma_p + Sigma_c - Sigma_pc - Sigma_cp``, or ``None`` if nothing says.
-
-    A declared joint covariance is taken as the whole answer. Otherwise the
-    independent parts come from each trial's own ``measurement_covariance`` and
-    the cross terms from the shared block, which collapses the four-term sum to
-    ``Sigma_ind,p + Sigma_ind,c + (J_c - J_p) C (J_c - J_p)^T``.
-
-    ``None`` is the honest answer when neither was supplied. Combining two
-    scalar uncertainties in quadrature would assume independence, which is
-    precisely the opposite of the cancellation a differential control claims.
-    """
-    from .contract import validated_covariance
-
-    samples = len(plate.signed_transverse_separation)
-    if joint_covariance is not None:
-        total = validated_covariance(joint_covariance, "Sigma_D", size=None)
-        if total.shape != (samples, samples):
-            raise ValueError(
-                f"the joint covariance is {total.shape} and the difference has "
-                f"{samples} samples"
-            )
-        return total
-    if shared is None:
-        return None
-    if plate.measurement_covariance is None or cylinder.measurement_covariance is None:
-        return None
-    if shared.samples != samples:
-        raise ValueError(
-            f"the shared block is on {shared.samples} samples and the difference has "
-            f"{samples}"
-        )
-    independent = validated_covariance(
-        plate.measurement_covariance, "Sigma_ind,plate", size=None
-    ) + validated_covariance(
-        cylinder.measurement_covariance, "Sigma_ind,cylinder", size=None
-    )
-    return validated_covariance(
-        independent + shared.difference_block(), "Sigma_D", size=None
-    )
 
 
 __all__ = [
@@ -914,11 +1092,14 @@ __all__ = [
     "ConformanceReport",
     "CouponProgram",
     "CouponStage",
-    "ACHIEVED_MATCH_SIGMAS",
+    "DEFAULT_ACHIEVED_MATCH_SIGMAS",
     "DIFFERENCEABLE_FIELDS",
+    "DifferentialCase",
+    "DifferentialCovariance",
     "PerturbationPlan",
     "SharedDifferential",
+    "campaign_flatness_control",
     "conformance",
+    "evaluate_differential_case",
     "default_program",
-    "intrinsic_flatness_control",
 ]

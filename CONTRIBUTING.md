@@ -342,6 +342,21 @@ shared history.
   observation-space null is `r_D = (y_c - y_p) - (yhat_c - yhat_p)`. Testing
   the raw difference against zero would reject a correct runtime on a coupon
   pair it predicts perfectly.
+- **Every pair carries its own prediction and covariance.** A campaign runs
+  several perturbations, replicates and scales; a single predicted difference
+  or covariance applied to all of them is broadcast across unlike conditions,
+  agreeing with one pair and meaning nothing for the rest. `DifferentialCase`
+  is per pair and names the prediction it came from.
+- **A campaign-wide boolean is withheld unless every pair was tested.**
+  `matched_pairs`, `tested_pairs`, `untested_pairs` and `covariance_status`
+  are always reported; `all_tested_consistent` is `None` while anything is
+  untested, because one tested pair among eight reading as a consistent
+  campaign is worse than no result.
+- **A verdict names the tail, not the cause.** A chi-square below the band can
+  mean an overstated covariance, a prediction not independent of the
+  observation, parameters fitted on the evaluated data, fewer effective
+  degrees of freedom, or a wrong correlation structure. The result lists them;
+  it does not pick one.
 - **Cancellation is measured, never assumed.** A parameter shared by two
   coupons contributes `(J_c - J_p) C_theta (J_c - J_p)^T` to their difference,
   which is zero only where both felt it identically. Combining two scalar
@@ -349,6 +364,11 @@ shared history.
   the cancellation a differential control claims; with no declared joint
   covariance and no shared-parameter Jacobians, the control reports
   `differential_covariance_not_established` and computes no statistic.
+  `differential_to_separate_variance_ratio` is what the subtraction did and is
+  **not a fraction** -- it is two when the coupons felt the parameter
+  oppositely, because differencing then amplifies it. Do not clip it. And each
+  component declares its sources, so the same one inside a trial's covariance
+  and inside the shared block is refused rather than counted twice.
 - **Pair on achieved, compare on whitened.** Trials pair on achieved
   perturbations inside their own declared uncertainty, never on the command,
   and every field that must agree before two trials can be differenced --

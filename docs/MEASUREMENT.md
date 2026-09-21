@@ -35,8 +35,12 @@ satisfy every rule and disagree with the prediction entirely, which is the
 point: the programme is what would make a disagreement mean something, not
 what decides whether there is one.
 
-`intrinsic_flatness_control(plate, cylinder)` is the differential comparison
-the first stage is built around. A cylinder is visibly curved and
+`evaluate_differential_case(case, plate, cylinder)` and
+`campaign_flatness_control(cases, records)` are the differential comparison the
+first stage is built around. Each plate-cylinder pair carries its own
+`DifferentialCase` — its own predicted difference, covariance and Jacobians —
+because a campaign runs several perturbations, replicates and scales, and one
+array applied to all of them would be broadcast across unlike conditions. A cylinder is visibly curved and
 intrinsically flat, and the runtime computes its transfer map equal to the
 plate's to 1e-13. Two things about that are easy to overstate.
 
@@ -60,18 +64,45 @@ a parameter `theta` common to the two coupons the difference carries
 felt it identically. A calibration scale applied through the same transform
 does; a fixture datum re-established when the second coupon was mounted does
 not. So the differential covariance is
-`Sigma_p + Sigma_c - Sigma_pc - Sigma_cp`, built from either a declared joint
-covariance or a `SharedDifferential` carrying both Jacobians, and without
-either the control reports `differential_covariance_not_established` rather
-than combining two scalar uncertainties in quadrature -- which would assume
-independence, the opposite of the cancellation being claimed.
-`SharedDifferential.uncancelled_fraction()` reports how much survived the
-subtraction, so the cancellation is measured rather than asserted.
+`Sigma_p + Sigma_c - Sigma_pc - Sigma_cp`, built from either a declared
+`DifferentialCovariance` or a `SharedDifferential` carrying both Jacobians,
+and without either the control reports
+`differential_covariance_not_established` rather than combining two scalar
+uncertainties in quadrature — which would assume independence, the opposite of
+the cancellation being claimed. A caller holding the true `(2n, 2n)` joint
+covariance passes it to `DifferentialCase.from_joint`, which forms
+`Sigma_D = D Sigma_joint D^T` with `D = [-I  I]`.
+
+`SharedDifferential.differential_to_separate_variance_ratio()` reports what the
+subtraction actually did. It is **not a fraction**: zero when both coupons felt
+the parameter identically, one when only one of them felt it, and **two** when
+they felt it oppositely — differencing then amplifies the shared uncertainty
+rather than removing it. It is not clipped, because a value above one is the
+finding.
+
+Each covariance component declares its `independent_sources` and
+`shared_sources`, and a source named on both sides is refused: the same
+calibration uncertainty inside a trial's own covariance and inside the shared
+block is counted twice.
+
+The campaign-wide boolean is reported only when every matched pair was tested.
+`matched_pairs`, `tested_pairs`, `untested_pairs` and `covariance_status` are
+always reported, so one tested pair among eight cannot read as a consistent
+campaign.
 
 Trials are paired on **achieved** perturbations within their own declared
 uncertainty, and a pair whose observation mode, units, frames, filter identity,
-calibration relationship or arclength grid differ is refused: the difference of
-two different quantities has no null hypothesis.
+calibration relationship, calibration transform digest, rejection mask or
+outlier rule differ is refused: the difference of two different quantities has
+no null hypothesis. How close two achieved perturbations must be is a policy
+the case declares, not a constant.
+
+A chi-square outside the two-sided band is reported as
+`lower-tail-inconsistent` or `upper-tail-inconsistent`, each with its candidate
+interpretations. A statistic cannot distinguish an overstated covariance from a
+prediction that is not independent of the observation, from parameters fitted
+on the evaluated data, or from fewer effective degrees of freedom than
+declared — so the result lists them rather than naming one.
 
 ## Filtering
 

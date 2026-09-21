@@ -90,6 +90,28 @@ BLOCKS: tuple[str, ...] = (
     "numerical",
 )
 
+#: What a chi-square below the band's lower limit can mean. It is a list and
+#: not a conclusion: the statistic says the residual is smaller than the
+#: declared covariance leads one to expect, and every entry here produces that.
+LOWER_TAIL_INTERPRETATIONS: tuple[str, ...] = (
+    "the declared covariance is overstated",
+    "the prediction is not independent of the observation it is compared with",
+    "parameters were fitted on the same data the residual is computed from",
+    "the effective degrees of freedom are fewer than declared",
+    "the correlation structure is modelled wrongly, most often as too little "
+    "correlation between samples that are in fact tied together",
+)
+
+#: And above the upper limit. Symmetric in kind: an understated covariance and
+#: a genuinely wrong prediction produce the same statistic.
+UPPER_TAIL_INTERPRETATIONS: tuple[str, ...] = (
+    "the prediction disagrees with the measurement",
+    "the declared covariance is understated",
+    "a systematic term is missing from the budget entirely",
+    "the two sides are not the same quantity -- a mode, unit or frame mismatch "
+    "that survived the compatibility checks",
+)
+
 #: What ``Sigma_num`` actually is. The arithmetic is the same and the meaning
 #: is not: a probabilistic term makes the chi-square calibrated, a
 #: deterministic bound makes it conservative by an unknown amount.
@@ -637,16 +659,35 @@ class OutputCovariance:
         }
 
     def accepts(self, residual, *, coverage: float = 0.95) -> dict[str, Any]:
-        """Whether the NIS lands inside the two-sided band, and which way if not."""
+        """Whether the NIS lands inside the two-sided band, and which tail if not.
+
+        The verdicts name *where the statistic fell*, not why. An earlier
+        version called the lower tail ``covariance-too-large``, which is one
+        of several explanations and reads like a diagnosis -- a statistic
+        cannot distinguish an overstated covariance from a prediction that is
+        not independent of the observation, from parameters fitted on the data
+        being evaluated, from fewer effective degrees of freedom than declared,
+        or from a correlation structure that is simply wrong. Each tail
+        therefore carries its candidate interpretations rather than asserting
+        one.
+        """
         statistic = self.nis(residual)
         band = self.acceptance_band(coverage=coverage)
         value = statistic["statistic"]
         verdict = "consistent"
+        interpretations: tuple[str, ...] = ()
         if value < band["lower"]:
-            verdict = "covariance-too-large"
+            verdict = "lower-tail-inconsistent"
+            interpretations = LOWER_TAIL_INTERPRETATIONS
         elif value > band["upper"]:
-            verdict = "residual-too-large"
-        return statistic | {"band": band, "verdict": verdict, "accepted": verdict == "consistent"}
+            verdict = "upper-tail-inconsistent"
+            interpretations = UPPER_TAIL_INTERPRETATIONS
+        return statistic | {
+            "band": band,
+            "verdict": verdict,
+            "interpretations": list(interpretations),
+            "accepted": verdict == "consistent",
+        }
 
     def interval_coverage(self, residual, *, sigmas: float = 1.0) -> dict[str, Any]:
         """What fraction of the whitened residuals land inside ``+/- sigmas``.

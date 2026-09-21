@@ -326,7 +326,7 @@ def test_a_trial_that_declares_a_covariance_is_compared_against_it() -> None:
     assert statistics["degrees_of_freedom"] == 3
     assert statistics["band"]["lower"] < statistics["band"]["upper"]
     assert statistics["verdict"] in {
-        "consistent", "covariance-too-large", "residual-too-large"
+        "consistent", "lower-tail-inconsistent", "upper-tail-inconsistent"
     }
     assert 0.0 <= statistics["probability_less_than"] <= 1.0
 
@@ -360,7 +360,7 @@ def test_the_band_is_closed_at_both_ends_so_an_inflated_covariance_fails() -> No
     assert honest["reduced_chi_square"] == pytest.approx(1.0, rel=0.02)
 
     assert honest["verdict"] == "consistent"
-    assert inflated["verdict"] == "covariance-too-large"
+    assert inflated["verdict"] == "lower-tail-inconsistent"
     assert inflated["chi_square"] < honest["chi_square"]
 
 
@@ -369,7 +369,7 @@ def test_a_residual_far_larger_than_the_declared_covariance_is_rejected() -> Non
         _record(measurement_covariance=np.diag([1e-8] * 3).tolist()),
         _filtered([0.0, 1.50, 3.00]),
     )["residual_statistics"]
-    assert verdict["verdict"] == "residual-too-large"
+    assert verdict["verdict"] == "upper-tail-inconsistent"
     assert verdict["max_abs_whitened_residual"] > 10.0
 
 

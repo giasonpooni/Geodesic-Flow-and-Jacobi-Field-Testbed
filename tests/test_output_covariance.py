@@ -376,7 +376,7 @@ def test_an_inflated_covariance_is_rejected_by_the_lower_limit() -> None:
     )
     outcome = inflated.accepts(residual)
     assert not outcome["accepted"]
-    assert outcome["verdict"] == "covariance-too-large"
+    assert outcome["verdict"] == "lower-tail-inconsistent"
 
 
 def test_a_residual_too_large_is_rejected_by_the_upper_limit() -> None:
@@ -388,7 +388,7 @@ def test_a_residual_too_large_is_rejected_by_the_upper_limit() -> None:
     residual = 4.0 * (factor @ generator.standard_normal(total.degrees_of_freedom))
     outcome = total.accepts(residual)
     assert not outcome["accepted"]
-    assert outcome["verdict"] == "residual-too-large"
+    assert outcome["verdict"] == "upper-tail-inconsistent"
 
 
 def test_interval_coverage_catches_what_the_chi_square_averages_away() -> None:
