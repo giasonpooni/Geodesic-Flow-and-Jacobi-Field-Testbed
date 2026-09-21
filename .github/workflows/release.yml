@@ -17,6 +17,14 @@ name: release
 # match, the assets are attached. What is left is the one judgement a workflow
 # should not make on its own -- that this is the release the maintainer meant
 # to publish -- and that is a click.
+#
+# Every action is pinned to a full commit sha rather than a moving major tag.
+# A tag is a pointer its owner can move; `@v7` is a promise about compatibility,
+# not about bytes, and this is the one workflow in the repository that can
+# write. The trailing comment names the release each sha was at when it was
+# reviewed, so an upgrade is a diff someone reads rather than a silent
+# substitution. `.github/workflows/ci.yml` is deliberately left on major tags:
+# it has no write permission, and pinning it is a separate, wider change.
 
 on:
   push:
@@ -47,11 +55,11 @@ jobs:
       version: ${{ steps.identity.outputs.version }}
       commit: ${{ steps.identity.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ inputs.tag || github.ref }}
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
@@ -128,7 +136,7 @@ jobs:
           --expect-commit "${{ steps.identity.outputs.commit }}"
           --expect-version "${{ steps.identity.outputs.version }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-payload
           path: |
@@ -147,15 +155,15 @@ jobs:
     steps:
       # The tools come from the tagged commit, not from the payload: a payload
       # that could also supply its own verifier would be verifying itself.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ inputs.tag || github.ref }}
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-payload
           path: payload
@@ -173,8 +181,23 @@ jobs:
       # The step above could pass and a later step could still replace a file;
       # this hashes every asset, refuses the whole release if one differs, and
       # only then creates anything.
+      #
+      # What that does and does not guarantee, stated exactly:
+      #
+      #   * No incomplete release is ever PUBLISHED. Nothing is uploaded until
+      #     every file has been read and checked, and what is created is a
+      #     draft that a person has to publish.
+      #   * A draft is created before its assets are uploaded, so a failure
+      #     mid-upload does leave an incomplete draft. This deletes its own
+      #     draft when an upload raises, but a run killed outright -- cancelled,
+      #     runner lost -- cannot run cleanup at all.
+      #   * So a rerun is made idempotent instead: it deletes an existing DRAFT
+      #     for the tag and starts again. It refuses outright if a PUBLISHED
+      #     release already exists for the tag, because that is a release
+      #     someone has already stood behind and is not this workflow's to
+      #     replace.
       - name: Create the draft release and attach the verified assets
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const fs = require('fs');
@@ -238,9 +261,27 @@ jobs:
               'Licensed under MPL-2.0.',
             ].join('\n');
 
+            // A rerun is idempotent; a published release is untouchable.
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner, repo, per_page: 100,
+            });
+            const prior = releases.find((item) => item.tag_name === payload.release.tag);
+            if (prior && !prior.draft) {
+              throw new Error(
+                `a published release already exists for ${payload.release.tag}; `
+                + 'refusing to replace it'
+              );
+            }
+            if (prior) {
+              await github.rest.repos.deleteRelease({ owner, repo, release_id: prior.id });
+              core.info(`deleted an earlier draft for ${payload.release.tag}`);
+            }
+
             const release = await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner,
+              repo,
               tag_name: payload.release.tag,
               target_commitish: payload.release.commit,
               name: payload.release.tag,
@@ -249,18 +290,35 @@ jobs:
               prerelease: false,
             });
 
-            for (const asset of assets) {
-              await github.rest.repos.uploadReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: release.data.id,
-                name: asset.name,
-                data: asset.data,
-                headers: {
-                  'content-type': 'application/octet-stream',
-                  'content-length': asset.data.length,
-                },
-              });
-              core.info(`uploaded ${asset.name} (${asset.data.length} bytes)`);
+            // From here a draft exists. If an upload fails, take it back down
+            // rather than leaving a half-populated draft for the next run to
+            // puzzle over -- and never let the cleanup's own failure hide the
+            // error that caused it.
+            try {
+              for (const asset of assets) {
+                await github.rest.repos.uploadReleaseAsset({
+                  owner,
+                  repo,
+                  release_id: release.data.id,
+                  name: asset.name,
+                  data: asset.data,
+                  headers: {
+                    'content-type': 'application/octet-stream',
+                    'content-length': asset.data.length,
+                  },
+                });
+                core.info(`uploaded ${asset.name} (${asset.data.length} bytes)`);
+              }
+            } catch (error) {
+              try {
+                await github.rest.repos.deleteRelease({ owner, repo, release_id: release.data.id });
+                core.warning(`upload failed; deleted the incomplete draft for ${payload.release.tag}`);
+              } catch (cleanup) {
+                core.error(
+                  `upload failed AND the incomplete draft could not be deleted: ${cleanup.message}. `
+                  + 'Delete it by hand before rerunning.'
+                );
+              }
+              throw error;
             }
             core.notice(`draft release ${payload.release.tag} ready at ${release.data.html_url}`);

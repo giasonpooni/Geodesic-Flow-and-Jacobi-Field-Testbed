@@ -38,6 +38,19 @@ lying in ``dist/`` -- a stale wheel from a previous version, an editor backup,
 an unrelated download -- and a release that ships whatever it finds is a
 release nobody declared.
 
+**Evidence fails closed.** A file offered as evidence must read as a report and
+state a schema, a content hash, a positive check count and zero failures. A
+file that cannot be parsed, or that states none of this, is refused rather
+than recorded as evidence with the claim quietly missing. And the claim is
+recomputed on the way back in: ``verify`` re-derives the report block from the
+file rather than trusting the number the manifest states, because a hash over
+the file does not notice a check count edited only in the manifest.
+
+**The reader is frozen too.** :func:`load` validates the whole ``v1`` shape --
+fields, types, roles, digest formats, relative paths, uniqueness -- rather
+than reading the fields it happens to want. A schema that only its own
+producer enforces is not frozen; it is a habit.
+
 Usage::
 
     python tools/release_manifest.py generate \
@@ -78,15 +91,30 @@ ROLES = ("distribution", "evidence")
 
 DIGEST_ALGORITHM = "sha256"
 
+#: The exact shape of a ``v1`` payload, enforced on read as well as on write.
+PAYLOAD_FIELDS = frozenset({"schema", "digest_algorithm", "release", "artefacts"})
+RELEASE_FIELDS = frozenset({"version", "tag", "commit"})
+ARTEFACT_FIELDS = frozenset({"role", "path", "asset_name", "size_bytes", DIGEST_ALGORITHM})
+REPORT_FIELDS = frozenset({"schema", "content_hash", "declared_checks", "failed_checks"})
+
 #: Where the version lives. One source of truth, read the way hatchling reads
 #: it at build time, so the manifest cannot disagree with the wheel.
 DEFAULT_CONTRACT_SOURCE = "src/geodesic_testbed/engine/contract.py"
 
 _RUNTIME_VERSION = re.compile(r'^RUNTIME_VERSION\s*=\s*"([^"]+)"', re.MULTILINE)
 _COMMIT = re.compile(r"\A[0-9a-f]{40}\Z")
+_HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
 _VERSION = re.compile(r"\A[0-9]+\.[0-9]+\.[0-9]+(?:[.\-+a-z0-9]*)\Z")
 _WHEEL = re.compile(r"\A(?P<name>[^-]+)-(?P<version>[^-]+)-.+\.whl\Z")
 _SDIST = re.compile(r"\A(?P<name>.+)-(?P<version>[^-]+)\.tar\.gz\Z")
+
+#: What an evidence file's ``schema`` must look like. A *shape* rather than a
+#: fixed list: the report schemas are versioned separately and will reach v4
+#: without this tool changing, and pinning the list here would make a routine
+#: report revision a release-tooling edit. What it refuses is an arbitrary
+#: string, which is the failure that matters -- "evidence" that is not a report
+#: of this repository at all.
+_EVIDENCE_SCHEMA = re.compile(r"\Ageodesic-jacobi-[a-z-]+-v[0-9]+\Z")
 
 _READ_BLOCK = 1 << 20
 
@@ -141,6 +169,66 @@ def _normalised(version: str) -> str:
     return version.replace("_", "-").replace("-", ".").lower()
 
 
+def _counted(value: object, name: str, *, minimum: int) -> int:
+    """An integer that is not a bool. ``True`` is an ``int`` in Python, and a
+    check count of ``True`` is not a check count."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ManifestError(f"{name} is not an integer: {value!r}")
+    if value < minimum:
+        raise ManifestError(f"{name} is {value}, expected at least {minimum}")
+    return value
+
+
+def _read_json(path: Path, what: str) -> object:
+    def _refuse_constant(token: str) -> object:
+        raise ManifestError(f"{what} contains {token}, which is not JSON")
+
+    try:
+        return json.loads(path.read_text(encoding="utf-8"), parse_constant=_refuse_constant)
+    except (ValueError, UnicodeDecodeError) as error:
+        raise ManifestError(f"{what} is not readable JSON: {error}") from error
+
+
+def evidence_report(path: Path) -> dict[str, object]:
+    """The four things that make a report evidence, or a refusal. Never ``None``.
+
+    A manifest that named a report but not its ``content_hash`` would prove the
+    bytes were uploaded, not that they were the bytes the checks ran against --
+    so a file that cannot supply one is not evidence, and is refused here
+    rather than recorded as evidence with the claim quietly missing.
+    """
+    document = _read_json(path, path.name)
+    if not isinstance(document, dict):
+        raise ManifestError(f"{path.name} is not a report object")
+
+    schema = document.get("schema")
+    if not isinstance(schema, str) or not _EVIDENCE_SCHEMA.match(schema):
+        raise ManifestError(f"{path.name} does not declare a report schema: {schema!r}")
+
+    content_hash = document.get("content_hash")
+    if not isinstance(content_hash, str) or not _HEX64.match(content_hash):
+        raise ManifestError(f"{path.name} has no valid content_hash: {content_hash!r}")
+
+    summary = document.get("summary")
+    if not isinstance(summary, dict):
+        raise ManifestError(f"{path.name} has no summary block")
+
+    declared_checks = _counted(summary.get("n_checks"), f"{path.name} n_checks", minimum=1)
+    failed_checks = _counted(summary.get("n_failed"), f"{path.name} n_failed", minimum=0)
+    if failed_checks:
+        raise ManifestError(
+            f"{path.name} declares {failed_checks} failed check(s); "
+            "a release manifest does not cite failing evidence"
+        )
+
+    return {
+        "schema": schema,
+        "content_hash": content_hash,
+        "declared_checks": declared_checks,
+        "failed_checks": failed_checks,
+    }
+
+
 def _entry(base: Path, declared: str, role: str) -> dict[str, object]:
     path = (base / declared).resolve()
     if not path.is_file():
@@ -154,45 +242,8 @@ def _entry(base: Path, declared: str, role: str) -> dict[str, object]:
         DIGEST_ALGORITHM: file_digest(path),
     }
     if role == "evidence":
-        report = _report_summary(path)
-        if report is not None:
-            entry["report"] = report
+        entry["report"] = evidence_report(path)
     return entry
-
-
-def _report_summary(path: Path) -> dict[str, object] | None:
-    """The three numbers that make a report evidence rather than a file.
-
-    A manifest that named a report but not its ``content_hash`` would prove the
-    bytes were uploaded, not that they were the bytes the checks ran against.
-    """
-    try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (ValueError, UnicodeDecodeError):
-        return None
-    if not isinstance(document, dict):
-        return None
-    summary = document.get("summary")
-    if not isinstance(summary, dict):
-        return None
-    declared_checks = summary.get("n_checks")
-    failed_checks = summary.get("n_failed")
-    if not isinstance(declared_checks, int) or not isinstance(failed_checks, int):
-        return None
-    if failed_checks:
-        raise ManifestError(
-            f"{path.name} declares {failed_checks} failed check(s); "
-            "a release manifest does not cite failing evidence"
-        )
-    block: dict[str, object] = {
-        "declared_checks": declared_checks,
-        "failed_checks": failed_checks,
-    }
-    for key in ("schema", "content_hash"):
-        value = document.get(key)
-        if isinstance(value, str):
-            block[key] = value
-    return block
 
 
 def build_payload(
@@ -241,12 +292,17 @@ def build_payload(
     _refuse_collisions(entries)
     entries.sort(key=lambda item: (ROLES.index(str(item["role"])), str(item["path"])))
 
-    return {
+    payload = {
         "schema": SCHEMA,
         "digest_algorithm": DIGEST_ALGORITHM,
         "release": {"version": version, "tag": tag, "commit": commit},
         "artefacts": entries,
     }
+    # The writer is held to the reader's rules rather than to its own: a
+    # payload this tool emits but its own `load` would refuse is a schema
+    # break that nothing else would catch until a consumer hit it.
+    validate_payload(payload)
+    return payload
 
 
 def _refuse_collisions(entries: Iterable[dict[str, object]]) -> None:
@@ -262,6 +318,114 @@ def _refuse_collisions(entries: Iterable[dict[str, object]]) -> None:
             if value in seen:
                 raise ManifestError(f"duplicate {field}: {value}")
             seen.add(value)
+
+
+# --------------------------------------------------------------------------
+# The reader. `v1` is frozen for consumers, not only for this producer.
+# --------------------------------------------------------------------------
+
+def _exact_fields(value: object, expected: frozenset[str], what: str) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise ManifestError(f"{what} is not an object")
+    present = set(value)
+    missing = expected - present
+    unknown = present - expected
+    if missing:
+        raise ManifestError(f"{what} is missing {sorted(missing)}")
+    if unknown:
+        raise ManifestError(f"{what} has fields no v1 manifest carries: {sorted(unknown)}")
+    return value
+
+
+def _text(value: object, what: str, pattern: re.Pattern[str] | None = None) -> str:
+    if not isinstance(value, str) or not value:
+        raise ManifestError(f"{what} is not a non-empty string: {value!r}")
+    if pattern is not None and not pattern.match(value):
+        raise ManifestError(f"{what} is malformed: {value!r}")
+    return value
+
+
+def _relative_path(value: object, what: str) -> str:
+    """A path inside the payload directory, and nothing else.
+
+    A manifest is consumed by a verifier that joins these onto a base
+    directory. An absolute path or a ``..`` segment would make ``verify``
+    read, and a downloader write, outside the tree it was pointed at.
+    """
+    text = _text(value, what)
+    if "\\" in text or ":" in text or text.startswith("/"):
+        raise ManifestError(f"{what} is not a relative POSIX path: {text!r}")
+    segments = text.split("/")
+    if any(segment in ("", ".", "..") for segment in segments):
+        raise ManifestError(f"{what} has an empty or traversing segment: {text!r}")
+    return text
+
+
+def validate_payload(payload: object) -> dict[str, object]:
+    """The whole of ``v1``, enforced. Raises :class:`ManifestError` on anything else.
+
+    Freezing a schema means a consumer written today keeps agreeing with it,
+    which is a property of what the *reader* accepts. A reader that takes the
+    fields it wants and ignores the rest accepts a hundred documents the
+    schema does not describe, and the first producer to emit one of them has
+    changed ``v1`` without anyone noticing.
+    """
+    document = _exact_fields(payload, PAYLOAD_FIELDS, "payload")
+
+    if document["schema"] != SCHEMA:
+        raise ManifestError(f"unsupported schema {document['schema']!r}, expected {SCHEMA}")
+    if document["digest_algorithm"] != DIGEST_ALGORITHM:
+        raise ManifestError(
+            f"unsupported digest_algorithm {document['digest_algorithm']!r}, "
+            f"expected {DIGEST_ALGORITHM}"
+        )
+
+    release = _exact_fields(document["release"], RELEASE_FIELDS, "release")
+    version = _text(release["version"], "release.version", _VERSION)
+    tag = _text(release["tag"], "release.tag")
+    _text(release["commit"], "release.commit", _COMMIT)
+    if tag != f"v{version}":
+        raise ManifestError(f"release.tag {tag!r} does not name version {version!r}")
+
+    artefacts = document["artefacts"]
+    if not isinstance(artefacts, list) or not artefacts:
+        raise ManifestError("artefacts is not a non-empty list")
+
+    seen: dict[str, set[str]] = {"path": set(), "asset_name": set()}
+    for index, item in enumerate(artefacts):
+        where = f"artefacts[{index}]"
+        if not isinstance(item, dict):
+            raise ManifestError(f"{where} is not an object")
+        role = item.get("role")
+        if role not in ROLES:
+            raise ManifestError(f"{where}.role is not one of {list(ROLES)}: {role!r}")
+        expected = ARTEFACT_FIELDS | ({"report"} if role == "evidence" else frozenset())
+        entry = _exact_fields(item, expected, where)
+
+        path = _relative_path(entry["path"], f"{where}.path")
+        asset_name = _text(entry["asset_name"], f"{where}.asset_name")
+        if asset_name != path.rsplit("/", 1)[-1]:
+            raise ManifestError(
+                f"{where}.asset_name {asset_name!r} is not the basename of {path!r}"
+            )
+        _counted(entry["size_bytes"], f"{where}.size_bytes", minimum=0)
+        _text(entry[DIGEST_ALGORITHM], f"{where}.{DIGEST_ALGORITHM}", _HEX64)
+
+        for field, value in (("path", path), ("asset_name", asset_name)):
+            if value in seen[field]:
+                raise ManifestError(f"duplicate {field}: {value}")
+            seen[field].add(value)
+
+        if role == "evidence":
+            report = _exact_fields(entry["report"], REPORT_FIELDS, f"{where}.report")
+            _text(report["schema"], f"{where}.report.schema", _EVIDENCE_SCHEMA)
+            _text(report["content_hash"], f"{where}.report.content_hash", _HEX64)
+            _counted(report["declared_checks"], f"{where}.report.declared_checks", minimum=1)
+            failed = _counted(report["failed_checks"], f"{where}.report.failed_checks", minimum=0)
+            if failed:
+                raise ManifestError(f"{where}.report declares {failed} failed check(s)")
+
+    return document
 
 
 def canonical_json(payload: object) -> str:
@@ -295,17 +459,16 @@ def render(payload: dict[str, object]) -> str:
 
 
 def load(manifest_path: Path) -> dict[str, object]:
-    """Read a manifest and check it against itself before anyone acts on it."""
+    """Read a manifest, check it against itself, and hold it to the whole schema."""
     if not manifest_path.is_file():
         raise ManifestError(f"manifest not found: {manifest_path}")
-    try:
-        document = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except ValueError as error:
-        raise ManifestError(f"manifest is not JSON: {error}") from error
+    document = _read_json(manifest_path, "manifest")
     if not isinstance(document, dict):
         raise ManifestError("manifest is not an object")
-    payload = document.get("payload")
-    digest = document.get("digest")
+    if set(document) != {"payload", "digest"}:
+        raise ManifestError(f"manifest has fields no v1 manifest carries: {sorted(document)}")
+    payload = document["payload"]
+    digest = document["digest"]
     if not isinstance(payload, dict) or not isinstance(digest, str):
         raise ManifestError("manifest has no payload/digest pair")
     recomputed = payload_digest(payload)
@@ -313,9 +476,7 @@ def load(manifest_path: Path) -> dict[str, object]:
         raise ManifestError(
             f"manifest digest does not match its payload: recorded {digest}, computed {recomputed}"
         )
-    if payload.get("schema") != SCHEMA:
-        raise ManifestError(f"unsupported schema {payload.get('schema')!r}, expected {SCHEMA}")
-    return payload
+    return validate_payload(payload)
 
 
 def verify(
@@ -372,7 +533,32 @@ def verify(
             problems.append(
                 f"digest differs: {declared} is {actual}, manifest says {recorded_digest}"
             )
+        if entry.get("role") == "evidence":
+            problems.extend(_evidence_problems(path, declared, entry))
     return problems
+
+
+def _evidence_problems(path: Path, declared: str, entry: dict[str, object]) -> list[str]:
+    """The report block, recomputed from the file rather than believed.
+
+    A file digest does not notice a check count edited only in the manifest:
+    the bytes on disk still hash to what is recorded, and the claim the notes
+    quote is now someone else's. So the claim is derived again here and
+    compared field by field.
+    """
+    try:
+        recomputed = evidence_report(path)
+    except ManifestError as error:
+        return [f"evidence no longer reads as a report: {declared}: {error}"]
+    recorded = entry.get("report")
+    if not isinstance(recorded, dict):
+        return [f"evidence has no report block: {declared}"]
+    return [
+        f"report {field} differs: {declared} is {recomputed[field]!r}, "
+        f"manifest says {recorded.get(field)!r}"
+        for field in sorted(recomputed)
+        if recorded.get(field) != recomputed[field]
+    ]
 
 
 def _generate(arguments: argparse.Namespace) -> int:
