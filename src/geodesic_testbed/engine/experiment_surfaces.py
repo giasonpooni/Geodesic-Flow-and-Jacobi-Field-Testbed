@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Stage two: the same two objects on surfaces where the curvature varies.
 
 The constant-curvature stage could check every number against a closed form.

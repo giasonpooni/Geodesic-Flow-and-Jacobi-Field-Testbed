@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The 2x2 transfer map from a starting pose error to a downstream one.
 
 A heading error is only half of how a path can start wrong. The other half is

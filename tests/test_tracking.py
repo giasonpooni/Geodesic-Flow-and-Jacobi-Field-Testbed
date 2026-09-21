@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The acquisition schedule, and the difference between an event and knowing it."""
 
 from __future__ import annotations

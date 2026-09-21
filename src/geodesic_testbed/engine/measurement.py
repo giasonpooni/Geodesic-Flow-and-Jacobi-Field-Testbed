@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The record a physical trial has to produce for its numbers to count.
 
 Nothing in this repository has been measured. What this module supplies is the

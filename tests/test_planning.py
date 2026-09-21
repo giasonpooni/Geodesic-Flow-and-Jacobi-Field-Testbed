@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Choosing a route without collapsing the reasons into one number first.
 
 What is pinned here: that accumulated observability is a different question

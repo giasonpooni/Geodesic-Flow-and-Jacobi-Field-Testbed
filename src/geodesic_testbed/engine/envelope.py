@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The instrument's output: a sensitivity envelope around a nominal path.
 
 Input is a surface, a starting point, a starting heading and a tolerance on how

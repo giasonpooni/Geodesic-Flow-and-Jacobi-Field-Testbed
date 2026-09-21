@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The four terms of ``Sigma_y``, and the cases a scalar residual cannot see.
 
 The tests that matter here are the ones where a wrong answer looks fine. A

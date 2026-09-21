@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The boundary this runtime presents, and the one-way rule that keeps it one.
 
 This repository is a parallel computational substrate, not a module inside an

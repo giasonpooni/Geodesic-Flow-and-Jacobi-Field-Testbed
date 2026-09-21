@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 r"""From the transfer map to something a sensor could have reported.
 
 A prediction and a measurement are only comparable if they are the same

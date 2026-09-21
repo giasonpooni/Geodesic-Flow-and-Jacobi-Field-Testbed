@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The vocabulary both sides of the boundary speak.
 
 This runtime is a computational substrate, not part of an instrument. It takes

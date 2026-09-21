@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Geometry tests.
 
 Where it is possible the expected value is computed a second, independent way

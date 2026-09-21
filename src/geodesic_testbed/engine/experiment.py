@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The experiment: four sweeps, one report, explicit pass/fail checks.
 
 The testbed answers four questions, in order of increasing ambition.

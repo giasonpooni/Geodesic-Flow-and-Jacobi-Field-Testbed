@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Emit one path-sensitivity record: everything this runtime hands downstream.
 
 The record below is the whole of the interface. An instrument workbench that

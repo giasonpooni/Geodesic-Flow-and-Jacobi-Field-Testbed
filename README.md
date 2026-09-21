@@ -565,4 +565,17 @@ CUDA stack. The corpus cite is
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Mozilla Public License 2.0 — see [LICENSE](LICENSE).
+
+MPL-2.0 is file-level copyleft, which is the licence that matches the boundary
+this repository already enforces in code. Improvements to the runtime's own
+files come back; an adapter, a bench or an instrument workbench that *consumes*
+the transfer record is a separate work and stays under whatever licence its
+author chooses. `geodesic_testbed.boundary` names the layers and
+`tests/test_boundary.py` reads the one-way rule out of the syntax tree; the
+licence draws the same line legally.
+
+Every hand-authored source, test and tool file carries
+`SPDX-License-Identifier: MPL-2.0`. Generated artefacts — the committed
+reports, the figures, `uv.lock` — do not, because they are output rather than
+source.

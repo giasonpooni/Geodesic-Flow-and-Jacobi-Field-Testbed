@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "Curvature-aware path sensitivity: geodesic flow, Jacobi transfer maps, and first-order tolerance contracts for curved-surface manufacturing and robotic inspection."
 readme = "README.md"
 requires-python = ">=3.11"
-license = "MIT"
+license = "MPL-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "giasonpooni" }]
 keywords = [

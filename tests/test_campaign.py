@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The coupon programme, and the bookkeeping failures it refuses to accept.
 
 No coupon has been cut. What is tested here is the *programme*: that it is

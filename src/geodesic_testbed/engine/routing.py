@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Choosing a route from constraints the application actually has.
 
 Ranking candidate paths by ``max |b(s)|`` alone selects for paths that pass

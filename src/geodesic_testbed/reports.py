@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Deterministic reference report for the first tested application slice."""
 
 from __future__ import annotations

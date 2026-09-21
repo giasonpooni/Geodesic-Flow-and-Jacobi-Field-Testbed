@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Canonical JSON for artefacts that are committed, compared and hashed.
 
 A report in this repository is evidence: it is checked in, regenerated in CI

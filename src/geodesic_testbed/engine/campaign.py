@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The coupon programme this prediction would have to survive, declared in advance.
 
 No coupon has been cut and no trial has been run. What this module supplies is

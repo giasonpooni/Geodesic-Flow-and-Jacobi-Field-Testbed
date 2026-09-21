@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The report as an artefact: every check passes, and it is really JSON."""
 
 from __future__ import annotations

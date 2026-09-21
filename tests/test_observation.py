@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Observation modes: what a comparison is in, and where it can be produced."""
 
 from __future__ import annotations

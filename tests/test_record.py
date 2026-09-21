@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The public transfer record: one type both halves of the project speak."""
 
 from __future__ import annotations

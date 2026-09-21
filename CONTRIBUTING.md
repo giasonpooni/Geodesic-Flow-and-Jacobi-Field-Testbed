@@ -386,3 +386,26 @@ shared history.
   identity, operator digest and causality, calibration relationship, arclength
   grid -- is checked first. The comparison then uses the whitened residual and
   the two-sided chi-square band, not a maximum over a combined scalar.
+
+## Licence
+
+- **MPL-2.0, and every hand-authored file says so.** File-level copyleft is
+  the licence that matches the boundary this repository already enforces:
+  improvements to the runtime's own files come back, and an adapter or bench
+  that *consumes* the transfer record is a separate work under whatever
+  licence its author chooses. `boundary.LAYERS` draws that line in the syntax
+  tree; the licence draws it legally.
+- **The identifier is the first line of every `.py` under `src`, `tests`,
+  `tools` and `examples`**, and `tests/test_licensing.py` fails a file that
+  arrives without one. Under file-level copyleft an unheaded file is one whose
+  terms a reader has to guess, and the file that gets missed is always the new
+  one.
+- **Generated artefacts are not headed.** The committed reports, the figures
+  and `uv.lock` are output, not source: heading them would claim authorship of
+  something a program emitted and would make every regeneration a licence
+  edit. The exclusion is asserted, so a future mechanical pass cannot quietly
+  widen it.
+- **No `License ::` classifier.** PEP 639 forbids it alongside a licence
+  expression and PyPI rejects the combination -- but hatchling emits both
+  without complaint, so the failure would arrive at upload, after the tag
+  exists. The SPDX expression is the declaration.

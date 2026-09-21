@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Shared fixtures.
 
 The experiment is run once per test session and shared, so that the suite can

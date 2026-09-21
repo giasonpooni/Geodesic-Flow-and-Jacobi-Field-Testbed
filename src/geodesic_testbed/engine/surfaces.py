@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Parametric surfaces, where the curvature varies along the path.
 
 The constant-curvature testbed in :mod:`geodesic_testbed.engine.spaceforms` is the calibration

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The boundary: what crosses it, and the one-way rule that keeps it narrow.
 
 Two kinds of check live here. The first reads the imports out of the source and

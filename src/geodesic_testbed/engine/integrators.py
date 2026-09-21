@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Fixed-step explicit integrators with known, and therefore testable, orders.
 
 Three methods are kept on purpose.  A convergence study with a single

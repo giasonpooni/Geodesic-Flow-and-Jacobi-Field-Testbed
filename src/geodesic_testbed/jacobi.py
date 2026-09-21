@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Analytical and numerical transverse Jacobi-field propagation.
 
 For a unit-speed geodesic on a surface, the scalar transverse variation

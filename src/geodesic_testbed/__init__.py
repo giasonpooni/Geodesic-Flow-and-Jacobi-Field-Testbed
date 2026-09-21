@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Curved-surface geodesic sensitivity: transfer maps and tolerance contracts.
 
 This is a computational substrate that an instrument may consume, not a module

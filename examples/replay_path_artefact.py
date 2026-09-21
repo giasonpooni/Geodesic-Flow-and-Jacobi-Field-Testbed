@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Write a ``path-geometry-v1`` artefact, then replay it with nothing else loaded.
 
 This is the boundary exercised end to end, in the inbound direction. The first

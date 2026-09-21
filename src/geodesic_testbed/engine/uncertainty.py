@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 r"""Everything else that is uncertain, and what each of it costs downstream.
 
 The starting pose is one term in an uncertainty budget and it is rarely the

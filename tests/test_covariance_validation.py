@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Adversarial covariance cases shared by the native observation/filter paths."""
 
 from __future__ import annotations

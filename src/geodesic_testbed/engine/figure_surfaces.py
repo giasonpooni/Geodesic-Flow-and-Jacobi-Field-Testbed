@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The stage-two figure: the same instrument, on surfaces that vary.
 
 Drawn from the stage-two report. Colour carries the surface, and the first

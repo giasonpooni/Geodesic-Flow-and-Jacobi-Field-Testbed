@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Write the first constant-curvature validation and application report.
 
 Writes into ``results/`` by default, which is where the tracked copy lives and

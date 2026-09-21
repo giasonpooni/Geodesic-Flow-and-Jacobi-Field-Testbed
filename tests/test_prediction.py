@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The chain from the transfer map to something a sensor could have reported.
 
 Four stages, each an object carrying the transformation that produced it. The

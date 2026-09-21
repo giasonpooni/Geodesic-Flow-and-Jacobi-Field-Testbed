@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The numbers in the prose are the numbers in the reports.
 
 A document that states a count, a schema or a bound is making a quantitative

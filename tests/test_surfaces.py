@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Parametric surfaces: the differential geometry, before any path is flowed."""
 
 from __future__ import annotations

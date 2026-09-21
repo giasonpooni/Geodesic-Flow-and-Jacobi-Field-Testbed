@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """path-sensitivity-observation-v1: the shape a physical trial has to arrive in."""
 
 from __future__ import annotations

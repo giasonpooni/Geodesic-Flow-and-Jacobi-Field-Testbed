@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Fitting helpers used to turn sweeps into numbers with error bars.
 
 A convergence claim is only as good as the window it was fitted on, so every

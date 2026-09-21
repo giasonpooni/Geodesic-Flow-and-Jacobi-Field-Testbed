@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """What the instrument actually reports, named, versioned, and scoped by domain.
 
 A prediction is only comparable with a measurement if both are the same

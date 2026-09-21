@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Solve along a ``path-geometry-v1`` artefact, and produce one from a surface.
 
 This is the adapter the boundary was designed around: a path computed

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The figure: four panels, one story, drawn from the report.
 
 Panels B and C are drawn from the report's own numbers, so the figure cannot

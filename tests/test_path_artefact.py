@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Acceptance tests for ``path-geometry-v1`` and the adapter that solves along it.
 
 The adapter is the one place a path this runtime did not compute becomes a

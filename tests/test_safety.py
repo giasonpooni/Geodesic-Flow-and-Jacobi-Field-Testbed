@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The ways this runtime is allowed to fail, and the ways it is not.
 
 Each test here pins a failure mode that produced a *plausible number* rather

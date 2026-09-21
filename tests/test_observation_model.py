@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """H, R and rho: the transfer map as something an instrument could falsify."""
 
 from __future__ import annotations

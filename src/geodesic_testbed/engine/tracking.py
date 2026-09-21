@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Acquisition and retention: when the instrument has the path, and when it loses it.
 
 A minimum on resolvability taken over a whole route is unsatisfiable, because

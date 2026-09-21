@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """End-to-end verification, run repeatedly, with something different each time.
 
 Running a deterministic pipeline twice proves nothing. Running it a hundred

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Constant-curvature space forms carried by a single ambient chart.
 
 All three model surfaces used by this testbed -- the Euclidean plane

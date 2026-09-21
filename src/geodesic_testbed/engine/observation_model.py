@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """From a transfer map to what an instrument would actually see.
 
 The transfer map says how a starting-pose error propagates:

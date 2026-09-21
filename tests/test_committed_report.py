@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The committed artefacts are part of the repository's claim, so they are tested.
 
 A stale ``validation/report-v1.json`` would be worse than none at all: it would

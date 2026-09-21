@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """One record that both halves of this project speak.
 
 The engine produces ``TransferMap`` and ``PathEnvelope``; the application layer

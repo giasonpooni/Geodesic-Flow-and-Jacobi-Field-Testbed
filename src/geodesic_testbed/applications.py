@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Application contracts for manufacturing courses and inspection tracks.
 
 These outputs are deterministic first-order bounds. They are not defect

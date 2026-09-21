@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The uncertainty budget: every source, its shape, and what it actually costs.
 
 The starting pose is one term and rarely the largest. What these tests pin is

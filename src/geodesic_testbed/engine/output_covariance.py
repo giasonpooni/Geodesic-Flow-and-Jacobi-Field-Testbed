@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 r"""The full covariance of a stacked prediction, as named blocks that add.
 
 A comparison is only as good as the covariance it is judged against, and the

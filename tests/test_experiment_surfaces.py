@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The stage-two report: every check passes, and it says what it is anchored to."""
 
 from __future__ import annotations

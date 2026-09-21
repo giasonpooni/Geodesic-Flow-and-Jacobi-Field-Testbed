@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """``path-geometry-v1``: the versioned path this runtime consumes.
 
 Mesh work -- triangulated surfaces, discrete curvature estimators, mesh path

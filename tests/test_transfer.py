@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The 2x2 transfer map and its invariant."""
 
 from __future__ import annotations

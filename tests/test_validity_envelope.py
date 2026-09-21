@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """The perturbation range the linear map holds to, measured against the flow.
 
 ``Phi dz0`` is the first term of a series whose second term is the same order
