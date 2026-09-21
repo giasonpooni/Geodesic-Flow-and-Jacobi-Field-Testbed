@@ -14,6 +14,29 @@ This component owns **curvature-dependent path sensitivity**. The [stack map](ht
 
 Numerical reference checks support their stated computational scope. They do not establish scanner calibration, robot dynamics or production inspection accuracy.
 
+## Sensitivity and observation uncertainty
+
+```mermaid
+flowchart TD
+C0["Eligible starting-pose covariance C0"] --> P["Propagate Phi C0 Phi transpose"]
+  PHI["Transfer map in offset-heading coordinates"] --> P
+  PHI --> F["Geometric focus diagnostics"]
+  P --> O["Observation signal covariance"]
+  H["Declared observation map H"] --> O
+  O --> Q{"Signal plus noise eligible?"}
+  R["Declared noise covariance R"] --> Q
+  Q -->|"no"| X["Numerical refusal"]
+  Q -->|"yes"| RHO["Dimensionless resolvability"]
+  O --> RHO
+  R --> RHO
+  RHO --> T["Tracking outcome and event times"]
+  A["Declared acquisition protocol"] --> T
+```
+
+Solid arrows show implemented numerical modules, conditional on their declared inputs. H specifies the observation coordinates. Signal covariance and noise R remain separate for resolvability, while the reported observation covariance is their sum. Covariance eligibility and positive noise requirements do not establish calibration. Focus diagnostics belong to the geometry; resolvability and acquisition timing also depend on the observation model and protocol. No physical sensor, command path or verification authority is represented.
+
+[Instrumentation diagram atlas](https://github.com/giasonpooni/Computational-Instrumentation-Workbench/blob/main/docs/DIAGRAMS.md).
+
 ## Interoperability
 
 Integrations use the component's documented contract and an explicit adapter. They preserve source observations, ordered quantities, units, coordinate/frame meaning, time semantics, missingness and declared uncertainty where applicable. An unimplemented field or conversion must be reported as unsupported rather than silently inferred.

@@ -12,6 +12,25 @@ two layers: deterministic tolerance contracts on top, and a numerical engine
 underneath checked against closed-form references, convergence behavior and
 declared numerical invariants.
 
+## Parametric-surface computation
+
+```mermaid
+flowchart TD
+S["Declared surface and chart"] --> G{"Initial chart valid?"}
+  I["Initial point and heading"] --> G
+  G -->|"no"| R["Explicit refusal"]
+  G -->|"yes"| N["Geodesic and Jacobi integration"]
+  H["Arclength grid and method"] --> N
+  N --> P["Transfer map Phi"]
+  N --> D["Chart, convergence and invariant diagnostics"]
+  P --> B["Declared tolerance envelopes"]
+  P --> C["First-order covariance propagation"]
+```
+
+Solid arrows show the implemented parametric-surface path. A chart exit during integration is reported in diagnostics. The transfer coordinates are transverse offset and heading; deterministic tolerance bounds and covariance propagation are separate uses of that map. Reference checks support numerical scope only: this repository supplies neither a triangle-mesh solver nor physical validation.
+
+[Instrumentation diagram atlas](https://github.com/giasonpooni/Computational-Instrumentation-Workbench/blob/main/docs/DIAGRAMS.md).
+
 ![Curvature-aware path sensitivity on parametric surfaces](figures/surfaces-testbed-v1.png)
 
 ## The object
